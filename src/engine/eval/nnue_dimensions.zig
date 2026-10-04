@@ -53,11 +53,10 @@ comptime {
 // ---- the blob layout those cardinalities determine ---------------------------
 
 // Size the transformer's own arrays. `half_dimensions` is upstream's
-// TransformedFeatureDimensions and `psq_feature_dimensions` is HalfKAv2_hm::Dimensions;
-// `psqt_buckets` is PSQTBuckets.
+// TransformedFeatureDimensions and `psq_feature_dimensions` is HalfKAv2_hm::Dimensions.
+// SFNNv17 dropped the PSQTBuckets output, so no array here is sized by a bucket count.
 pub const half_dimensions: usize = 1024;
 pub const psq_feature_dimensions: usize = 22528;
-pub const psqt_buckets: usize = 8;
 
 // Align every region on a cache line, which is what upstream's `alignas(CacheLineSize)`
 // on each member spells. The accumulator arena carries the same alignment for the same
@@ -68,43 +67,34 @@ fn roundUp(x: usize, a: usize) usize {
     return (x + a - 1) / a * a;
 }
 
-// Count the elements of the feature-transformer arrays. The threat weight/psqt regions
-// hold the FullThreats rows followed by the PP_3Wide rows (one contiguous array each).
+// Count the elements of the feature-transformer arrays. The threat weight region holds
+// the FullThreats rows followed by the PP_3Wide rows (one contiguous array).
 pub const biases_count = half_dimensions; // i16
 pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i16
 pub const threat_weights_count = half_dimensions * threat_and_pp_dimensions; // i8 (threat ++ pp)
-pub const psqt_weights_count = psq_feature_dimensions * psqt_buckets; // i32
-pub const threat_psqt_weights_count = threat_and_pp_dimensions * psqt_buckets; // i32 (threat ++ pp)
 
-// The stream splits the two concatenated regions back into separate sections (threat,
-// then pp), each framed on its own; these are the per-section element counts.
+// The stream splits the concatenated region back into separate sections (threat, then
+// pp), each framed on its own; these are the per-section element counts.
 pub const threat_only_weights_count = half_dimensions * threat_dimensions; // i8
 pub const pp_only_weights_count = half_dimensions * pp_dimensions; // i8
-pub const threat_only_psqt_count = threat_dimensions * psqt_buckets; // i32
-pub const pp_only_psqt_count = pp_dimensions * psqt_buckets; // i32
 
 // Lay out the in-memory byte offsets (member order, each alignas(64)): biases,
-// weights(psq), threatAndPpWeights, psqtWeights, threatAndPpPsqtWeights.
+// weights(psq), threatAndPpWeights.
 pub const biases_off = 0;
 pub const weights_off = roundUp(biases_count * 2, cache_line_bytes);
 pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 2, cache_line_bytes);
-pub const psqt_weights_off = roundUp(threat_weights_off + threat_weights_count * 1, cache_line_bytes);
-pub const threat_psqt_weights_off = roundUp(psqt_weights_off + psqt_weights_count * 4, cache_line_bytes);
-pub const ft_total_bytes = roundUp(threat_psqt_weights_off + threat_psqt_weights_count * 4, cache_line_bytes);
-// Byte offsets of the pp sub-regions within the concatenated threat regions.
+pub const ft_total_bytes = roundUp(threat_weights_off + threat_weights_count * 1, cache_line_bytes);
+// Byte offset of the pp sub-region within the concatenated threat region.
 pub const pp_weights_off = threat_weights_off + threat_only_weights_count * 1;
-pub const pp_psqt_weights_off = threat_psqt_weights_off + threat_only_psqt_count * 4;
 
 comptime {
-    // Require the five regions to tile ft_total_bytes with no padding. The parse is
+    // Require the three regions to tile ft_total_bytes with no padding. The parse is
     // the arena's only initializer (page_alloc hands the block out uninitialized), so
     // a dims change that opened an alignment gap would leak uninitialized bytes into
     // the weight image; fail the build instead.
     std.debug.assert(weights_off == biases_off + biases_count * 2);
     std.debug.assert(threat_weights_off == weights_off + psq_weights_count * 2);
-    std.debug.assert(psqt_weights_off == threat_weights_off + threat_weights_count * 1);
-    std.debug.assert(threat_psqt_weights_off == psqt_weights_off + psqt_weights_count * 4);
-    std.debug.assert(ft_total_bytes == threat_psqt_weights_off + threat_psqt_weights_count * 4);
+    std.debug.assert(ft_total_bytes == threat_weights_off + threat_weights_count * 1);
 }
 
 // ---- tests ------------------------------------------------------------------

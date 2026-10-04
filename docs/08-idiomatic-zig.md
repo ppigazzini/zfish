@@ -27,8 +27,9 @@ vectorizer will not take, so no build option enables it and re-optimizing does n
 A chess engine is integer math end to end, so this is the load-bearing rule of the hot
 path: **any per-element integer loop that should be SIMD must be written as `@Vector`,
 because nothing downstream will do it for you.** The measured cost is real — fusing the
-8-bucket psqt accumulator update from a scalar loop into one `@Vector(8, i32)` cut its
-instructions, and the scalar form would have stayed scalar forever.
+8-bucket psqt accumulator update (the net's PSQT output, until SFNNv17 removed it) from a
+scalar loop into one `@Vector(8, i32)` cut its instructions, and the scalar form would
+have stayed scalar forever.
 
 This is the single biggest way zfish diverges from Stockfish. Upstream leaves these
 loops scalar in the source and the C++ compiler widens them at `-O3`; zfish must widen

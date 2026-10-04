@@ -27,8 +27,6 @@ const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
 const applyAccumulatorDeltaI8 = nnue_acc_rowops.applyAccumulatorDeltaI8;
-const applyPsqtDelta = nnue_acc_rowops.applyPsqtDelta;
-const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
 
 // Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
 // for the refresh/apply-delta core.
@@ -38,8 +36,6 @@ const nnue_ft = @import("nnue_ft");
 pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
-const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
-const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
 // Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
 // refresh path; re-export clearRefreshCache (external).
@@ -50,8 +46,6 @@ pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
 const cacheEntry = nnue_refresh_cache.cacheEntry;
 const cacheEntryAccumulationConst = nnue_refresh_cache.cacheEntryAccumulationConst;
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
-const cacheEntryPsqtConst = nnue_refresh_cache.cacheEntryPsqtConst;
-const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 
 // Alias back the accumulator-stack layout + accessors, which live in the
@@ -71,7 +65,6 @@ const max_stack_size = layout.max_stack_size;
 const nnue_align = layout.nnue_align;
 const color_count = layout.color_count;
 const half_dimensions = layout.half_dimensions;
-const psqt_buckets = layout.psqt_buckets;
 const transform_vec_width = layout.transform_vec_width;
 const dirty_threat_capacity = layout.dirty_threat_capacity;
 const psq_index_capacity = layout.psq_index_capacity;
@@ -114,8 +107,6 @@ const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
-const statePsqtConst = layout.statePsqtConst;
-const statePsqtMut = layout.statePsqtMut;
 const diffBytesMut = layout.diffBytesMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
@@ -159,13 +150,6 @@ pub fn stackLatestThreat(stack: *const AccumulatorStack) [*]const u8 {
     return stateBytesConst(threat_feature, stackSize(stack) - 1, stack);
 }
 
-// Port FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h scalar path)
-// to Zig. After the (Zig) accumulator evaluate, read the latest PSQ +
-// Threat accumulator states and produce the int8 transformed output plus the
-// perspective-differenced psqt. BiasType is int16, so the accumulation sum wraps
-// in int16 before the [0,255] clamp; the pairwise product is /512.
-const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
-
 // Alias the transform's non-zero-chunk record from the nnue_nnz leaf (this function is its
 // only writer). Re-export the shapes and the tier gate: the affine consumer and the
 // scalar-reference test reach them through this facade, not through the leaf.
@@ -191,16 +175,20 @@ const packusTransform32 = packus.packusTransform32;
 const nnzFold4 = packus.nnzFold4;
 const packusTransform16 = packus.packusTransform16;
 
-pub fn transformBucket(
+// Port FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h) to Zig. After
+// the (Zig) accumulator evaluate, read the latest combined accumulator state and produce
+// the int8 transformed output. BiasType is int16, so the accumulation sum wraps in int16
+// before the [0,255] clamp; the pairwise product is /512. Since SFNNv17 the transformer
+// has no psqt output, so nothing here depends on the layer-stack bucket.
+pub fn transform(
     stack: *AccumulatorStack,
     pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
-    bucket: usize,
     stm: u8,
     output: [*]u8,
     nnz: *NnzOut,
-) i32 {
+) void {
     evaluate(stack, pos, feature_transformer, cache);
 
     // Read the single combined (HalfKA + Threats) accumulator from the psq_feature slot.
@@ -209,13 +197,10 @@ pub fn transformBucket(
     // loads into pminsw's m128 operand only when 16-byte alignment is provable.
     const comb_bytes: [*]const u8 = stackLatestPsq(stack);
     const comb_acc: [*]align(nnue_align) const i16 = @ptrCast(@alignCast(comb_bytes));
-    const comb_psqt: [*]const i32 = @ptrCast(@alignCast(comb_bytes + state_psqt_offset));
 
     const p0: usize = stm;
     const p1: usize = stm ^ 1;
 
-    // (psq_diff + thr_diff)/2 == (combined_diff)/2 since combined = psq + threat.
-    const psqt: i32 = @divTrunc(comb_psqt[p0 * psqt_buckets + bucket] - comb_psqt[p1 * psqt_buckets + bucket], 2);
     nnzReset(nnz);
     // One call per perspective. The OUTPUT halves are ordered side-to-move first, so the
     // accumulator half is resolved here and the transform below takes an output position.
@@ -226,7 +211,6 @@ pub fn transformBucket(
     comptime std.debug.assert(half_dimensions * @sizeOf(i16) % nnue_align == 0);
     transformPerspective(@alignCast(comb_acc + p0 * half_dimensions), output, 0, nnz);
     transformPerspective(@alignCast(comb_acc + p1 * half_dimensions), output, 1, nnz);
-    return psqt;
 }
 
 // Transform ONE perspective's accumulator half into its slice of the layer-0 input, and record

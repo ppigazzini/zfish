@@ -8,7 +8,7 @@
 //     re-exported here for the section readers.
 //   * permuteBlocks -- the byte-block reorder of permute<> (nnue_feature_
 //     transformer.h). zfish's feature transform writes its int8 output in natural
-//     chunk order (nnue_accumulator.transformBucket), never the arch-specific packus
+//     chunk order (nnue_accumulator.transform), never the arch-specific packus
 //     lane-interleave that upstream's permute<> compensates for, so the FT weights
 //     need NO reorder on ANY tier (the AVX512 build is bit-exact unpermuted).
 //     permuteBlocks is therefore unused by the live parse -- kept for structural
@@ -117,27 +117,19 @@ const psq_feature_dimensions = dims.psq_feature_dimensions;
 const threat_dimensions = dims.threat_dimensions;
 const pp_dimensions = dims.pp_dimensions;
 const threat_and_pp_dimensions = dims.threat_and_pp_dimensions;
-const psqt_buckets = dims.psqt_buckets;
 
 const biases_count = dims.biases_count;
 const psq_weights_count = dims.psq_weights_count;
 const threat_weights_count = dims.threat_weights_count;
-const psqt_weights_count = dims.psqt_weights_count;
-const threat_psqt_weights_count = dims.threat_psqt_weights_count;
 
 const threat_only_weights_count = dims.threat_only_weights_count;
 const pp_only_weights_count = dims.pp_only_weights_count;
-const threat_only_psqt_count = dims.threat_only_psqt_count;
-const pp_only_psqt_count = dims.pp_only_psqt_count;
 
 const ft_total_bytes = dims.ft_total_bytes;
 const biases_off = dims.biases_off;
 const weights_off = dims.weights_off;
 const threat_weights_off = dims.threat_weights_off;
-const psqt_weights_off = dims.psqt_weights_off;
-const threat_psqt_weights_off = dims.threat_psqt_weights_off;
 const pp_weights_off = dims.pp_weights_off;
-const pp_psqt_weights_off = dims.pp_psqt_weights_off;
 
 fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
     @setRuntimeSafety(true); // check the @alignCast and the arena bound, not just the offsets
@@ -175,40 +167,32 @@ pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     // a file shorter than the hash would make the very first section slice out of range.
     if (blob.len < 4) return null;
     var pos: usize = 4;
-    // Follow the SFNNv16 read order: biases, threatWeights, threatPsqtWeights, ppWeights,
-    // ppPsqtWeights, weights, psqtWeights. The threat and pp weight/psqt sections are framed
-    // separately in the stream but written into the two contiguous threatAndPp regions (pp
-    // right after threat), so a single index addresses either at runtime.
+    // Follow the SFNNv17 read order: biases, threatWeights, ppWeights, weights. The threat
+    // and pp weight sections are framed separately in the stream but written into the one
+    // contiguous threatAndPp region (pp right after threat), so a single index addresses
+    // either at runtime.
     // 1. Read biases (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, biases_off, biases_count)) orelse return null;
     // 2. Copy threatWeights (raw little-endian i8) into the head of the threatAndPp region
     if (blob.len < pos + threat_only_weights_count) return null;
     @memcpy(dst[threat_weights_off .. threat_weights_off + threat_only_weights_count], blob[pos .. pos + threat_only_weights_count]);
     pos += threat_only_weights_count;
-    // 3. Read threatPsqtWeights (LEB i32, own section) into the head of the threatAndPp psqt region
-    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, threat_psqt_weights_off, threat_only_psqt_count)) orelse return null;
-    // 4. Copy ppWeights (raw little-endian i8) into the tail of the threatAndPp region
+    // 3. Copy ppWeights (raw little-endian i8) into the tail of the threatAndPp region
     if (blob.len < pos + pp_only_weights_count) return null;
     @memcpy(dst[pp_weights_off .. pp_weights_off + pp_only_weights_count], blob[pos .. pos + pp_only_weights_count]);
     pos += pp_only_weights_count;
-    // 5. Read ppPsqtWeights (LEB i32, own section) into the tail of the threatAndPp psqt region
-    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, pp_psqt_weights_off, pp_only_psqt_count)) orelse return null;
-    // 6. Read weights / psq weights (LEB i16)
+    // 4. Read weights / psq weights (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, weights_off, psq_weights_count)) orelse return null;
-    // 7. Read psqtWeights (LEB i32, own section)
-    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, psqt_weights_off, psqt_weights_count)) orelse return null;
     return pos;
 }
 
-// List the five written weight regions (offset, byte length), used to compare a parse
+// List the three written weight regions (offset, byte length), used to compare a parse
 // against a reference while skipping the alignment padding between them.
 const FtRegion = struct { off: usize, len: usize };
 pub const ft_regions = [_]FtRegion{
     .{ .off = biases_off, .len = biases_count * 2 },
     .{ .off = weights_off, .len = psq_weights_count * 2 },
     .{ .off = threat_weights_off, .len = threat_weights_count * 1 },
-    .{ .off = psqt_weights_off, .len = psqt_weights_count * 4 },
-    .{ .off = threat_psqt_weights_off, .len = threat_psqt_weights_count * 4 },
 };
 
 // Parse `blob` into `scratch` and confirm each weight region matches `reference`
@@ -273,13 +257,10 @@ fn encodeLebValue(comptime T: type, v: T, out: *Bytes, a: std.mem.Allocator) !vo
     }
 }
 
-// Append a COMPRESSED_LEB128 section: magic, u32 byte-count, then the encoded
-// values. `extra` (if non-empty) is encoded into the same section after `values`
-// (the two-array write_leb_128(threatPsqt, psqt) overload).
+// Append a COMPRESSED_LEB128 section: magic, u32 byte-count, then the encoded values.
 fn encodeLebSection(
     comptime T: type,
     values: []const T,
-    extra: []const T,
     out: *Bytes,
     a: std.mem.Allocator,
 ) !void {
@@ -288,7 +269,6 @@ fn encodeLebSection(
     try out.appendSlice(a, &[_]u8{ 0, 0, 0, 0 });
     const data_start = out.items.len;
     for (values) |v| try encodeLebValue(T, v, out, a);
-    for (extra) |v| try encodeLebValue(T, v, out, a);
     const count: u32 = @intCast(out.items.len - data_start);
     std.mem.writeInt(u32, out.items[count_pos..][0..4], count, .little);
 }
@@ -297,12 +277,9 @@ fn encodeLebSection(
 // u32 hash. The live parse never permutes on any tier (see the header), so there is no
 // unpermute. Member
 // write order MUST mirror parseFeatureTransformer (the file / upstream layout):
-// biases (LEB i16), threatWeights (raw i8), threatPsqtWeights (LEB i32),
-// ppWeights (raw i8), ppPsqtWeights (LEB i32), weights (LEB i16), psqtWeights (LEB i32).
-// The threat and pp weight/psqt sections are stored contiguously (pp after threat) but
-// framed as separate stream sections, and each i32 PSQT array is its own section -- they
-// are NOT merged (an earlier version merged threatPsqt++psqt, producing a non-round-trippable
-// export that diverged from upstream at the weights-section boundary).
+// biases (LEB i16), threatWeights (raw i8), ppWeights (raw i8), weights (LEB i16).
+// The threat and pp weight sections are stored contiguously (pp after threat) but
+// framed as separate stream sections.
 pub fn serializeFeatureTransformer(
     ft: []const u8,
     hash_value: u32,
@@ -313,13 +290,10 @@ pub fn serializeFeatureTransformer(
     std.mem.writeInt(u32, &hdr, hash_value, .little);
     try out.appendSlice(a, &hdr);
 
-    try encodeLebSection(i16, constSlice(i16, ft, biases_off, biases_count), &.{}, out, a);
+    try encodeLebSection(i16, constSlice(i16, ft, biases_off, biases_count), out, a);
     try out.appendSlice(a, ft[threat_weights_off .. threat_weights_off + threat_only_weights_count]);
-    try encodeLebSection(i32, constSlice(i32, ft, threat_psqt_weights_off, threat_only_psqt_count), &.{}, out, a);
     try out.appendSlice(a, ft[pp_weights_off .. pp_weights_off + pp_only_weights_count]);
-    try encodeLebSection(i32, constSlice(i32, ft, pp_psqt_weights_off, pp_only_psqt_count), &.{}, out, a);
-    try encodeLebSection(i16, constSlice(i16, ft, weights_off, psq_weights_count), &.{}, out, a);
-    try encodeLebSection(i32, constSlice(i32, ft, psqt_weights_off, psqt_weights_count), &.{}, out, a);
+    try encodeLebSection(i16, constSlice(i16, ft, weights_off, psq_weights_count), out, a);
 }
 
 // Serialize AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
@@ -436,9 +410,7 @@ test "feature transformer layout offsets match the FeatureTransformer format" {
     try testing.expectEqual(@as(usize, 0), biases_off);
     try testing.expectEqual(@as(usize, 2048), weights_off);
     try testing.expectEqual(@as(usize, 46139392), threat_weights_off);
-    try testing.expectEqual(@as(usize, 112052224), psqt_weights_off);
-    try testing.expectEqual(@as(usize, 112773120), threat_psqt_weights_off);
-    try testing.expectEqual(@as(usize, 114832896), ft_total_bytes);
+    try testing.expectEqual(@as(usize, 112052224), ft_total_bytes);
 }
 
 test "readLebSection rejects a count that outruns its own section" {

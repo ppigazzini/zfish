@@ -37,13 +37,7 @@ const no_piece: u8 = 0;
 const layerPtr = weight_storage.layerPtr;
 const ftPtr = weight_storage.ftPtr;
 
-const EvalOutput = struct {
-    psqt: i32,
-    positional: i32,
-};
-
 pub const TraceOutput = struct {
-    psqt: [layer_stacks]i32,
     positional: [layer_stacks]i32,
     correct_bucket: usize,
 };
@@ -124,9 +118,8 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     return @intCast(@divTrunc(fwd_sum * (600 * 16), 128 * 64 * 2));
 }
 
-// Return the net's value for the side to move: the psqt and positional halves, each
-// scaled down on its own and then summed, which is the order upstream's
-// Network::evaluate truncates in (it returns one Value since f740707f).
+// Return the net's value for the side to move: the bucket's forward pass scaled by
+// output_scale. SFNNv17 dropped the psqt half, so this is the positional output alone.
 pub fn evaluate(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
@@ -134,53 +127,49 @@ pub fn evaluate(
 ) i32 {
     const piece_count = pieceCount(pos);
     const bucket = (piece_count - 1) / 4;
-    const raw = evaluateBucketRaw(pos, accumulator_stack, cache, bucket);
-    return @divTrunc(raw.psqt, output_scale) + @divTrunc(raw.positional, output_scale);
+    return @divTrunc(evaluateBucketRaw(pos, accumulator_stack, cache, bucket), output_scale);
 }
 
+// Score every layer stack over ONE transform -- upstream's trace_evaluate. The transformer
+// has no bucket-dependent output since SFNNv17, so the input to every bucket is the same
+// bytes and the same non-zero record; only the forward pass differs.
 pub fn traceEvaluate(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
     cache: *nnue_accumulator_port.RefreshCache,
 ) TraceOutput {
     var output = TraceOutput{
-        .psqt = @splat(0),
         .positional = @splat(0),
         .correct_bucket = 0,
     };
     const piece_count = pieceCount(pos);
     output.correct_bucket = (piece_count - 1) / 4;
 
+    var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
+    var nnz: nnue_accumulator_port.NnzOut = undefined;
+    networkTransform(pos, accumulator_stack, cache, @ptrCast(&transformed), &nnz);
+
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        const raw = evaluateBucketRaw(pos, accumulator_stack, cache, bucket);
-        output.psqt[bucket] = @divTrunc(raw.psqt, output_scale);
-        output.positional[bucket] = @divTrunc(raw.positional, output_scale);
+        output.positional[bucket] = @divTrunc(propagateBucket(bucket, @ptrCast(&transformed), &nnz), output_scale);
     }
 
     return output;
 }
 
+// Run the transform and then one bucket's forward pass, unscaled -- the body of upstream's
+// Network::evaluate before its division by OutputScale.
 fn evaluateBucketRaw(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
     cache: *nnue_accumulator_port.RefreshCache,
     bucket: usize,
-) EvalOutput {
+) i32 {
     var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
     var nnz: nnue_accumulator_port.NnzOut = undefined;
 
-    return .{
-        .psqt = networkTransformBucket(
-            pos,
-            accumulator_stack,
-            cache,
-            bucket,
-            @ptrCast(&transformed),
-            &nnz,
-        ),
-        .positional = propagateBucket(bucket, @ptrCast(&transformed), &nnz),
-    };
+    networkTransform(pos, accumulator_stack, cache, @ptrCast(&transformed), &nnz);
+    return propagateBucket(bucket, @ptrCast(&transformed), &nnz);
 }
 
 fn pieceCount(pos: *const Position) usize {
@@ -189,17 +178,16 @@ fn pieceCount(pos: *const Position) usize {
     return @popCount(pos.by_type_bb[0]);
 }
 
-fn networkTransformBucket(
+fn networkTransform(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
     cache: *nnue_accumulator_port.RefreshCache,
-    bucket: usize,
     transformed_ptr: [*]u8,
     nnz: *nnue_accumulator_port.NnzOut,
-) i32 {
+) void {
     const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(ftPtr() orelse @panic("feature-transformer storage not initialized"));
     const stm = pos.side_to_move;
-    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr, nnz);
+    nnue_accumulator_port.transform(accumulator_stack, pos, ft, cache, stm, transformed_ptr, nnz);
 }
 
 // Cover affineDpbusd's codegen paths (portable pmaddwd; 128-bit pmaddubsw+pmaddwd on the SSSE3

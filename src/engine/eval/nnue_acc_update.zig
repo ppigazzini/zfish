@@ -15,11 +15,8 @@ const nnue_feature = @import("nnue_feature");
 // so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyRefreshFusedI16 = nnue_acc_rowops.applyRefreshFusedI16;
-const applyRefreshFusedPsqt = nnue_acc_rowops.applyRefreshFusedPsqt;
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
-const applyCombinedPsqtDelta = nnue_acc_rowops.applyCombinedPsqtDelta;
 const applyHybridDelta = nnue_acc_rowops.applyHybridDelta;
-const applyHybridPsqtDelta = nnue_acc_rowops.applyHybridPsqtDelta;
 
 // Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
 // for the refresh/apply-delta core.
@@ -27,8 +24,6 @@ const nnue_ft = @import("nnue_ft");
 pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
-const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
-const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
 // Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
 // refresh path; re-export clearRefreshCache (external).
@@ -37,7 +32,6 @@ pub const RefreshCache = nnue_refresh_cache.RefreshCache;
 pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
 const cacheEntry = nnue_refresh_cache.cacheEntry;
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
-const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const cacheEntryPieceBb = nnue_refresh_cache.cacheEntryPieceBb;
 const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
@@ -78,8 +72,6 @@ const stateBytesMut = layout.stateBytesMut;
 const kingSquare = layout.kingSquare;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
-const statePsqtConst = layout.statePsqtConst;
-const statePsqtMut = layout.statePsqtMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
@@ -294,15 +286,6 @@ fn refreshCombined(
         featureTransformerPsqWeights(feature_transformer),
         featureTransformerThreatWeights(feature_transformer),
     );
-    applyRefreshFusedPsqt(
-        cacheEntryPsqtMut(entry_ptr),
-        statePsqtMut(psq_feature, latest_index, stack, perspective),
-        removed[0..removed_len],
-        added[0..added_len],
-        active.indices[0..active.len],
-        featureTransformerPsqPsqtWeights(feature_transformer),
-        featureTransformerThreatPsqtWeights(feature_transformer),
-    );
 
     @memcpy(entry_pieces, pos.board[0..]);
     setCacheEntryPieceBb(entry_ptr, pos.by_type_bb[0]);
@@ -420,16 +403,6 @@ fn applyCombined(
         thr_added[0..thr_added_len],
         featureTransformerPsqWeights(feature_transformer),
         featureTransformerThreatWeights(feature_transformer),
-    );
-    applyCombinedPsqtDelta(
-        statePsqtMut(psq_feature, target_index, stack, perspective),
-        statePsqtConst(psq_feature, computed_index, stack, perspective),
-        psq_removed[0..psq_removed_len],
-        psq_added[0..psq_added_len],
-        thr_removed[0..thr_removed_len],
-        thr_added[0..thr_added_len],
-        featureTransformerPsqPsqtWeights(feature_transformer),
-        featureTransformerThreatPsqtWeights(feature_transformer),
     );
     stateBytesMut(psq_feature, target_index, stack)[computed_offset + perspective] = 1;
 }

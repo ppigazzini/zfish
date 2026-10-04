@@ -70,26 +70,12 @@ pub const PositionSummary = struct {
 
 pub const TablebaseProbe = tablebase.ProbeResult;
 
-pub const TraceOutput = struct {
-    psqt: [layer_stacks]i32,
-    positional: [layer_stacks]i32,
-    correct_bucket: usize,
-};
-
 pub const EvalTraceInput = struct {
     inner_trace_ptr: [*]const u8,
     inner_trace_len: usize,
     nnue_internal_value: i32,
     nnue_white_cp: i32,
     final_white_cp: i32,
-};
-
-pub const NnueTraceInput = struct {
-    side_to_move_white: u8,
-    bucket_count: usize,
-    correct_bucket: usize,
-    psqt_cp: [*]const i32,
-    positional_cp: [*]const i32,
 };
 
 // ======================================================================== //
@@ -257,31 +243,19 @@ fn buildNnueTrace(
     nnue_acc.stackReset(accumulators);
 
     const trace = network_port.traceEvaluate(pos, accumulators, caches);
-    var psqt_raw: [layer_stacks]i32 = undefined;
-    var positional_raw: [layer_stacks]i32 = undefined;
-    var psqt_cp: [layer_stacks]i32 = undefined;
     var positional_cp: [layer_stacks]i32 = undefined;
-    var total_cp: [layer_stacks]i32 = undefined;
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        psqt_raw[bucket] = trace.psqt[bucket];
-        positional_raw[bucket] = trace.positional[bucket];
-        psqt_cp[bucket] = uci_wdl.toCp(trace.psqt[bucket], summary.wdl_material);
         positional_cp[bucket] = uci_wdl.toCp(trace.positional[bucket], summary.wdl_material);
-        // Total cp is to_cp of the raw sum, not the sum of the two rounded cp values.
-        total_cp[bucket] = uci_wdl.toCp(trace.psqt[bucket] + trace.positional[bucket], summary.wdl_material);
     }
 
     return nnue_misc_mod.formatTrace(.{
         .side_to_move_white = summary.side_to_move_white,
         .bucket_count = layer_stacks,
         .correct_bucket = trace.correct_bucket,
-        .psqt_raw = &psqt_raw,
-        .positional_raw = &positional_raw,
-        .psqt_cp = &psqt_cp,
+        .positional_raw = &trace.positional,
         .positional_cp = &positional_cp,
-        .total_cp = &total_cp,
     });
 }
 

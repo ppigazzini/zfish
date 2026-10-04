@@ -10,20 +10,16 @@ const nnue_feature = @import("nnue_feature");
 
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyHybridDelta = nnue_acc_rowops.applyHybridDelta;
-const applyHybridPsqtDelta = nnue_acc_rowops.applyHybridPsqtDelta;
 
 const nnue_ft = @import("nnue_ft");
 const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
-const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
-const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
 const nnue_refresh_cache = @import("nnue_refresh_cache");
 const RefreshCache = nnue_refresh_cache.RefreshCache;
 const cacheEntry = nnue_refresh_cache.cacheEntry;
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
-const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const cacheEntryPieceBb = nnue_refresh_cache.cacheEntryPieceBb;
 const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
@@ -43,8 +39,6 @@ const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
-const statePsqtConst = layout.statePsqtConst;
-const statePsqtMut = layout.statePsqtMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
@@ -257,20 +251,6 @@ pub fn updateHybrid(
         thr_added[0..pp.added],
         featureTransformerPsqWeights(feature_transformer),
         featureTransformerThreatWeights(feature_transformer),
-    );
-    applyHybridPsqtDelta(
-        statePsqtMut(psq_feature, latest_index, stack, perspective),
-        statePsqtConst(psq_feature, latest_index - 1, stack, perspective),
-        cacheEntryPsqtMut(new_entry_ptr),
-        cacheEntryPsqtMut(old_entry_ptr),
-        new_removed[0..new_diff.removed_len],
-        new_added[0..new_diff.added_len],
-        old_removed[0..old_diff.removed_len],
-        old_added[0..old_diff.added_len],
-        thr_removed[0..pp.removed],
-        thr_added[0..pp.added],
-        featureTransformerPsqPsqtWeights(feature_transformer),
-        featureTransformerThreatPsqtWeights(feature_transformer),
     );
 
     // Only the DESTINATION entry was refreshed in place; the source entry is untouched.

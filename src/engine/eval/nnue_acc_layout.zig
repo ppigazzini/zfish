@@ -29,8 +29,7 @@ pub const max_stack_size: usize = 247;
 pub const nnue_align: usize = dims.cache_line_bytes;
 pub const color_count: usize = 2;
 pub const half_dimensions: usize = 1024;
-pub const psqt_buckets: usize = 8;
-/// Set the lane count for transformBucket's clipped-ReLU pass. Independent of nnue_acc_rowops's
+/// Set the lane count for transform's clipped-ReLU pass. Independent of nnue_acc_rowops's
 /// row_tile_width -- they touch different loops, and a sweep of each finds different optima. Do
 /// not fold them into one knob.
 ///
@@ -124,8 +123,8 @@ pub const AccumulatorStack = opaque {};
 
 pub const BridgePositionSnapshot = position_snapshot.PositionSnapshot;
 
-pub const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32) + color_count * @sizeOf(bool);
-pub const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
+pub const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * @sizeOf(bool);
+pub const computed_offset = color_count * half_dimensions * @sizeOf(i16);
 pub const accumulator_state_bytes = roundUp(accumulator_bytes, nnue_align);
 pub const psq_diff_offset = accumulator_bytes;
 // The combined accumulator lives in the psq_feature slot (see nnue_acc_update.zig), so the
@@ -154,9 +153,9 @@ pub const threat_refresh_diff_offset = threat_diff_offset + @offsetOf(ThreatDiff
 
 // Assert what the accessors' @alignCasts assume. Every state base is reached as
 // `base + stride * index`, so each stride must carry the arena's 64-byte alignment forward or
-// the i16/i32 views below are unaligned -- which x86 tolerates and aarch64 does not. These are
-// arithmetic facts today; pin them so a change to half_dimensions, psqt_buckets or
-// max_stack_size fails the build instead of the target.
+// the typed views below are unaligned -- which x86 tolerates and aarch64 does not. These are
+// arithmetic facts today; pin them so a change to half_dimensions or max_stack_size fails
+// the build instead of the target.
 comptime {
     if (psq_state_stride % nnue_align != 0)
         @compileError("psq_state_stride must keep the arena's nnue_align");
@@ -170,6 +169,10 @@ comptime {
     // alignment. Pin that, since rounding it would silently move every psq diff.
     if (@alignOf(HalfDiff) != 1)
         @compileError("HalfDiff must stay alignment-free for the unrounded psq_diff_offset");
+    // The psq diff rides in the padding after the computed flags, inside the stride: it must
+    // end before the next state's accumulation begins.
+    if (psq_diff_offset + @sizeOf(HalfDiff) > psq_state_stride)
+        @compileError("the psq diff must fit inside psq_state_stride");
     // threatRequiresRefresh reads us/prev_ksq/ksq at threat_refresh_diff_offset + 0/1/2, so
     // that offset must land on ThreatDiffView's trailing scalars, not inside its list.
     if (threat_refresh_diff_offset - threat_diff_offset != @offsetOf(ThreatDiffView, "us"))
@@ -287,18 +290,6 @@ pub fn stateAccumulationMut(feature_kind: u8, index: usize, stack: *AccumulatorS
     const offset = perspective * half_dimensions * @sizeOf(i16);
     const ptr: [*]i16 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
     return ptr[0..half_dimensions];
-}
-
-pub fn statePsqtConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i32 {
-    const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
-    const ptr: [*]const i32 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
-    return ptr[0..psqt_buckets];
-}
-
-pub fn statePsqtMut(feature_kind: u8, index: usize, stack: *AccumulatorStack, perspective: u8) []i32 {
-    const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
-    const ptr: [*]i32 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
-    return ptr[0..psqt_buckets];
 }
 
 pub fn diffBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [*]u8 {
