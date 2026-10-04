@@ -15,14 +15,11 @@ const nnue_feature = @import("nnue_feature");
 
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
-const applyCombinedPsqtDelta = nnue_acc_rowops.applyCombinedPsqtDelta;
 
 const nnue_ft = @import("nnue_ft");
 const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
-const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
-const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
 const layout = @import("nnue_acc_layout.zig");
 const psq_feature = layout.psq_feature;
@@ -39,8 +36,6 @@ const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
-const statePsqtConst = layout.statePsqtConst;
-const statePsqtMut = layout.statePsqtMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
@@ -179,16 +174,6 @@ fn applySide(
         thr_added,
         featureTransformerPsqWeights(feature_transformer),
         featureTransformerThreatWeights(feature_transformer),
-    );
-    applyCombinedPsqtDelta(
-        statePsqtMut(psq_feature, target_index, stack, perspective),
-        statePsqtConst(psq_feature, computed_index, stack, perspective),
-        psq_removed,
-        psq_added,
-        thr_removed,
-        thr_added,
-        featureTransformerPsqPsqtWeights(feature_transformer),
-        featureTransformerThreatPsqtWeights(feature_transformer),
     );
     stateBytesMut(psq_feature, target_index, stack)[computed_offset + perspective] = 1;
 }

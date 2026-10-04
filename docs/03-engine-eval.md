@@ -31,13 +31,13 @@ for the same position.
 | `nnue_acc_update.zig` | the update algorithm: `evaluateSide`, the refresh path, and the fused incremental step |
 | `nnue_acc_entry.zig` | the two steps that start from a refresh-cache ENTRY: the entry diff both of them share, and `updateHybrid`, the same-half king move |
 | `nnue_acc_both.zig` | `applyCombinedBoth` — one ply taken for BOTH perspectives, decoding each diff once |
-| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, the refresh-fused and hybrid passes, and the PSQT deltas — all of them expressed through two sign-and-type-comptime row appliers, `tileRows` and `psqtRows` (upstream's `apply_psq_features`/`apply_threat_features`/`apply_psqt`) |
+| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, and the refresh-fused and hybrid passes — all of them expressed through one sign-and-type-comptime row applier, `tileRows` (upstream's `apply_psq_features`/`apply_threat_features`) |
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
 | `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 tiers that also carry VBMI2, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
-| `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`), `transformBucket` and its per-perspective half `transformPerspective` — the clipped-ReLU transform, which writes the NNZ record as it packs |
+| `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`), `transform` and its per-perspective half `transformPerspective` — the clipped-ReLU transform, which writes the NNZ record as it packs |
 | **inference** | |
-| `nnue_inference.zig` | the forward pass: the affine layers, bucket selection, and the psqt/positional split — it drives the activations, it does not own them |
+| `nnue_inference.zig` | the forward pass: the affine layers and bucket selection — it drives the activations, it does not own them |
 | `nnue_activations.zig` | the layer activations in every shape upstream emits: `sqrClippedReLU`, `clippedReLU`, and the fused `sqrClipPair`/`128`/`512` that produce both outputs in one pass, behind the `avx512_pair_activations` and `sse_pair_activations` tier gates. The forward driver picks a shape at comptime; the anchor is what pins that all of them agree |
 | `nnue_affine.zig` | `affineDpbusd` and the non-VNNI affine kernels: the AVX2/SSSE3 maddubs dots, the `OUT == 1` contiguous dot, the portable reduction, and `GroupIter` |
 | `nnue_affine_vnni.zig` | the AVX-512 VNNI kernel `affineVnni` — `vpdpbusd` plus the two sparse walks (index-list cursor under VBMI2, hoisted bitset otherwise) |
@@ -105,14 +105,14 @@ access is already bounded by a test it states itself (`pos + 2 <= src.len`,
 `pos >= src.len`, `out.len >= count`), so the check is redundancy over a proven bound —
 paid for at the one place in the parse that cannot afford it.
 
-The feature transformer is seven sections read in stream order — biases (LEB `i16`), threat weights (raw `i8`), threat PSQT weights
-(LEB `i32`), pawn-pair weights (raw `i8`), pawn-pair PSQT weights (LEB `i32`), psq
-weights (LEB `i16`), psq PSQT weights (LEB `i32`) — each written into its fixed,
-64-byte-aligned offset in the destination blob. The threat and pawn-pair weight (and
-PSQT) sections are framed separately in the stream but land in **one contiguous
-region each** — pawn-pair rows right after the threat rows — so a single index
-addresses either feature set's row (upstream's `threatAndPpWeights`). Affine layers are
-`i32` little-endian biases followed by `i8` weights, permuted on the way in through
+The feature transformer is four sections read in stream order — biases (LEB `i16`),
+threat weights (raw `i8`), pawn-pair weights (raw `i8`), psq weights (LEB `i16`) — each
+written into its fixed, 64-byte-aligned offset in the destination blob. The threat and
+pawn-pair weight sections are framed separately in the stream but land in **one
+contiguous region** — pawn-pair rows right after the threat rows — so a single index
+addresses either feature set's row (upstream's `threatAndPpWeights`). SFNNv17 removed
+the three `i32` PSQT sections that used to follow the threat, pawn-pair and psq weights.
+Affine layers are `i32` little-endian biases followed by `i8` weights, permuted on the way in through
 `weightIndexScrambled` (the SSSE3 layout the inference reads back; on every pair-activation
 tier — AVX2 and above, since the flag is `x86_64 and avx2` — `fc_1`/`fc_2` additionally
 fold in the paired packs' lane interleave, by a different map per width; see the flag
@@ -156,10 +156,10 @@ row of the wrong feature set — an evaluation that is a plausible number rather
 fault. The SFNNv16 change moved pawn-pawn interactions out of the
 threat inputs (which lost the pawn-pusher input and pawns as threat targets) and into
 this set. All three feed one shared **feature transformer** whose layout the same
-module fixes: biases, psq weights, the combined threat+pawn-pair weights, and two
-`i32` PSQT tables (`psqt_buckets = 8`; the threat+pawn-pair PSQT is likewise
-combined), each region 64-byte aligned. It produces `half_dimensions = 1024`
-accumulated values per perspective.
+module fixes: biases, psq weights and the combined threat+pawn-pair weights, each
+region 64-byte aligned. It produces `half_dimensions = 1024` accumulated values per
+perspective, and nothing else — SFNNv17 dropped the per-bucket PSQT output the
+transformer used to add straight to the score.
 
 That layout is derived **once**, for the same reason `pp_index_base` is. It used to be
 derived twice — `nnue_parse.zig` computed the offsets it *writes* each region at,
@@ -170,9 +170,9 @@ look: the net still loads, every gate still runs, and the evaluation is a plausi
 wrong number. Measured, not argued: on the pre-change tree, moving
 `psq_feature_dimensions` in `nnue_ft.zig` alone built clean and benched 4414749 nodes.
 
-`nnue_accumulator.transformBucket` turns the two perspectives' accumulators into the
-network input. It keeps only what is per-CALL — evaluate the stack, take the psqt
-difference, reset the NNZ record — and calls `transformPerspective` once per output half;
+`nnue_accumulator.transform` turns the two perspectives' accumulators into the
+network input. It keeps only what is per-CALL — evaluate the stack, reset the NNZ
+record — and calls `transformPerspective` once per output half;
 that is where the colour stops mattering, so the extracted function takes an OUTPUT
 position rather than a side to move. Per element it clamps to `[0,255]` and multiplies the two halves
 with a `>> 9` — the pairwise squared-clipped-ReLU — yielding 1024 `u8`. On every x86 tier
@@ -183,7 +183,8 @@ product and the saturating `packuswb` zeroes it on pack. The 256- and 512-bit pa
 interleave their 128-bit lanes, so one shuffle restores natural byte order — the
 permutation upstream instead folds into the weights at load time. It records which
 4-byte chunks are non-zero into the tier's NNZ record (`NnzOut` — the index list or the
-bitset, see below) in the same pass, while the values are still in registers, and returns the perspective-differenced PSQT value for the bucket.
+bitset, see below) in the same pass, while the values are still in registers. Nothing it
+produces depends on the layer-stack bucket.
 
 Above the transformer sit **8 layer stacks** (`layer_stacks = 8`), selected by
 material: `bucket = (piece_count - 1) / 4` (`nnue_inference.evaluate`). Each stack is
@@ -204,14 +205,14 @@ SSSE3-class tier (`sse_pair_activations` — SSSE3 without AVX2) runs the same f
 shape as `sqrClipPair128`; its packs concatenate in order, so the bytes land in
 natural order and the weight parse stays the identity. The forward output is
 `fc_2[0] + (fc_0[30] - fc_0[31])` scaled by `600*16 / (128*64*2)`, and `evaluate`
-divides both the psqt and positional halves by `output_scale = 16` before returning.
+divides it by `output_scale = 16` before returning.
 
 ## The accumulator
 
 `AccumulatorStack` (`nnue_acc_layout.zig`) is a raw, 64-aligned byte arena embedded
 in each `Worker` — one state per ply, `max_stack_size = 247`. A state holds both
-perspectives' `i16` accumulation and `i32` PSQT values, a per-perspective `computed`
-flag, and the ply's diff records. There is **one combined accumulator** (HalfKA +
+perspectives' `i16` accumulation, a per-perspective `computed` flag, and the ply's diff
+records. There is **one combined accumulator** (HalfKA +
 Threats + PawnPairs summed), living in the `psq_feature` storage slot.
 
 The search drives it from `src/engine/search/search_acc.zig`: `doMoveAcc` calls
@@ -381,8 +382,7 @@ region; the two out-lists swap for a backward walk, mirroring upstream's swapped
 `append_changed_indices` arguments). The
 apply itself: `nnue_acc_rowops.applyCombinedDelta` tiles the accumulator, holds each
 tile in a register, and walks the weight rows *inside* the tile — so the accumulator
-is loaded and stored once per tile rather than once per row. The PSQT delta
-(`applyCombinedPsqtDelta`) holds the 8-bucket i32 row as one vector the same way.
+is loaded and stored once per tile rather than once per row.
 Every weight pointer these kernels take carries `align(64)` and each row load asserts
 its alignment at the load site (`loadVec`/`loadW`): a runtime-offset slice of a
 many-pointer degrades to the element alignment, and non-VEX SSE folds a load into an
@@ -391,8 +391,7 @@ sse41 tier pays a separate `movdqu` per 16 weight bytes.
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (king square, perspective) — the
-accumulation, the PSQT values, and the board (plus its occupancy bitboard) that
-produced them. `refreshCombined` diffs the entry's stored board against the current
+accumulation and the board (plus its occupancy bitboard) that produced it. `refreshCombined` diffs the entry's stored board against the current
 one with two 32-byte vector compares into a changed-square bitboard, splits it into
 removed/added HalfKA rows by the cached and current occupancy (upstream's
 `get_changed_pieces` shape). At `nnue_feature.use_avx512_nnue_feature` (AVX512VBMI +
@@ -504,14 +503,14 @@ magnitude; instructions and branch misses pass it).
 
 Activations are `sqrClippedReLU` (`min(127, (clamp(x, -32768, 32767)^2) >> shift)` — the clamp before the square is what keeps the product in range) and `clippedReLU`
 (`clamp(x >> shift, 0, 127)`), written into a 128-byte `concat` that `fc_1` and
-`fc_2` read. `evaluateBucketRaw` returns the two halves — `psqt` from the
-transformer, `positional` from `propagateBucket` — and `evaluate` scales each by
-`output_scale` and returns their sum, one value, as upstream's `Network::evaluate` has
-since `f740707f`.
+`fc_2` read. `evaluateBucketRaw` runs the transform and then `propagateBucket`, and
+`evaluate` divides that by `output_scale` — one value, as upstream's `Network::evaluate`
+returns. The `eval` trace (`traceEvaluate`) transforms ONCE and runs every bucket's
+forward pass over the same bytes, which is sound only because the transformer's output
+no longer depends on the bucket.
 
 `evaluate.zig` turns it into the final score. `scaleEvaluation` is upstream's
-`scale_evaluation`: nothing downstream of the net sees its psqt/positional split any
-more. It normalises the net value and `simpleEval` (the side to move's material
+`scale_evaluation`. It normalises the net value and `simpleEval` (the side to move's material
 balance, `208 * pawn difference + non-pawn difference`) each into [-1024, 1024] with
 `x * 1024 / (|x| + 1024)`, takes their product over 512 as the ALIGNMENT, and adds
 `nnue * alignment / 65536 + optimism * alignment / 16384` to the net value — agreement

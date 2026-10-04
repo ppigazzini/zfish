@@ -1,11 +1,11 @@
 // Reach into the NNUE feature-transformer weight blob.
 //
 // Hold the typed accessors that hand back [*]const pointers to each weight region
-// (psq i16, threat i8, and the two psqt i32 tables). Split out of
-// nnue_accumulator.zig; pointer casts over the byte offsets, std-free. The offsets
-// themselves are NOT computed here: nnue_dimensions owns the layout, and nnue_parse
-// WRITES each region at those same declarations, so this reads back exactly where
-// the parse wrote. The accumulator core imports this and aliases the four accessors.
+// (psq i16, threat i8). Split out of nnue_accumulator.zig; pointer casts over the byte
+// offsets, std-free. The offsets themselves are NOT computed here: nnue_dimensions owns
+// the layout, and nnue_parse WRITES each region at those same declarations, so this
+// reads back exactly where the parse wrote. The accumulator core imports this and
+// aliases the two accessors.
 
 const dims = @import("nnue_dimensions");
 
@@ -16,8 +16,6 @@ const nnue_align: usize = dims.cache_line_bytes;
 // tail of this same region, so the threat weight accessor covers both feature sets.
 const feature_transformer_weights_offset = dims.weights_off;
 const feature_transformer_threat_weights_offset = dims.threat_weights_off;
-const feature_transformer_psqt_weights_offset = dims.psqt_weights_off;
-const feature_transformer_threat_psqt_weights_offset = dims.threat_psqt_weights_off;
 
 /// Expose an opaque handle to the loaded feature-transformer weight blob. A raw
 /// large-page byte arena whose layout is fixed by the .nnue file + SIMD access, so
@@ -40,16 +38,6 @@ pub fn featureTransformerPsqWeights(feature_transformer: *const FeatureTransform
 pub fn featureTransformerThreatWeights(feature_transformer: *const FeatureTransformer) [*]align(nnue_align) const i8 {
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
     return @ptrCast(@alignCast(bytes + feature_transformer_threat_weights_offset));
-}
-
-pub fn featureTransformerPsqPsqtWeights(feature_transformer: *const FeatureTransformer) [*]align(nnue_align) const i32 {
-    const bytes: [*]const u8 = @ptrCast(feature_transformer);
-    return @ptrCast(@alignCast(bytes + feature_transformer_psqt_weights_offset));
-}
-
-pub fn featureTransformerThreatPsqtWeights(feature_transformer: *const FeatureTransformer) [*]align(nnue_align) const i32 {
-    const bytes: [*]const u8 = @ptrCast(feature_transformer);
-    return @ptrCast(@alignCast(bytes + feature_transformer_threat_psqt_weights_offset));
 }
 
 test {

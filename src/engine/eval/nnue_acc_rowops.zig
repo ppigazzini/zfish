@@ -11,7 +11,6 @@
 const std = @import("std");
 
 const half_dimensions: usize = 1024;
-const psqt_buckets: usize = 8;
 
 /// Set the lane count for the FT weight-row add/sub tile. Sweep it as the only variable: on sse41
 /// 64 beats 32 by +3.4%/+4.7%; on avx512 256 beats 128 (measured -3.6% instr / -2.5% cycles at
@@ -63,7 +62,7 @@ inline fn loadVec(comptime T: type, comptime V: usize, comptime A: usize, p: [*]
 /// sign, both comptime here. `WT` is i16 for the HalfKA rows and i8 for the threat and
 /// pawn-pair rows, whose load widens to i16 the way upstream's `vec_convert_8_16` does.
 /// `IT` is the list's element type -- u16 for the HalfKA indices (upstream d96c183f), u32
-/// for the threat and pawn-pair ones -- the same axis upstream's `apply_psqt` templates on.
+/// for the threat and pawn-pair ones.
 inline fn tileRows(
     comptime WT: type,
     comptime IT: type,
@@ -117,22 +116,6 @@ inline fn tileRowsIncremental(
     std.debug.assert(rows.len == 1 or rows.len == 2);
     tileRow(WT, IT, add, acc, rows[0], weights, tile_off);
     if (rows.len > 1) tileRow(WT, IT, add, acc, rows[1], weights, tile_off);
-}
-
-/// Apply one feature list to the psqt accumulator -- upstream's `apply_psqt` (b0ee1440). The
-/// 8-bucket i32 row is one whole vector here, so there is no tile index to pass.
-inline fn psqtRows(
-    comptime IT: type,
-    comptime add: bool,
-    acc: *@Vector(psqt_buckets, i32),
-    rows: []const IT,
-    weights: [*]align(64) const i32,
-) void {
-    const V = @Vector(psqt_buckets, i32);
-    for (rows) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
-        acc.* = if (add) acc.* +% w else acc.* -% w;
-    }
 }
 
 /// Apply a whole row list to the accumulator, upstream's `apply_combined` way: tile the
@@ -283,100 +266,6 @@ pub fn applyHybridDelta(
     }
 }
 
-/// The psqt half of applyHybridDelta: one 8-bucket i32 vector, same term order.
-pub fn applyHybridPsqtDelta(
-    target: []i32,
-    computed: []const i32,
-    new_entry: []i32,
-    old_entry: []const i32,
-    new_removed: []const u16,
-    new_added: []const u16,
-    old_removed: []const u16,
-    old_added: []const u16,
-    thr_removed: []const u32,
-    thr_added: []const u32,
-    psq_weights: [*]align(64) const i32,
-    thr_weights: [*]align(64) const i32,
-) void {
-    const V = @Vector(psqt_buckets, i32);
-    var acc: V = new_entry[0..psqt_buckets].*;
-    psqtRows(u16, false, &acc, new_removed, psq_weights);
-    psqtRows(u16, true, &acc, new_added, psq_weights);
-    new_entry[0..psqt_buckets].* = acc;
-
-    acc +%= @as(V, computed[0..psqt_buckets].*);
-    acc -%= @as(V, old_entry[0..psqt_buckets].*);
-
-    psqtRows(u16, true, &acc, old_removed, psq_weights);
-    psqtRows(u16, false, &acc, old_added, psq_weights);
-    psqtRows(u32, false, &acc, thr_removed, thr_weights);
-    psqtRows(u32, true, &acc, thr_added, thr_weights);
-    target[0..psqt_buckets].* = acc;
-}
-
-/// The psqt half of applyRefreshFusedI16: one 8-bucket i32 vector; `cache` receives the
-/// psq-only value, `state` receives psq plus the active threat psqt rows.
-pub fn applyRefreshFusedPsqt(
-    cache: []i32,
-    state: []i32,
-    removed: []const u16,
-    added: []const u16,
-    active: []const u32,
-    psq_weights: [*]align(64) const i32,
-    thr_weights: [*]align(64) const i32,
-) void {
-    const V = @Vector(psqt_buckets, i32);
-    var acc: V = cache[0..psqt_buckets].*;
-    psqtRows(u16, false, &acc, removed, psq_weights);
-    psqtRows(u16, true, &acc, added, psq_weights);
-    cache[0..psqt_buckets].* = acc;
-    psqtRows(u32, true, &acc, active, thr_weights);
-    state[0..psqt_buckets].* = acc;
-}
-
-pub fn applyPsqtDelta(
-    target: []i32,
-    source: []const i32,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]align(64) const i32,
-) void {
-    @memcpy(target, source);
-
-    for (removed) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] -%= weights[row_offset + bucket];
-        }
-    }
-
-    for (added) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] +%= weights[row_offset + bucket];
-        }
-    }
-}
-
-// Keep the tile in ONE register across all rows, as the fused combined path below does: the
-// 8-bucket i32 row is a single vector, and the scalar 8-step inner loop these replaced stays
-// scalar forever -- the toolchain does not auto-vectorize integer loops. Per-row op order is
-// unchanged (removed then added), so ReleaseSafe sees identical intermediates.
-pub fn applyPsqtDeltaInPlace(
-    target: []i32,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]align(64) const i32,
-) void {
-    const V = @Vector(psqt_buckets, i32);
-    var acc: V = target[0..psqt_buckets].*;
-    psqtRows(u32, false, &acc, removed, weights);
-    psqtRows(u32, true, &acc, added, weights);
-    target[0..psqt_buckets].* = acc;
-}
-
 // Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
 // one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register,
 // with both feature sets' removed/added weight rows applied in-register (psq int16 rows
@@ -407,34 +296,6 @@ pub fn applyCombinedDelta(
         tileRows(i8, u32, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
     }
-}
-
-// Mirror applyCombinedDelta for psqt: one combined psqtAccumulation, both feature
-// sets applied (psq + threat psqt weights, both i32). Scalar -- PSQTBuckets is tiny.
-pub fn applyCombinedPsqtDelta(
-    target: []i32,
-    source: []const i32,
-    psq_removed: []const u16,
-    psq_added: []const u16,
-    thr_removed: []const u32,
-    thr_added: []const u32,
-    psq_weights: [*]align(64) const i32,
-    thr_weights: [*]align(64) const i32,
-) void {
-    // Fuse as upstream's apply_combined does for the psqt tile (nnue_accumulator.cpp:248-268):
-    // load the 8-bucket row into ONE register, apply both feature sets' removed/added columns
-    // in-register, store once. PSQTBuckets x i32 is a single 256-bit vector, so the update has
-    // no memory round-trip -- where a memcpy plus two in-memory passes wrote the row three
-    // times, and the auto-vectorizer leaves such integer loops scalar. The operation ORDER
-    // (psq removed, psq added, thr removed, thr added) is exactly the two-pass order it
-    // replaces, so every intermediate value matches and ReleaseSafe sees the identical run.
-    const V = @Vector(psqt_buckets, i32);
-    var acc: V = source[0..psqt_buckets].*;
-    psqtRows(u16, false, &acc, psq_removed, psq_weights);
-    psqtRows(u16, true, &acc, psq_added, psq_weights);
-    psqtRows(u32, false, &acc, thr_removed, thr_weights);
-    psqtRows(u32, true, &acc, thr_added, thr_weights);
-    target[0..psqt_buckets].* = acc;
 }
 
 test {

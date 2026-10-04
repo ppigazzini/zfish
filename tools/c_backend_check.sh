@@ -17,8 +17,8 @@
 #
 # WHAT A FAILURE MEANS. A node-count mismatch here is a divergence between two lowerings of the
 # same source. That is nearly always OUR bug -- a reliance on something the language does not
-# guarantee -- not a backend bug. Diagnose it that way first: `eval` on a fixed position narrows
-# it to psqt vs positional in one command.
+# guarantee -- not a backend bug. Diagnose it that way first: `eval` on a fixed position, diffed
+# against the LLVM build, says whether the net itself disagrees.
 #
 # THIS IS NOT A PERFORMANCE PATH. The emitted C carries no vector types (the backend renders
 # @Vector as a struct of scalars), so the result runs ~1.9x the instructions of the LLVM build.
@@ -120,7 +120,7 @@ if [ "$GOT" != "$ANCHOR" ]; then
     echo "c-backend: MISMATCH -- C lowering benched $GOT, anchor is $ANCHOR" >&2
     echo "c-backend: the two lowerings disagree; suspect a representation this code assumes" >&2
     echo "c-backend: but Zig does not guarantee. Narrow it with \`eval\` on a fixed position:" >&2
-    echo "c-backend: psqt correct + positional wrong points at the transform or the affine." >&2
+    echo "c-backend: a bucket that differs from the LLVM build's points at the transform or the affine." >&2
     exit 1
 fi
 echo "c-backend: OK -- C lowering reproduces the anchor ($GOT)"

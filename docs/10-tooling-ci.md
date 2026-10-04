@@ -856,8 +856,9 @@ downstream noticed.
 
 A mismatch here is a divergence between two lowerings of one source, so read it as **our**
 bug first — a reliance on something the language does not guarantee — not a backend bug.
-`eval` on a fixed position narrows it in one command: psqt correct with positional wrong
-points at the transform or the affine.
+`eval` on a fixed position, diffed against the LLVM build, narrows it in one command: a
+bucket that differs points at the transform or the affine layers, and an identical trace
+under a different node count points at the search.
 
 Two frictions are inherent, not defects. The C backend cannot use LLD, so `-Dlto=false` is
 required. And it emits LLVM target intrinsics as extern symbols whose asm name *is* the

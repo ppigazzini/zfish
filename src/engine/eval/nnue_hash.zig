@@ -77,16 +77,14 @@ pub fn featureTransformerHashValue() u32 {
 }
 
 // Compute FeatureTransformer::get_content_hash. The raw-data hashes run in member-value
-// order: biases, weights, psqtWeights, threatAndPpWeights, threatAndPpPsqtWeights (each
-// threat region spans FullThreats' rows followed by PP_3Wide's).
+// order: biases, weights, threatAndPpWeights (the threat region spans FullThreats' rows
+// followed by PP_3Wide's).
 pub fn featureTransformerContentHash(ft: [*]const u8) usize {
     const p = nnue_dims;
     var h: usize = 0;
     rawDataHash(&h, ft[p.biases_off..][0 .. p.biases_count * 2]);
     rawDataHash(&h, ft[p.weights_off..][0 .. p.psq_weights_count * 2]);
-    rawDataHash(&h, ft[p.psqt_weights_off..][0 .. p.psqt_weights_count * 4]);
     rawDataHash(&h, ft[p.threat_weights_off..][0..p.threat_weights_count]);
-    rawDataHash(&h, ft[p.threat_psqt_weights_off..][0 .. p.threat_psqt_weights_count * 4]);
     hashCombine(&h, featureTransformerHashValue());
     return h;
 }

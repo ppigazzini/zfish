@@ -28,7 +28,7 @@ pub const thread_pool_size: usize = 48;
 // Equal nnue_acc_layout.arena_bytes (both state arrays + the trailing size field,
 // 64-rounded); search_id comptime-asserts the equality. The size-sentinel offset below
 // (arena end - 64) addresses the arena's live size field.
-pub const accumulator_stack_size: usize = 1154048;
+pub const accumulator_stack_size: usize = 1138240;
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = root_move.root_move_footprint;
 

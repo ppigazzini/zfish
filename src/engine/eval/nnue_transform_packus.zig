@@ -2,7 +2,7 @@
 //
 // Upstream's transform body (nnue_feature_transformer.h) reached at each x86 vector
 // width, split out of nnue_acc_rowops.zig: the row add/sub kernels there feed the
-// ACCUMULATOR, these feed transformBucket's output bytes, and the two share nothing
+// ACCUMULATOR, these feed transform's output bytes, and the two share nothing
 // but the file they used to sit in. Self-contained: comptime tier gates, the three
 // LLVM pack/mulhi intrinsic declarations, one kernel per width, and the scalar-
 // reference tests that pin the trick. nnue_accumulator.zig is the only consumer.

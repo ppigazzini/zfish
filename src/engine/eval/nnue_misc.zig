@@ -4,15 +4,11 @@ pub const NnueTraceInput = struct {
     side_to_move_white: u8,
     bucket_count: usize,
     correct_bucket: usize,
-    // upstream format_cp_aligned_dot(v) (nnue_misc.cpp:45) takes the SIGN from the raw internal
-    // value v and the MAGNITUDE from to_cp(v). The *_raw arrays drive the sign; the *_cp arrays
-    // the magnitude. total_cp is to_cp(psqt_raw + positional_raw) -- cp-of-sum, since upstream
-    // formats to_cp(t.psqt + t.positional), NOT the sum of the two already-rounded cp values.
-    psqt_raw: [*]const i32,
+    // upstream format_cp_aligned_dot(v) (nnue_misc.cpp) takes the SIGN from the raw internal
+    // value v and the MAGNITUDE from to_cp(v). The raw array drives the sign; the cp array the
+    // magnitude.
     positional_raw: [*]const i32,
-    psqt_cp: [*]const i32,
     positional_cp: [*]const i32,
-    total_cp: [*]const i32,
 };
 
 pub fn formatTrace(input: NnueTraceInput) ?[]u8 {
@@ -32,24 +28,18 @@ fn formatTraceAlloc(input: NnueTraceInput) ![]u8 {
         allocator,
         if (input.side_to_move_white != 0) "White to move)\n" else "Black to move)\n",
     );
-    try buffer.appendSlice(allocator, "+------------+------------+------------+------------+\n");
-    try buffer.appendSlice(allocator, "|   Bucket   |  Material  | Positional |   Total    |\n");
-    try buffer.appendSlice(allocator, "|            |   (PSQT)   |  (Layers)  |            |\n");
-    try buffer.appendSlice(allocator, "+------------+------------+------------+------------+\n");
+    try buffer.appendSlice(allocator, "+------------+------------+\n");
+    try buffer.appendSlice(allocator, "|   Bucket   | Evaluation |\n");
+    try buffer.appendSlice(allocator, "+------------+------------+\n");
 
     var bucket: usize = 0;
     while (bucket < input.bucket_count) : (bucket += 1) {
         var bucket_buffer: [64]u8 = undefined;
-        // Match `"|  " << bucket << "        " << " |  "` (nnue_misc.cpp:78-79) byte-for-
-        // byte: upstream closes each cell with `"  " << " |  "`, i.e. THREE spaces before
-        // the pipe, not two. Every column was one space narrow.
+        // Match `"|  " << bucket << "         |  "` (nnue_misc.cpp) byte-for-byte, and close
+        // the cell with `"   |"`: THREE spaces before the pipe, not two.
         const bucket_text = std.fmt.bufPrint(&bucket_buffer, "|  {d}         |  ", .{bucket}) catch unreachable;
         try buffer.appendSlice(allocator, bucket_text);
-        try appendAlignedDot(&buffer, input.psqt_raw[bucket], input.psqt_cp[bucket]);
-        try buffer.appendSlice(allocator, "   |  ");
         try appendAlignedDot(&buffer, input.positional_raw[bucket], input.positional_cp[bucket]);
-        try buffer.appendSlice(allocator, "   |  ");
-        try appendAlignedDot(&buffer, input.psqt_raw[bucket] + input.positional_raw[bucket], input.total_cp[bucket]);
         try buffer.appendSlice(allocator, "   |");
         if (bucket == input.correct_bucket) {
             try buffer.appendSlice(allocator, " <-- this bucket is used");
@@ -57,7 +47,7 @@ fn formatTraceAlloc(input: NnueTraceInput) ![]u8 {
         try buffer.append(allocator, '\n');
     }
 
-    try buffer.appendSlice(allocator, "+------------+------------+------------+------------+\n");
+    try buffer.appendSlice(allocator, "+------------+------------+\n");
 
     return buffer.toOwnedSlice(allocator);
 }
@@ -90,28 +80,30 @@ fn absInt(value: i32) i32 {
 
 // --- tests --------------------------------------------------------------
 test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
-    const psqt = [_]i32{22}; // +0.22
-    const positional = [_]i32{-76}; // -0.76 ; total -54 -> -0.54
-    const total = [_]i32{-54};
+    const raw = [_]i32{ 22, -76 };
+    const cp = [_]i32{ 22, -76 }; // +0.22, -0.76
     const s = formatTrace(.{
         .side_to_move_white = 1,
-        .bucket_count = 1,
-        .correct_bucket = 0,
-        .psqt_raw = &psqt,
-        .positional_raw = &positional,
-        .psqt_cp = &psqt,
-        .positional_cp = &positional,
-        .total_cp = &total,
+        .bucket_count = 2,
+        .correct_bucket = 1,
+        .positional_raw = &raw,
+        .positional_cp = &cp,
     }).?;
     defer std.heap.c_allocator.free(s);
     const out = s;
 
-    try std.testing.expect(std.mem.find(u8, out, "White to move)") != null);
-    // Pin the sign + width-6 float format (centipawns*0.01) byte-for-byte:
-    try std.testing.expect(std.mem.find(u8, out, "+  0.22") != null);
-    try std.testing.expect(std.mem.find(u8, out, "-  0.76") != null);
-    try std.testing.expect(std.mem.find(u8, out, "-  0.54") != null);
-    try std.testing.expect(std.mem.find(u8, out, "<-- this bucket is used") != null);
+    // Pin the whole table byte-for-byte against upstream's nnue_misc.cpp layout: the sign +
+    // width-6 float cell (centipawns*0.01), three spaces before each closing pipe.
+    try std.testing.expectEqualStrings(
+        "NNUE network contributions (Normalized, White to move)\n" ++
+            "+------------+------------+\n" ++
+            "|   Bucket   | Evaluation |\n" ++
+            "+------------+------------+\n" ++
+            "|  0         |  +  0.22   |\n" ++
+            "|  1         |  -  0.76   | <-- this bucket is used\n" ++
+            "+------------+------------+\n",
+        out,
+    );
 }
 
 test "formatTrace: black-to-move header" {
@@ -120,11 +112,8 @@ test "formatTrace: black-to-move header" {
         .side_to_move_white = 0,
         .bucket_count = 1,
         .correct_bucket = 9, // no bucket marked
-        .psqt_raw = &z,
         .positional_raw = &z,
-        .psqt_cp = &z,
         .positional_cp = &z,
-        .total_cp = &z,
     }).?;
     defer std.heap.c_allocator.free(s);
     const out = s;

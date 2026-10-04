@@ -296,7 +296,7 @@ test "fuzz: make/unmake of every move preserves the legal-move count" {
 
 // Exercise the whole eval crown jewel via the NNUE forward pass, which the board fuzz above
 // never reaches: feature extraction from the position, a full accumulator refresh, the
-// feature-transformer + fully-connected layers, and the psqt/positional bucket blend. The
+// feature transformer, and the bucket's fully-connected layers. The
 // accumulator stack + refresh cache are opaque byte blocks (sized by worker_layout), reused
 // across iterations (single-threaded fuzz) exactly like the eval-trace command's static
 // arenas. Built under ReleaseSafe so an OOB feature index, a mis-aligned FT read, or an
@@ -356,9 +356,9 @@ fn fuzzNnueEval(_: void, smith: *std.testing.Smith) anyerror!void {
     const biases: [*]const i16 = @ptrCast(@alignCast(network.ftPtr().?));
     nnue_acc.clearRefreshCache(cache, biases);
 
-    // The net returns one value now: the sum of the two halves this bounded at 1 << 22 each.
+    // Bound the net's one value, the forward pass alone since SFNNv17 dropped the psqt half.
     const value = network.evaluate(&p, stack, cache);
-    const limit: i32 = 1 << 23;
+    const limit: i32 = 1 << 22;
     if (value > limit or value < -limit) return error.NnueValueOutOfRange;
 
     while (ply > 0) {
