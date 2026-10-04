@@ -395,7 +395,7 @@ test "weightIndexScrambled's pair interleave matches the upstream ScrambledInput
     try testing.expectEqual(@as(usize, 32 / 4 * 128 + 1), weightIndexScrambled(33, 64, 32, true));
 
     // The map is a bijection on every input index (weights neither collide nor drop).
-    // Typed @splat, not `[_]bool{false} ** 128`: Zig master (0.17) rejects `**`
+    // Typed @splat, not `[_]bool{false} ** 128`: Zig 0.17 rejects `**`
     // directly after `}` -- the cross-version idiom the master-compat lane guards.
     var seen: [128]bool = @splat(false);
     var i: usize = 0;

@@ -250,8 +250,8 @@ CPU burn shows.
 `alignedLargePagesAlloc` matches upstream's `aligned_large_pages_alloc`: no zero-fill
 (in the **safe modes** it poisons the block with 0xAA so a read-before-write consumer
 fails loudly instead of riding heap history). ReleaseSafe is in that set on purpose and
-is the half that actually runs: `zig build -Doptimize=Debug` SEGVs the Zig 0.16 compiler
-itself, so a Debug-only poison could never execute inside the engine — it lived only in
+is the half that actually runs: `zig build -Doptimize=debug` SEGVs the Zig compiler
+itself (0.16 and 0.17.0 alike), so a Debug-only poison could never execute inside the engine — it lived only in
 unit tests. `memory.poison_uninitialized` names the predicate, `page_alloc.zig` restates
 it (engine code cannot import platform), and the shipped ReleaseFast binary prunes both
 branches at comptime. The audit is therefore a runnable claim: a ReleaseSafe engine with

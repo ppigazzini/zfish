@@ -28,15 +28,25 @@ pub const max: usize = 16;
 
 const V16i32 = @Vector(16, i32);
 const V16mask = @Vector(16, bool);
+// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
+// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
+// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
+// argument type") and the AVX-512 tiers stop building.
+const V16bits = @Vector(16, u1);
 
 // LLVM intrinsic names/argument orders verified empirically: compiled each upstream
 // intrinsic call with clang -O2 -mavx512f -mavx512dq -S -emit-llvm and read the
 // resulting `declare`/`call` lines, rather than assuming a signature from the C
 // intrinsic name. In particular `_mm512_mask_expand_epi32(src, k, a)` lowers to
 // `@llvm.x86.avx512.mask.expand.v16i32(a, src, mask)` -- note src and a SWAP position.
-extern fn @"llvm.x86.avx512.mask.expand.v16i32"(a: V16i32, src: V16i32, mask: V16mask) V16i32;
-extern fn @"llvm.x86.avx512.kadd.w"(a: V16mask, b: V16mask) V16mask;
-extern fn @"llvm.x86.avx512.vpermi2var.d.512"(a: V16i32, idx: V16i32, b: V16i32) V16i32;
+// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+// convention on Linux and macOS, where the declaration lowers exactly as before.
+extern fn @"llvm.x86.avx512.mask.expand.v16i32"(a: V16i32, src: V16i32, mask: V16bits) callconv(.{ .x86_64_sysv = .{} }) V16i32;
+extern fn @"llvm.x86.avx512.kadd.w"(a: V16bits, b: V16bits) callconv(.{ .x86_64_sysv = .{} }) V16bits;
+extern fn @"llvm.x86.avx512.vpermi2var.d.512"(a: V16i32, idx: V16i32, b: V16i32) callconv(.{ .x86_64_sysv = .{} }) V16i32;
 
 // Compose and decompose the two 4-byte lanes field by field rather than @bitCast'ing
 // the struct: raw_move+reserved (offset 0) is the "move" lane, value (offset 4) the
@@ -94,8 +104,8 @@ pub const MoveSorter = struct {
         // "sorted_values[i] < value" is always a contiguous suffix; kadd (== -1,
         // i.e. subtract 1 from that suffix-as-integer) flips it to "every bit except
         // the insertion point".
-        const cmplt: V16mask = self.sorted_values < value;
-        const all_ones: V16mask = @splat(true);
+        const cmplt: V16bits = @intFromBool(self.sorted_values < value);
+        const all_ones: V16bits = @splat(1);
         const expand = @"llvm.x86.avx512.kadd.w"(cmplt, all_ones);
 
         self.sorted_values = @"llvm.x86.avx512.mask.expand.v16i32"(self.sorted_values, value, expand);

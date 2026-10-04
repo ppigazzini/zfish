@@ -32,6 +32,11 @@ pub const use_avx512_threats = builtin.cpu.arch == .x86_64 and
 
 const V64u8 = @Vector(64, u8);
 const V64mask = @Vector(64, bool);
+// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
+// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
+// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
+// argument type") and the AVX-512 tiers stop building.
+const V64bits = @Vector(64, u1);
 const V16i32 = @Vector(16, i32);
 
 // LLVM intrinsic names/argument orders verified empirically: compiled each upstream
@@ -44,9 +49,14 @@ const V16i32 = @Vector(16, i32);
 // `llvm.x86.avx512.permvar.qi.512(a, idx)` (data first, index second) followed by a
 // separate `select` against the mask -- the masking is not part of the permute
 // intrinsic itself.
-extern fn @"llvm.x86.avx512.mask.compress.v64i8"(a: V64u8, src: V64u8, mask: V64mask) V64u8;
-extern fn @"llvm.x86.avx512.permvar.qi.512"(a: V64u8, idx: V64u8) V64u8;
-extern fn @"llvm.x86.avx512.pternlog.d.512"(a: V16i32, b: V16i32, c: V16i32, imm: i32) V16i32;
+// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+// convention on Linux and macOS, where the declaration lowers exactly as before.
+extern fn @"llvm.x86.avx512.mask.compress.v64i8"(a: V64u8, src: V64u8, mask: V64bits) callconv(.{ .x86_64_sysv = .{} }) V64u8;
+extern fn @"llvm.x86.avx512.permvar.qi.512"(a: V64u8, idx: V64u8) callconv(.{ .x86_64_sysv = .{} }) V64u8;
+extern fn @"llvm.x86.avx512.pternlog.d.512"(a: V16i32, b: V16i32, c: V16i32, imm: i32) callconv(.{ .x86_64_sysv = .{} }) V16i32;
 
 const all_squares: V64u8 = blk: {
     var arr: [64]u8 = undefined;
@@ -72,7 +82,7 @@ pub fn writeMultipleDirties(
     const count: usize = @popCount(mask);
 
     const board: V64u8 = pos.board;
-    const mask_v: V64mask = @bitCast(mask);
+    const mask_v: V64bits = @bitCast(mask);
 
     // Compress: the compacted list of set-bit square indices, in order, in the low
     // `count` lanes; the rest (from the maskz zero passthru) are 0.

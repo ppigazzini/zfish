@@ -102,9 +102,9 @@ const part_offsets: [layers_per_stack][2]usize = blk: {
     var offsets: [layers_per_stack][2]usize = undefined;
     var off: usize = 0;
     for (0..layers_per_stack) |idx| {
-        offsets[idx][@intFromEnum(LayerPart.biases)] = off;
+        offsets[idx][@backingInt(LayerPart.biases)] = off;
         off += alignPart(layer_biases_bytes[idx]);
-        offsets[idx][@intFromEnum(LayerPart.weights)] = off;
+        offsets[idx][@backingInt(LayerPart.weights)] = off;
         off += alignPart(layer_weights_bytes[idx]);
     }
     break :blk offsets;
@@ -130,13 +130,13 @@ pub fn layerStorage(bucket: usize, idx: usize, part: LayerPart, n: usize) ?[*]u8
         // tiles gaplessly (comptime-asserted in nnue_parse) and needs no fill for.
         @memset(layer_arena.?[0 .. stack_stride * layer_stacks_n], 0);
     }
-    return layer_arena.? + bucket * stack_stride + part_offsets[idx][@intFromEnum(part)];
+    return layer_arena.? + bucket * stack_stride + part_offsets[idx][@backingInt(part)];
 }
 
 pub fn layerPtr(bucket: usize, idx: usize, part: LayerPart) ?[*]const u8 {
     if (bucket >= layer_stacks_n or idx >= layers_per_stack) return null;
     const arena = layer_arena orelse return null;
-    return arena + bucket * stack_stride + part_offsets[idx][@intFromEnum(part)];
+    return arena + bucket * stack_stride + part_offsets[idx][@backingInt(part)];
 }
 
 test {

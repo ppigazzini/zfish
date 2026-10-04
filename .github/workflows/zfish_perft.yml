@@ -56,7 +56,7 @@ jobs:
 
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       # Perft never evaluates -- but the engine loads the net at STARTUP and terminates with
       # an ERROR block if it is missing, printing no count at all. So this lane needs the net

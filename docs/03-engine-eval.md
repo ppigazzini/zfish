@@ -387,7 +387,10 @@ Every weight pointer these kernels take carries `align(64)` and each row load as
 its alignment at the load site (`loadVec`/`loadW`): a runtime-offset slice of a
 many-pointer degrades to the element alignment, and non-VEX SSE folds a load into an
 op's `m128` operand only when 16-byte alignment is provable — without the assert the
-sse41 tier pays a separate `movdqu` per 16 weight bytes.
+sse41 tier pays a separate `movdqu` per 16 weight bytes. On an Apple CPU model `tileRows`
+sums the i8 rows it removes and subtracts the sum once (`apple_tuned`): the same wrapping
+value, dodging an LLVM 22 miscompile of the per-row subtract
+([08-idiomatic-zig.md](08-idiomatic-zig.md)).
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (king square, perspective) — the

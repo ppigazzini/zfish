@@ -112,7 +112,7 @@ ROWS=(
     # is exactly the coverage the mmap port took away and `liveLargePageBlocks` gives back.
     # A sibling made the same mutation a permanent row rather than a thing done once, which
     # is the difference between a gate and a memory of having checked.
-    "test|src/platform/memory.zig|pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {\n|pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {\n    if (@import(\"builtin\").mode != .Debug) return;\n|a large-page arena is never given back"
+    "test|src/platform/memory.zig|pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {\n|pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {\n    if (@import(\"builtin\").mode != .debug) return;\n|a large-page arena is never given back"
 )
 
 if [ "${1:-}" = "--list" ]; then

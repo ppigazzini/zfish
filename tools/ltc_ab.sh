@@ -87,7 +87,7 @@ for f in "$A" "$B"; do [ -x "$f" ] || die "$f is not executable"; done
 # exit 2 so a caller testing the exit code cannot read "could not measure" as "did not
 # regress" -- the rule tools/perf_budget.sh already states for the same syscall.
 COUNTERS=$WORK/perf_counters
-zig build-exe "$REPO/tools/perf_counters.zig" -O ReleaseFast -femit-bin="$COUNTERS" \
+zig build-exe "$REPO/tools/perf_counters.zig" -O fast -femit-bin="$COUNTERS" \
     >/dev/null 2>&1 || die "cannot build tools/perf_counters.zig"
 "$COUNTERS" --wrap -o "$WORK/probe" --core "$ENGINE_CORE" -- /bin/true >/dev/null 2>&1
 grep -q 'instructions=[1-9]' "$WORK/probe" 2>/dev/null ||

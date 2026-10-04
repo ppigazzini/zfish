@@ -32,21 +32,26 @@ const use_avx2_madd = builtin.cpu.arch == .x86_64 and
 const use_maddubs = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3);
 
+// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+// convention on Linux and macOS, where the declaration lowers exactly as before.
 const pmaddubsw128 = struct {
-    extern fn @"llvm.x86.ssse3.pmadd.ub.sw.128"(@Vector(16, i8), @Vector(16, i8)) @Vector(8, i16);
+    extern fn @"llvm.x86.ssse3.pmadd.ub.sw.128"(@Vector(16, i8), @Vector(16, i8)) callconv(.{ .x86_64_sysv = .{} }) @Vector(8, i16);
 }.@"llvm.x86.ssse3.pmadd.ub.sw.128";
 
 const pmaddwd128 = struct {
-    extern fn @"llvm.x86.sse2.pmadd.wd"(@Vector(8, i16), @Vector(8, i16)) @Vector(4, i32);
+    extern fn @"llvm.x86.sse2.pmadd.wd"(@Vector(8, i16), @Vector(8, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(4, i32);
 }.@"llvm.x86.sse2.pmadd.wd";
 
 // AVX2 widens the SSSE3 maddubs dot to 256 bits: 8 outputs per pmaddubsw+pmaddwd step, not 4.
 const pmaddubsw256 = struct {
-    extern fn @"llvm.x86.avx2.pmadd.ub.sw"(@Vector(32, i8), @Vector(32, i8)) @Vector(16, i16);
+    extern fn @"llvm.x86.avx2.pmadd.ub.sw"(@Vector(32, i8), @Vector(32, i8)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i16);
 }.@"llvm.x86.avx2.pmadd.ub.sw";
 
 const pmaddwd256 = struct {
-    extern fn @"llvm.x86.avx2.pmadd.wd"(@Vector(16, i16), @Vector(16, i16)) @Vector(8, i32);
+    extern fn @"llvm.x86.avx2.pmadd.wd"(@Vector(16, i16), @Vector(16, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(8, i32);
 }.@"llvm.x86.avx2.pmadd.wd";
 
 /// Yield the input groups a layer must accumulate: every group when dense, only the

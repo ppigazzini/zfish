@@ -17,6 +17,9 @@ set -eu
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${1:-$REPO/zig-out/bin/stockfish}"
+# Anchor a relative path to the cwd it was given in: each workload runs the binary from
+# resources/, and `zig build` passes the artifact relative to the build root.
+case "$BIN" in /*) ;; *) BIN="$PWD/$BIN" ;; esac
 RES="$REPO/resources"
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT

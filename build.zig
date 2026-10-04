@@ -98,12 +98,12 @@ pub fn build(b: *std.Build) void {
     // 3,922,860,311 instructions, -3.51%, which is 22% of the whole instruction gap against
     // upstream -- from a flag, not code.
     //
-    // Default ON for Linux, OFF elsewhere, because the Zig 0.16 toolchain cannot link it
-    // on the other owned targets -- not a zfish limit, and not fixable from here:
+    // Default ON for Linux, OFF elsewhere, because the Zig toolchain (0.16, and still 0.17.0)
+    // cannot link it on the other owned targets -- not a zfish limit, and not fixable from here:
     //   -Dos=macos            "LTO requires using LLD", and forcing use_lld then gives
     //                         "using LLD to link macho files is unsupported". Both paths refuse.
     //   -Dos=windows          mingw long-double math is unresolved under LTO (frexpl, atanl,
-    //                         copysignl, __isnanl ...), 39 undefined symbols.
+    //                         copysignl, __isnanl ...), 54 undefined symbols under 0.17.0.
     // Linux is where every gate and the CI parity lane run, so it gets the win; the
     // cross-targets keep linking. -Dlto=false/true overrides either way.
     const lto_default = os_choice == .linux;
@@ -243,7 +243,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/parity_harness.zig"),
             .target = b.graph.host,
-            .optimize = .ReleaseSafe,
+            .optimize = .safe,
         }),
     });
 
@@ -457,7 +457,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("tools/golden_coverage.zig"),
             .target = b.graph.host,
             // .Debug for the checking allocator, as the other lints do (build/structural.zig).
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     const golden_coverage_run = b.addRunArtifact(golden_coverage_tool);
@@ -478,7 +478,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/lane_coverage.zig"),
             .target = b.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     // `register` joins `parity` itself, before classifying, so the gate is in its own

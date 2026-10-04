@@ -54,13 +54,13 @@ do_move	move_do\.doMove$|Position::do_move\(Stockfish::Move, Stockfish::StateInf
 undo_move	move_do\.undoMove$|Position::undo_move
 do_null_move	move_do\.doNullMove$|Position::do_null_move
 # zfish makes `put_piece` comptime where upstream leaves it a runtime bool, so zfish's TWO
-# surviving symbols answer upstream's ONE `<true>` instantiation, and they sum to it exactly
-# (303,078 == 303,078 at bench 16 1 8). The `compute_ray=false` pair reaches
-# `updatePieceThreatsRays` directly and LLVM inlines it away entirely, so upstream's
-# `<false>` (81,022) has nothing here to compare against -- the `isDraw` case above. The row
-# used to sum zfish's two against upstream's two and report 0.789, which read as an
-# algorithm divergence that was never there.
-threats	move_do_threats\.updatePieceThreats__anon|update_piece_threats<true>
+# surviving symbols answer upstream's ONE `<true>` instantiation, and they sum to it exactly.
+# The `compute_ray=false` pair reaches `updatePieceThreatsRays` directly and LLVM inlines it
+# away entirely, so upstream's `<false>` has nothing here to compare against -- the `isDraw`
+# case above. The row used to sum zfish's two against upstream's two and report 0.789, which
+# read as an algorithm divergence that was never there. The suffix is Zig's name for a
+# generic instance: `__func_N` since 0.17, `__anon_N` before it.
+threats	move_do_threats\.updatePieceThreats__func_|update_piece_threats<true>
 # `applyCombinedDelta` still exists in nnue_acc_rowops.zig but LLVM inlines it away, so the
 # old row matched NOTHING here and read 0 against upstream's 150,323. Retargeted at the
 # callee that survives: `applyCombinedPsqtDelta` is called once beside it at both sites

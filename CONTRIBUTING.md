@@ -5,7 +5,7 @@ upstream. This guide covers the essentials.
 
 ## Building
 
-See the [README](README.md#build): install **Zig 0.16.0** and run `zig build`
+See the [README](README.md#build): install **Zig 0.17.0** and run `zig build`
 (then `zig build net` for the NNUE network). There are no other dependencies.
 
 ## The golden rule: preserve the bench signature

@@ -8,7 +8,7 @@
 # (src/platform/syzygy/fuzz_targets.zig, step `fuzz-tb`) and the same parse driven end to
 # end through a probe (src/platform/syzygy/fuzz_probe.zig, step `fuzz-tb-probe`) -- each
 # on its OWN per-target step, for the slot reason spelled out at that step. All are built
-# under -Doptimize=ReleaseSafe so a discovered input that trips a Zig safety check --
+# under -Doptimize=safe so a discovered input that trips a Zig safety check --
 # out-of-bounds, integer overflow, pointer misalignment, null-unwrap -- crashes the run
 # with the reproducer instead of reading garbage. The fuzzer catches such bugs before they
 # reach the bench/parity goldens.
@@ -37,7 +37,7 @@ jobs:
 
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       # The fuzz targets call position.initRuntime() which needs the NNUE net on
       # disk (same cache key as the parity workflow -- a Zig-only net bump busts it).
@@ -88,7 +88,7 @@ jobs:
           for step in fuzz-board fuzz-tb fuzz-tb-probe; do
             log="$RUNNER_TEMP/$step.log"
             timeout --preserve-status --signal=INT 300 \
-              zig build "$step" --fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe 2>&1 | tee "$log"
+              zig build "$step" --fuzz -Darch=x86-64-sse41-popcnt -Doptimize=safe 2>&1 | tee "$log"
             ec=${PIPESTATUS[0]}
             if grep -q "input saved to '" "$log"; then
               echo "fuzz: $step FOUND A CRASH -- safety-check trace and reproducing input above" >&2
@@ -134,7 +134,7 @@ jobs:
 
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       - name: Cache NNUE network
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -151,7 +151,7 @@ jobs:
           python-version: "3.14"
 
       - name: Build (ReleaseSafe)
-        run: zig build -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+        run: zig build -Darch=x86-64-sse41-popcnt -Doptimize=safe
 
       # ~10 min of streams; the harness bounds every stream itself (verbatim
       # closing quit + a per-stream timeout), so no outer timeout wrapper.

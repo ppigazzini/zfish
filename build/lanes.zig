@@ -136,8 +136,8 @@ pub fn register(
     // net), so it costs the aggregate nothing.
     aggregates[0].dependOn(step);
 
-    // The build root, through the ONE shim that knows which std.Build field holds it.
-    // Naming `b.build_root` here is what took the 0.17 lane down at configure time.
+    // The build root, through the ONE shim that knows which std.Build field holds it. Name
+    // no such field here: a field the next compiler drops is a configure error for its lane.
     cmd.addArg(config.repoPath(b, "."));
     cmd.addFileArg(b.path("tools/lane_excuses.txt"));
     // `<name>|<agg|->|<coverer,coverer,...>` -- see tools/lane_coverage.zig for the reading.

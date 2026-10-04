@@ -99,7 +99,7 @@ For building, the bench gate, and the contribution workflow, see the root
 
 ## Quick start
 
-Requires **Zig 0.16.0**; there are no other dependencies.
+Requires **Zig 0.17.0**; there are no other dependencies.
 
 ```bash
 zig build          # build the engine (ReleaseFast) -> zig-out/bin/stockfish
@@ -115,7 +115,7 @@ not embedded in the binary.
 
 | Layer | Technology |
 |---|---|
-| Language | Zig 0.16.0 (a non-blocking CI lane tracks Zig master) |
+| Language | Zig 0.17.0 (a non-blocking CI lane tracks Zig master) |
 | Build | `build.zig` — a hand-declared module graph; no external Zig dependencies |
 | SIMD | Portable `@Vector`, lowered by LLVM to AVX-512/AVX2/SSE and NEON |
 | Targets | Linux, Windows, macOS on x86-64 and aarch64; ISA tiers via `-Darch` |

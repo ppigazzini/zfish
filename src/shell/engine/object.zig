@@ -121,9 +121,17 @@ pub const EngineObject = struct {
 };
 
 // Hold the side Position/TT storage the engine object uses. File-scope it here so the
-// accessors own them.
-var side_pos_storage: [1032]u8 align(64) = @splat(0);
-var side_tt_storage: [64]u8 align(64) = @splat(0);
+// accessors own them. Size each block from the type it is cast to, never from a literal:
+// setPosition zeroes worker_layout.position_size bytes from positionPtr(), and @ptrCast
+// checks no length, so a block shorter than its type is overrun into whichever global the
+// linker places next -- silently, in every build mode.
+var side_pos_storage: [@sizeOf(position_types.Position)]u8 align(64) = @splat(0);
+var side_tt_storage: [@sizeOf(worker_layout.TranspositionTable)]u8 align(64) = @splat(0);
+
+comptime {
+    // setPosition is handed the pinned slot width, not @sizeOf, so tie the two.
+    std.debug.assert(@sizeOf(@TypeOf(side_pos_storage)) == worker_layout.position_size);
+}
 
 /// Return the side TT storage as a raw pointer (for main.zig's construction-time direct access).
 pub fn sideTtPtr() *anyopaque {

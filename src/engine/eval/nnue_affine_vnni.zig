@@ -17,8 +17,13 @@ const loadW = @import("nnue_affine_load.zig").loadW;
 pub const has_vnni = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
 
+// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+// convention on Linux and macOS, where the declaration lowers exactly as before.
 const vpdpbusd512 = struct {
-    extern fn @"llvm.x86.avx512.vpdpbusd.512"(@Vector(16, i32), @Vector(16, i32), @Vector(16, i32)) @Vector(16, i32);
+    extern fn @"llvm.x86.avx512.vpdpbusd.512"(@Vector(16, i32), @Vector(16, i32), @Vector(16, i32)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i32);
 }.@"llvm.x86.avx512.vpdpbusd.512";
 
 // acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.

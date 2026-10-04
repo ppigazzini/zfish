@@ -30,7 +30,7 @@ pub fn register(b: *std.Build) Fetches {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/fetch_net.zig"),
             .target = b.graph.host,
-            .optimize = .ReleaseFast,
+            .optimize = .fast,
         }),
     });
     const net_cmd = b.addRunArtifact(fetch_net_exe);
@@ -54,7 +54,7 @@ pub fn register(b: *std.Build) Fetches {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/fetch_tb.zig"),
             .target = b.graph.host,
-            .optimize = .ReleaseFast,
+            .optimize = .fast,
             .link_libc = true,
         }),
     });
