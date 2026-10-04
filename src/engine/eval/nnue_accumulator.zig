@@ -43,6 +43,7 @@ const nnue_refresh_cache = @import("nnue_refresh_cache");
 /// Re-export the opaque cache handle so callers can type it.
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
 pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
+pub const refresh_table_bytes = nnue_refresh_cache.table_bytes;
 const cacheEntry = nnue_refresh_cache.cacheEntry;
 const cacheEntryAccumulationConst = nnue_refresh_cache.cacheEntryAccumulationConst;
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;

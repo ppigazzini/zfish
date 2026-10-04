@@ -39,6 +39,13 @@ comptime {
     // size field.
     if (worker_layout.accumulator_stack_size != nnue_acc.arena_bytes)
         @compileError("worker_layout.accumulator_stack_size must equal nnue_acc_layout.arena_bytes");
+    // Pin the refresh cache the same way: the Worker embeds refresh_table_bytes of it and the
+    // eval-trace and fuzz arenas size theirs by accumulator_caches_size, and clearRefreshCache
+    // writes every entry the layout implies -- a grown entry would overrun all three silently.
+    if (worker_layout.refresh_table_bytes != nnue_acc.refresh_table_bytes)
+        @compileError("worker_layout.refresh_table_bytes must equal nnue_refresh_cache.table_bytes");
+    if (worker_layout.accumulator_caches_size != nnue_acc.refresh_table_bytes)
+        @compileError("worker_layout.accumulator_caches_size must equal nnue_refresh_cache.table_bytes");
 }
 
 pub fn ssPrologue(wl: *worker_layout.WorkerLayout) void {
