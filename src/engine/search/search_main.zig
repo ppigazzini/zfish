@@ -399,7 +399,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 const move = movepick.nextMove(&pc_state, &pc_ctx);
                 if (move == 0) break;
                 if (move == excluded_move or !legal(pos_ptr, move)) continue;
-                doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
+                // The probcut picker yields captures only (upstream asserts it at this site).
+                const capture = captureStage(pos, move);
+                std.debug.assert(capture);
+                doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(givesCheck(pos_ptr, move)), capture, ss_ptr);
                 var value = -qsearchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, .non_pv);
                 if (value >= probcut_beta and probcut_depth > 0)
                     value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, .non_pv);

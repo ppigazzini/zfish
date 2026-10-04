@@ -298,7 +298,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         }
 
         // Step 7. Make and search the move.
-        doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(gc), ss_ptr);
+        doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(gc), capture, ss_ptr);
         const value = -qsearchImpl(ctx, pos_ptr, ss_next, -beta, -alpha, kind);
         undoMoveAcc(ctx, pos_ptr, move);
 
