@@ -27,7 +27,6 @@ const DirtyPiece = position_types.DirtyPiece;
 const DirtyThreats = position_types.DirtyThreats;
 const SearchStack = search_types.SearchStack;
 const QCtx = search_ctx.QCtx;
-const captureStage = search_common.captureStage;
 const setContHist = history_mod.setContHist;
 const InCheck = history_mod.InCheck;
 const WasCapture = history_mod.WasCapture;
@@ -114,16 +113,17 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
 
 // Run the do-move step: count the node, push a fresh accumulator slot, make the
 // move (the make-move records the dirty piece/threats into that slot), then set
-// the Stack's current move and continuation-history pointer. capture_stage is read
-// pre-move, dirtyPiece.pc post-move.
-pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *StateInfo, gives_check: u8, ss_ptr: *SearchStack) void {
+// the Stack's current move and continuation-history pointer. Every caller has
+// already read capture_stage pre-move for its own pruning, so it hands the answer in
+// rather than have it recomputed here (upstream 1bf75bb3); dirtyPiece.pc is read
+// post-move.
+pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *StateInfo, gives_check: u8, capture: bool, ss_ptr: *SearchStack) void {
     const pos = pos_ptr;
     const ss = ss_ptr;
     // Preload the child position's TT cluster while the make below and the accumulator push
     // run, so the line is resident by the probe at the next node (upstream search.cpp:642).
     // The key is approximate; the hint changes no value.
     tt.prefetch(ctx.table, ctx.cluster_count, move_do.prefetchKey(pos, move));
-    const capture = captureStage(pos, move);
     // Preload the three continuation-correction entries the CHILD reads (upstream
     // search.cpp do_move): the child's (ss-2), (ss-4) and (ss-6) are this node's ss-1, ss-3
     // and ss-5, and all three are addressed by the moved piece and the destination square. Castling and

@@ -252,7 +252,7 @@ pub inline fn runBack(nd: anytype) i32 {
         const node_count: u64 = if (nd.root_node) nd.ctx.nodes.* else 0;
 
         // Step 17. Make the move.
-        doMoveAcc(nd.ctx, nd.pos_ptr, move, st, @intFromBool(gc), nd.ss_ptr);
+        doMoveAcc(nd.ctx, nd.pos_ptr, move, st, @intFromBool(gc), capture, nd.ss_ptr);
         new_depth += extension;
 
         if (nd.ss.tt_pv)
