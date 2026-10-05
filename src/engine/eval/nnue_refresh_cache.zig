@@ -16,7 +16,7 @@ const nnue_align: usize = 64;
 const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16);
 
 fn roundUp(value: usize, alignment: usize) usize {
-    return ((value + alignment - 1) / alignment) * alignment;
+    return @divCeil(value, alignment) * alignment;
 }
 
 const cache_entry_pieces_offset = half_dimensions * @sizeOf(i16);

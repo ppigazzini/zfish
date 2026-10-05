@@ -213,7 +213,7 @@ pub fn findLastUsable(feature_kind: u8, stack: *const AccumulatorStack, perspect
 }
 
 pub fn roundUp(value: usize, alignment: usize) usize {
-    return ((value + alignment - 1) / alignment) * alignment;
+    return @divCeil(value, alignment) * alignment;
 }
 
 pub fn stackBytes(stack: *const AccumulatorStack) [*]const u8 {

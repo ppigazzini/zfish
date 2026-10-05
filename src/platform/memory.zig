@@ -86,7 +86,7 @@ const use_mmap_large_pages = builtin.target.os.tag == .linux;
 fn mmapHugeAligned(size: usize) ?[]align(std.heap.page_size_min) u8 {
     const page_size = std.heap.pageSize();
     if (size >= large_page_alignment and page_size > 0) {
-        const mapping_size = ((size + page_size - 1) / page_size) * page_size;
+        const mapping_size = @divCeil(size, page_size) * page_size;
         const reservation_size = mapping_size + large_page_alignment;
         if (std.posix.mmap(
             null,
@@ -160,7 +160,7 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
     const rounded_size = if (alloc_size == 0)
         0
     else
-        ((alloc_size + alignment - 1) / alignment) * alignment;
+        @divCeil(alloc_size, alignment) * alignment;
 
     const mem = if (use_mmap_large_pages and rounded_size != 0)
         largePagesMmapAlloc(rounded_size)
