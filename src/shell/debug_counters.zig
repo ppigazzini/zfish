@@ -23,7 +23,7 @@ fn slotIndex(slot: i32) usize {
 }
 
 fn asFloat(value: i64) f64 {
-    return @as(f64, @floatFromInt(value));
+    return @floatFromInt(value);
 }
 
 /// Count a condition and hand it straight back, so a branch under inspection reads

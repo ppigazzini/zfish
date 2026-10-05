@@ -395,6 +395,9 @@ meaning, write that:
   characters. The two lower differently all the same, and in `nnue_inference`'s layer
   accessors `.?` reschedules aarch64's `propagateBucket`; with no instruction lane on that
   tier to price it, those two keep the long form, and say so.
+- Put a cast's type on the declaration — `const sq: usize = @intCast(square);` — and
+  return a cast bare from a function whose return type already names it. Keep `@as` where
+  there is no result type: inside arithmetic, or as a comparison's operand.
 
 ## Keep memory safety where the input is not yours
 

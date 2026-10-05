@@ -125,7 +125,7 @@ fn generateAll(
     writer: *MoveWriter,
 ) void {
     const them = otherColor(us);
-    const ksq = @as(u8, @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king])));
+    const ksq: u8 = @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king]));
     var target: u64 = 0;
 
     if (kind != .evasions or !moreThanOne(pos.st.checkers_bb)) {
@@ -370,7 +370,7 @@ fn filterLegalMoves(
 ) usize {
     const us = pos.side_to_move;
     const pinned = pos.st.blockers_for_king[us] & piecesColor(pos, us);
-    const king_square = @as(u8, @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king])));
+    const king_square: u8 = @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king]));
 
     // Remove an illegal move by swapping the LAST move into its slot and shrinking, exactly
     // as upstream's `*cur = *(--moveList)` (movegen.cpp:283). Do NOT advance `cur` on a

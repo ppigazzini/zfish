@@ -69,8 +69,8 @@ pub fn lineStep(from: usize, to: usize) ?i8 {
 
 pub fn knightAttacks(square: usize) u64 {
     var result: u64 = 0;
-    const file = @as(i32, @intCast(fileOf(square)));
-    const rank = @as(i32, @intCast(rankOf(square)));
+    const file: i32 = @intCast(fileOf(square));
+    const rank: i32 = @intCast(rankOf(square));
     const offsets = [_][2]i32{
         .{ -2, -1 }, .{ -2, 1 }, .{ -1, -2 }, .{ -1, 2 },
         .{ 1, -2 },  .{ 1, 2 },  .{ 2, -1 },  .{ 2, 1 },
@@ -85,8 +85,8 @@ pub fn knightAttacks(square: usize) u64 {
 
 pub fn kingAttacks(square: usize) u64 {
     var result: u64 = 0;
-    const file = @as(i32, @intCast(fileOf(square)));
-    const rank = @as(i32, @intCast(rankOf(square)));
+    const file: i32 = @intCast(fileOf(square));
+    const rank: i32 = @intCast(rankOf(square));
     const offsets = [_][2]i32{
         .{ -1, -1 }, .{ -1, 0 }, .{ -1, 1 },
         .{ 0, -1 },  .{ 0, 1 },  .{ 1, -1 },
