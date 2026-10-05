@@ -139,7 +139,7 @@ pub fn register(
     // The build root, through the ONE shim that knows which std.Build field holds it. Name
     // no such field here: a field the next compiler drops is a configure error for its lane.
     cmd.addArg(config.repoPath(b, "."));
-    cmd.addFileArg(b.path("tools/lane_excuses.txt"));
+    cmd.addFileArg2(b.path("tools/lane_excuses.txt"), .{});
     // `<name>|<agg|->|<coverer,coverer,...>` -- see tools/lane_coverage.zig for the reading.
     for (classify(b, aggregates)) |row| {
         var joined: std.ArrayList(u8) = .empty;
