@@ -34,7 +34,7 @@ pub fn register(b: *std.Build) Fetches {
         }),
     });
     const net_cmd = b.addRunArtifact(fetch_net_exe);
-    net_cmd.addFileArg(b.path("src/engine/eval/network.zig"));
+    net_cmd.addFileArg2(b.path("src/engine/eval/network.zig"), .{});
     net_cmd.setCwd(b.path("resources"));
     // Always run (the tool is idempotent: it validates an existing net and no-ops), so a deleted or
     // corrupt net is re-fetched.

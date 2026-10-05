@@ -151,7 +151,7 @@ pub fn addHarnessRun(
 ) *std.Build.Step.Run {
     const run = b.addRunArtifact(harness);
     run.addArg(check_name);
-    run.addArtifactArg(stockfish);
+    run.addArtifactArg2(stockfish, .{});
     run.addArgs(&.{ golden_or_expected, mode });
     run.setCwd(b.path("resources"));
     run.step.dependOn(install_step);

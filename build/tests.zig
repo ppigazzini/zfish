@@ -432,7 +432,7 @@ pub fn addTestRun(b: *std.Build, step: *std.Build.Step, artifact: *std.Build.Ste
         const sub = b.fmt("{s}/cov-{d}", .{ dir, cov_idx.* });
         cov_idx.* += 1;
         const run = b.addSystemCommand(&.{ "kcov", "--include-path=src", sub });
-        run.addArtifactArg(artifact);
+        run.addArtifactArg2(artifact, .{});
         run.has_side_effects = true;
         step.dependOn(&run.step);
     } else {

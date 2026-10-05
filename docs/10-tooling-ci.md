@@ -390,7 +390,10 @@ other build file is supposed to call it. Two did not — they named `b.build_roo
 which the contributor-facing compiler had and master did not — and the compatibility lane
 was red from the commit that added them, because the contributor-facing compiler is the one
 that still works. The lint refuses a field access to either spelling outside the owner, plus
-a short list of removed APIs. It matters more than its size suggests: a
+a short list of APIs a supported compiler removed or the current one deprecates — 0.17 marks
+its deprecations only in doc comments, so they build until a release deletes them — and it
+refuses a retired-API pattern that `grep` cannot compile, which would otherwise match nothing
+and read as clean. It matters more than its size suggests: a
 `Build` break is a **configure** error, so it takes down every step of that lane at once and
 names a file nobody edited. See [08-idiomatic-zig.md](08-idiomatic-zig.md) for the table of
 spellings and the rule that any build edit re-opens the lane.

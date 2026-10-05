@@ -22,9 +22,10 @@
 # file may name `build_root` or `b.root`. The shim is the interface; this is what makes
 # it one.
 #
-# The second list is the removed-API set, each with the spelling that replaced it. These
-# are cheap to grep and expensive to find at a toolchain bump, and copying an older build
-# snippet is how one comes back.
+# The second list is the retired-API set, each with the spelling that replaced it: APIs a
+# supported compiler removed, and APIs the current one deprecates, which it marks only in
+# doc comments and which the next can delete. These are cheap to grep and expensive to find
+# at a toolchain bump, and copying an older build snippet is how one comes back.
 #
 # Usage: build_version_lint.sh          (run from anywhere; resolves its own root)
 set -u
@@ -66,22 +67,31 @@ for f in "${FILES[@]}"; do
     done <<< "$hits"
 done
 
-# --- 2. APIs one supported compiler does not have ------------------------------------
+# --- 2. APIs a supported compiler removed or deprecates ------------------------------
 #
 # <pattern>|<what to use instead>. Each was paid for: see docs/08-idiomatic-zig.md.
-REMOVED=(
-    'b\.args|a -D string option, tokenized -- std.Build has no `b.args` since 0.17'
+RETIRED=(
+    'b\.args|run.addPassthruArgs(), or a -D string option build() reads -- std.Build has no `b.args` since 0.17'
     'b\.pathFromRoot|config.repoPath(b, ...)'
-    'b\.getInstallPath|run.addArtifactArg(exe) -- and absolutize it if the step re-spawns from another cwd'
+    'b\.getInstallPath|run.addArtifactArg2(exe, .{}) -- the path is relative to the child cwd, so a script that cds must anchor it'
     'std\.meta\.Int|@Int(.unsigned, n) -- the builtin survives std renames'
+    '\.add[A-Za-z]+Arg\(|the *Arg2 form, e.g. run.addFileArg2(path, .{}) -- 0.17 deprecates every path-taking add*Arg, and std marks only some'
+    'runAllowFail|b.runFallible(argv, .{ ... }) -- deprecated in 0.17'
 )
-for entry in "${REMOVED[@]}"; do
+for entry in "${RETIRED[@]}"; do
     pat="${entry%%|*}"; fix="${entry#*|}"
+    # A pattern grep cannot compile matches nothing, and the scan below reads that as clean:
+    # refuse it. The entry splits on its FIRST `|`, so a pattern may not alternate with one.
+    grep -qE -- "$pat" </dev/null 2>/dev/null
+    if [ $? -eq 2 ]; then
+        printf 'build-version-lint: RIG FAULT -- retired-API pattern does not compile: %s\n' "$pat" >&2
+        exit 2
+    fi
     for f in "${FILES[@]}"; do
         hits="$(sed 's://.*::' "$ROOT/$f" | grep -nE "$pat" || true)"
         [ -z "$hits" ] && continue
         while IFS= read -r line; do
-            note "REMOVED API" "$f:${line%%:*} -> use $fix"
+            note "RETIRED API" "$f:${line%%:*} -> use $fix"
             fail=$((fail + 1))
         done <<< "$hits"
     done

@@ -109,8 +109,10 @@ fn dependOnGitHead(b: *std.Build) void {
 }
 
 pub fn runAndTrimOrNull(b: *std.Build, argv: []const []const u8) ?[]const u8 {
-    var code: u8 = undefined;
-    const output = b.runAllowFail(argv, &code, .ignore) catch return null;
+    const output = switch (b.runFallible(argv, .{ .stderr_behavior = .ignore })) {
+        .success => |stdout| stdout,
+        .spawn_failed, .bad_exit_code, .crashed => return null,
+    };
     const trimmed = trimOutput(output);
     if (trimmed.len == 0)
         return null;

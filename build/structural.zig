@@ -120,7 +120,7 @@ pub fn register(ctx: Context) std.StringHashMap(*std.Build.Step.Run) {
     for (script_gates) |g| {
         const cmd = ctx.b.addSystemCommand(&.{ "bash", ctx.repoPath(ctx.b, g.script) });
         if (g.needs_engine) {
-            cmd.addArtifactArg(ctx.stockfish);
+            cmd.addArtifactArg2(ctx.stockfish, .{});
             cmd.step.dependOn(ctx.install_step);
             cmd.step.dependOn(ctx.net_step);
         }
@@ -304,7 +304,7 @@ pub fn registerUpstreamParity(
     const cmd = b.addSystemCommand(&.{ "bash", repoPath(b, "tools/upstream_parity.sh") });
     // The engine binary is an artifact arg (the build supplies its path), so it cannot live in
     // the string array above; the base sha follows it.
-    cmd.addArtifactArg(stockfish);
+    cmd.addArtifactArg2(stockfish, .{});
     cmd.addArg(base_sha);
     cmd.step.dependOn(install_step);
     cmd.step.dependOn(net_step);
@@ -329,7 +329,7 @@ pub fn registerTsanRace(
     repoPath: *const fn (*std.Build, []const u8) []const u8,
 ) void {
     const cmd = b.addSystemCommand(&.{ "bash", repoPath(b, "tools/tsan_race.sh") });
-    cmd.addArtifactArg(stockfish);
+    cmd.addArtifactArg2(stockfish, .{});
     cmd.step.dependOn(install_step);
     cmd.step.dependOn(net_step);
     cmd.step.dependOn(tb_step);
