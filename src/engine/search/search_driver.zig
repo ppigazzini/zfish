@@ -246,7 +246,9 @@ pub fn extractPonderFromTt(pv: *RootPVMoves, table: [*]tt.TtCluster, cluster_cou
         const key = adjustKey50(pos);
         const probe = tt.probeTable(table, cluster_count, key, generation, q_depth_none);
         const ttm = probe.data.move16;
-        if (probe.found != 0 and ttm != 0 and legalContains(pos_ptr, ttm)) {
+        // No `ttm != 0` short-cut: upstream generates the legal list on every hit, and the
+        // call-count fingerprint holds zfish to the same work, not just the same answer.
+        if (probe.found != 0 and legalContains(pos_ptr, ttm)) {
             pv.pushBack(ttm);
         }
     }
