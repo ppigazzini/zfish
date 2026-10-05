@@ -234,8 +234,7 @@ pub fn reconfigure(
     @memset(threads_per_node, 0);
 
     if (do_bind) {
-        var index: usize = 0;
-        while (index < requested) : (index += 1) {
+        for (0..requested) |index| {
             threads_per_node[bound_nodes[index]] += 1;
         }
     } else {
@@ -244,8 +243,7 @@ pub fn reconfigure(
 
     runtime_hooks.shared_state_clear_histories(shared_state);
 
-    var node_index: usize = 0;
-    while (node_index < node_count) : (node_index += 1) {
+    for (0..node_count) |node_index| {
         const count = threads_per_node[node_index];
         if (count != 0) {
             try runtime_hooks.shared_state_insert_history(

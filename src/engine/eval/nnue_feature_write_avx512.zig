@@ -182,8 +182,7 @@ test "writeIndices matches an independent scalar reference over random boards/ma
     var rng = std.Random.DefaultPrng.init(0xFEED_FACE_0BAD_C0DE);
     const random = rng.random();
 
-    var trial: usize = 0;
-    while (trial < 20000) : (trial += 1) {
+    for (0..20000) |trial| {
         var old_pieces: [64]u8 = undefined;
         var new_pieces: [64]u8 = undefined;
         for (0..64) |i| {

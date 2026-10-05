@@ -29,8 +29,7 @@ fn perftCount(pos_ptr: *position_port.Position, depth: i32, states: *[perft_max_
     const n = movegen_port.generateLegal(pos_ptr, &moves);
     if (depth == 1) return n;
     var nodes: u64 = 0;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         position_port.doMoveState(pos_ptr, moves[i], &states[ply]);
         nodes += perftCount(pos_ptr, depth - 1, states, ply + 1);
         position_port.undoMove(pos_ptr, moves[i]);
@@ -80,8 +79,7 @@ pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: i32) PerftRes
     var nodes: u64 = 0;
     var mbuf: [5]u8 = undefined;
     var line: [64]u8 = undefined;
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
+    for (0..count) |i| {
         const m = moves[i];
         var cnt: u64 = undefined;
         if (depth <= 1) {

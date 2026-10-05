@@ -195,8 +195,7 @@ pub fn visualize(pos: *const position_port.Position) ?[]u8 {
     while (rank > 0) {
         rank -= 1;
 
-        var file: usize = 0;
-        while (file < 8) : (file += 1) {
+        for (0..8) |file| {
             const square_index = rank * 8 + file;
             buffer.appendSlice(allocator, " | ") catch return null;
             buffer.append(allocator, piece_to_char[pieces[square_index]]) catch return null;
@@ -245,8 +244,7 @@ fn buildNnueTrace(
     const trace = network_port.traceEvaluate(pos, accumulators, caches);
     var positional_cp: [layer_stacks]i32 = undefined;
 
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
+    for (0..layer_stacks) |bucket| {
         positional_cp[bucket] = uci_wdl.toCp(trace.positional[bucket], summary.wdl_material);
     }
 

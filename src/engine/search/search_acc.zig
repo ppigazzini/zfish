@@ -187,8 +187,7 @@ pub inline fn verifyUndoMove(pos_ptr: *Position, move: u16) void {
 pub fn legalContains(pos_ptr: *const Position, move: u16) bool {
     var buf: [256]u16 = undefined;
     const n = movegen.generateLegal(pos_ptr, &buf);
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         if (buf[i] == move) return true;
     }
     return false;

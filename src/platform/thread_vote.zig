@@ -43,8 +43,7 @@ fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
 // Accumulate in i64 to match upstream's `unordered_map<Move, i64>` vote tally (thread.cpp:355).
 fn voteForMove(summaries: []const ThreadSummary, move_raw: u16, min_score: i32) i64 {
     var vote: i64 = 0;
-    var index: usize = 0;
-    while (index < summaries.len) : (index += 1) {
+    for (0..summaries.len) |index| {
         if (summaries[index].pv0_raw == move_raw)
             vote += threadVotingValue(summaries[index], min_score);
     }
@@ -118,8 +117,7 @@ pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
     // the wrong answer, and the vote is a heuristic that a subset still answers.
     const voting = @min(thread_count, max_thread_summaries);
     var summaries: [max_thread_summaries]ThreadSummary = undefined;
-    var index: usize = 0;
-    while (index < voting) : (index += 1) {
+    for (0..voting) |index| {
         fillThreadSummary(pool.threadTyped(index), &summaries[index]);
     }
     return pickBestThread(summaries[0..voting]);

@@ -105,8 +105,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     const stack_n: usize = @intCast(q_max_ply + 10);
     var stack: [stack_n]SearchStack = std.mem.zeroes([stack_n]SearchStack);
     {
-        var k: usize = 0;
-        while (k < 7) : (k += 1) {
+        for (0..7) |k| {
             setContHistBasePlane(wl, &stack[k]);
             stack[k].static_eval = q_value_none;
         }

@@ -128,8 +128,7 @@ pub const MoveSorter = struct {
             const ext = @"llvm.x86.avx512.vpermi2var.d.512"(self.sorted_moves, idx, self.sorted_values);
             const packed_pairs: [8]u64 = @bitCast(ext);
             const store_count = @min(count - offset, 8);
-            var j: usize = 0;
-            while (j < store_count) : (j += 1) {
+            for (0..store_count) |j| {
                 entries[offset + j] = entryFromPair(packed_pairs[j]);
             }
         }
@@ -193,8 +192,7 @@ test "vectorSort matches referenceSort, random inputs up to and beyond the 16-mo
     if (comptime !use_avx512_sort) return error.SkipZigTest;
     var rng = std.Random.DefaultPrng.init(0x5EED_C0FF_EE00_1234);
     const random = rng.random();
-    var trial: usize = 0;
-    while (trial < 20000) : (trial += 1) {
+    for (0..20000) |trial| {
         const count = 1 + random.uintLessThan(usize, 40); // exercise below, at, and above max=16
         const limit_kind = random.uintLessThan(u8, 3);
         const limit: i32 = switch (limit_kind) {
@@ -205,8 +203,7 @@ test "vectorSort matches referenceSort, random inputs up to and beyond the 16-mo
 
         var a: [64]SortEntry = undefined;
         var b: [64]SortEntry = undefined;
-        var i: usize = 0;
-        while (i < count) : (i += 1) {
+        for (0..count) |i| {
             const raw_move: u16 = @intCast(random.uintLessThan(u32, 4096));
             // Bias values into a small range so ties (equal value, order-sensitive) are
             // exercised often, not just as a rare edge case.

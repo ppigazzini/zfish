@@ -129,8 +129,7 @@ const MoveSet = struct {
     lens: [24]usize = undefined,
     count: usize = 0,
     fn add(self: *MoveSet, m: []const u8) void {
-        var j: usize = 0;
-        while (j < self.count) : (j += 1) {
+        for (0..self.count) |j| {
             if (std.mem.eql(u8, self.moves[j][0..self.lens[j]], m)) return; // already seen
         }
         if (self.count >= self.moves.len) return; // cap (24 distinct is far beyond any real case)
@@ -179,8 +178,7 @@ pub fn runRepeatGo(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     s.init(io, gpa, bin) catch fail("repeat-go: spawn failed", .{});
 
     s.send("position startpos\n");
-    var i: usize = 0;
-    while (i < rounds) : (i += 1) {
+    for (0..rounds) |i| {
         s.send("go depth 6\n");
         if (!s.fillUntil("bestmove"))
             fail("repeat-go: `go` #{d} produced no bestmove -- the engine died on a repeated go with no intervening `position` (setup-state handoff)", .{i + 1});

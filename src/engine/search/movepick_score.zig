@@ -250,8 +250,7 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
         check_squares = pos.st.check_squares;
     }
 
-    var index: usize = 0;
-    while (index < count) : (index += 1) {
+    for (0..count) |index| {
         const raw_move = move_list[index];
         const from = moveFrom(raw_move);
         const to = moveTo(raw_move);

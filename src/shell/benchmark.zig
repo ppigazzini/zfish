@@ -146,8 +146,7 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![]u8 {
         // work dominates the node work. Deterministic (fixed positions/depth, resets between);
         // a SEPARATE workload that leaves the `bench 16 1 13` anchor untouched.
         const defaults: []const []const u8 = &Defaults;
-        var rep: usize = 0;
-        while (rep < setup_repeat) : (rep += 1) {
+        for (0..setup_repeat) |_| {
             for (defaults) |line| {
                 if (std.mem.find(u8, line, "setoption") == null)
                     try appendCommand(&commands, allocator, "ucinewgame");
@@ -225,8 +224,7 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: i32) !BenchmarkSe
 
     var total_time: f32 = 0;
     for (games) |game| {
-        var index: usize = 0;
-        while (index < game.len) : (index += 1) {
+        for (0..game.len) |index| {
             total_time += @as(f32, @floatCast(getCorrectedTime(@as(i32, @intCast(index + 1)))));
         }
     }

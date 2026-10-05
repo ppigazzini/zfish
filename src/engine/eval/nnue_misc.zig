@@ -32,8 +32,7 @@ fn formatTraceAlloc(input: NnueTraceInput) ![]u8 {
     try buffer.appendSlice(allocator, "|   Bucket   | Evaluation |\n");
     try buffer.appendSlice(allocator, "+------------+------------+\n");
 
-    var bucket: usize = 0;
-    while (bucket < input.bucket_count) : (bucket += 1) {
+    for (0..input.bucket_count) |bucket| {
         var bucket_buffer: [64]u8 = undefined;
         // Match `"|  " << bucket << "         |  "` (nnue_misc.cpp) byte-for-byte, and close
         // the cell with `"   |"`: THREE spaces before the pipe, not two.

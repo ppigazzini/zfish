@@ -120,13 +120,11 @@ pub fn initGeometry() void {
     var both_on_diag: [64]struct { idx: usize, s2: usize } = undefined;
     var nboth: usize = 0;
     code = 0;
-    var idx: usize = 0;
-    while (idx < 10) : (idx += 1) {
+    for (0..10) |idx| {
         var s1: usize = 0;
         while (s1 <= sq_d4) : (s1 += 1) {
             if (!(map_a1d1d4[s1] == @as(i32, @intCast(idx)) and (idx != 0 or s1 == 1))) continue; // SQ_B1==1
-            var s2: usize = 0;
-            while (s2 < 64) : (s2 += 1) {
+            for (0..64) |s2| {
                 if (kingTouch(s1, s2)) continue; // illegal (adjacent/same kings)
                 if (offA1H8(s1) == 0 and offA1H8(s2) > 0) continue; // first on diag, second above
                 if (offA1H8(s1) == 0 and offA1H8(s2) == 0) {
@@ -147,8 +145,7 @@ pub fn initGeometry() void {
 
     // Fill Binomial[k][n] via Pascal's rule == C(n,k).
     binomial[0][0] = 1;
-    var n: usize = 1;
-    while (n < 64) : (n += 1) {
+    for (1..64) |n| {
         var k: usize = 0;
         while (k < 6 and k <= n) : (k += 1) {
             binomial[k][n] = (if (k > 0) binomial[k - 1][n - 1] else 0) +
@@ -194,8 +191,7 @@ fn cnk(n: i64, k: i64) i64 {
 
 test "Binomial[k][n] == C(n,k)" {
     initGeometry();
-    var n: usize = 0;
-    while (n < 64) : (n += 1) {
+    for (0..64) |n| {
         var k: usize = 0;
         while (k < 6 and k <= n) : (k += 1)
             try std.testing.expectEqual(@as(i32, @intCast(cnk(@intCast(n), @intCast(k)))), binomial[k][n]);
@@ -209,8 +205,7 @@ test "MapPawns encodes a2-h7 to 0..47 (a2=47, a3=45, h7=0-ish edge)" {
     try std.testing.expectEqual(@as(i32, 46), map_pawns[makeSquare(7, 1)]); // H2 (flip of A2)
     // expect every a2..h7 square to get a distinct value in 0..47
     var seen: [48]bool = @splat(false);
-    var f: usize = 0;
-    while (f < 8) : (f += 1) {
+    for (0..8) |f| {
         var r: usize = 1;
         while (r <= 6) : (r += 1) {
             const v = map_pawns[makeSquare(f, r)];

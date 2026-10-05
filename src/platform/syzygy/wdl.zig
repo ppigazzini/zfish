@@ -104,8 +104,7 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime 
 
     const st = state_list.storagePush(storage) catch return .{ .value = 0, .state = probe_fail };
 
-    var i: usize = 0;
-    while (i < total) : (i += 1) {
+    for (0..total) |i| {
         const m = buf[i];
         if (!isCapture(pos, m) and (!check_zeroing or movedPieceType(pos, m) != pawn_pt)) continue;
         move_count += 1;
@@ -173,8 +172,7 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
         out_state.* = probe_fail;
         return 0;
     };
-    var i: usize = 0;
-    while (i < total) : (i += 1) {
+    for (0..total) |i| {
         const m = buf[i];
         const zeroing = isCapture(pos, m) or movedPieceType(pos, m) == pawn_pt;
         position.doMoveState(pos, m, node);

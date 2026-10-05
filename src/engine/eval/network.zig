@@ -290,8 +290,7 @@ fn saveNamed(filename: []const u8) bool {
     emitFt(&blob, a) catch return false;
     writer.interface.writeAll(blob.items) catch return false;
 
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
+    for (0..layer_stacks) |bucket| {
         blob.clearRetainingCapacity();
         emitLayer(bucket, &blob, a) catch return false;
         writer.interface.writeAll(blob.items) catch return false;

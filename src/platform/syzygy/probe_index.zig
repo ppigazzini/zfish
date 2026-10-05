@@ -222,11 +222,9 @@ pub fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_s
         }
         stableSortSquares(squares[group_off .. group_off + glen]);
         var n: u64 = 0;
-        var gi: usize = 0;
-        while (gi < glen) : (gi += 1) {
+        for (0..glen) |gi| {
             var adjust: i64 = 0;
-            var si: usize = 0;
-            while (si < group_off) : (si += 1) {
+            for (0..group_off) |si| {
                 adjust += @intFromBool(squares[group_off + gi] > squares[si]);
             }
             const col: i64 = @as(i64, squares[group_off + gi]) - adjust - (if (remaining_pawns) @as(i64, 8) else 0);

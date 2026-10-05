@@ -292,8 +292,7 @@ pub fn updateAllStats(
         // positive factors and shifts right, so neither dividend reaches @divTrunc's
         // round-toward-zero fixup. This one is per QUIET MOVE, inside the loop.
         var actual_malus: i32 = malus * 1159 >> 10;
-        var i: usize = 0;
-        while (i < n_quiets) : (i += 1) {
+        for (0..n_quiets) |i| {
             actual_malus = actual_malus * 921 >> 10;
             updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, quiets[i], -actual_malus);
         }
@@ -315,8 +314,7 @@ pub fn updateAllStats(
         updateContinuationHistories(ss_prev, pos.board[psq], psq, -(malus * 713 >> 10));
     }
 
-    var j: usize = 0;
-    while (j < n_captures) : (j += 1) {
+    for (0..n_captures) |j| {
         const move = captures[j];
         const moved_pc = pos.board[moveFrom(move)];
         const to = moveTo(move);

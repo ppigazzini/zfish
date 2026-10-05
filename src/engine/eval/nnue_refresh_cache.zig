@@ -50,10 +50,8 @@ pub fn cacheEntry(cache: *RefreshCache, king_square: u8, perspective: u8) *Cache
 // The biases pointer is passed in by the caller.
 pub fn clearRefreshCache(cache: *RefreshCache, biases: [*]const i16) void {
     const biases_bytes: [*]const u8 = @ptrCast(biases);
-    var ks: usize = 0;
-    while (ks < square_count) : (ks += 1) {
-        var p: usize = 0;
-        while (p < color_count) : (p += 1) {
+    for (0..square_count) |ks| {
+        for (0..color_count) |p| {
             const bytes = cacheEntryBytesMut(cacheEntry(cache, @intCast(ks), @intCast(p)));
             @memcpy(bytes[0..feature_transformer_biases_bytes], biases_bytes[0..feature_transformer_biases_bytes]);
             @memset(bytes[cache_entry_pieces_offset..cache_entry_bytes], 0);

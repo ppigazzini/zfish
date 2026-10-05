@@ -228,11 +228,9 @@ pub fn squareBb(square: usize) u64 {
 pub fn makePieceIndicesType(comptime piece_type: u8) [64][64]u8 {
     @setEvalBranchQuota(200000);
     var out = std.mem.zeroes([64][64]u8);
-    var from: usize = 0;
-    while (from < 64) : (from += 1) {
+    for (0..64) |from| {
         const attacks = pseudoAttacks(piece_type, from);
-        var to: usize = 0;
-        while (to < 64) : (to += 1) {
+        for (0..64) |to| {
             out[from][to] = constexprPopcount(((squareBb(to) - 1) & attacks));
         }
     }
@@ -243,11 +241,9 @@ pub fn makePieceIndicesPawn(comptime piece: u8) [64][64]u8 {
     @setEvalBranchQuota(200000);
     var out = std.mem.zeroes([64][64]u8);
     const color = colorOf(piece);
-    var from: usize = 0;
-    while (from < 64) : (from += 1) {
+    for (0..64) |from| {
         const attacks = pawnAttacksOnly(color, from);
-        var to: usize = 0;
-        while (to < 64) : (to += 1) {
+        for (0..64) |to| {
             out[from][to] = constexprPopcount(((squareBb(to) - 1) & attacks));
         }
     }

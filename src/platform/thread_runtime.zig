@@ -268,8 +268,7 @@ test "mutex provides mutual exclusion under contention" {
         value: u64 = 0,
 
         fn bump(self: *@This()) void {
-            var i: usize = 0;
-            while (i < 100_000) : (i += 1) {
+            for (0..100_000) |_| {
                 self.mutex.lock();
                 self.value += 1;
                 self.mutex.unlock();
@@ -289,8 +288,7 @@ test "thread runtime round-trips jobs in order" {
     var runtime = ThreadRuntime{};
     try runtime.start();
 
-    var i: usize = 0;
-    while (i < 1000) : (i += 1) {
+    for (0..1000) |_| {
         runtime.runCustomJob(TestCtx.job, &ctx);
         runtime.waitForSearchFinished();
     }
@@ -316,8 +314,7 @@ test "thread pool fans jobs across all threads" {
     var ctx = TestCtx{};
     var thread_id: usize = 0;
     while (thread_id < pool.numThreads()) : (thread_id += 1) {
-        var rep: usize = 0;
-        while (rep < 250) : (rep += 1) {
+        for (0..250) |_| {
             pool.runOnThread(thread_id, TestCtx.job, &ctx);
             pool.waitOnThread(thread_id);
         }

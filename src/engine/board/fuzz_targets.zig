@@ -176,8 +176,7 @@ fn fuzzAllMovesKeyStability(_: void, smith: *std.testing.Smith) anyerror!void {
     const key = positionKey(&p);
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         var mst: position.StateInfo align(16) = undefined;
         position.doMoveState(&p, moves[i], &mst);
         position.undoMove(&p, moves[i]);
@@ -223,8 +222,7 @@ fn fuzzLegalMoveWellFormedness(_: void, smith: *std.testing.Smith) anyerror!void
 
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         const from: u16 = (moves[i] >> 6) & 0x3F;
         const to: u16 = moves[i] & 0x3F;
         if (from == to) return error.NullMoveInLegalList;
@@ -274,8 +272,7 @@ fn fuzzMoveCountStability(_: void, smith: *std.testing.Smith) anyerror!void {
 
     var moves: [256]u16 = undefined;
     const before = movegen.generateLegal(&p, &moves);
-    var i: usize = 0;
-    while (i < before) : (i += 1) {
+    for (0..before) |i| {
         var mst: position.StateInfo align(16) = undefined;
         position.doMoveState(&p, moves[i], &mst);
         position.undoMove(&p, moves[i]);

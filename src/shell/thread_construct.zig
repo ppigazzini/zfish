@@ -44,8 +44,7 @@ pub fn verifyThreadGraph(pool: *const worker_layout.ThreadPool, requested: usize
     if (tp.boundCount() != bound) fail("ThreadPool.boundThreadToNumaNode size != expected");
 
     // Expect each threads[i] to be a live owned Thread whose Worker slot is bound.
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
+    for (0..count) |i| {
         const thread = tp.threadAt(i);
         if (thread.worker == null) fail("Thread[i].worker (LargePagePtr) is null");
     }

@@ -157,8 +157,7 @@ test "SearchThread spawns, round-trips a job, and joins" {
     defer thread.deinit(testing.allocator);
 
     var ctx = MockCtx{};
-    var i: usize = 0;
-    while (i < 500) : (i += 1) {
+    for (0..500) |_| {
         thread.startJob(MockCtx.job, &ctx);
         thread.waitForSearchFinished();
     }

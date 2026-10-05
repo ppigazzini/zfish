@@ -273,15 +273,13 @@ test "headless search: searchPosition over many random legal lines stays crash-f
     const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     var prng = std.Random.DefaultPrng.init(0xC0FFEE);
     const rand = prng.random();
-    var iter: usize = 0;
-    while (iter < 500) : (iter += 1) {
+    for (0..500) |_| {
         var p: position.Position align(64) = undefined;
         var st: position.StateInfo align(16) = undefined;
         _ = position.setPosition(&p, start_fen, start_fen.len, 0, &st, worker_layout.position_size, worker_layout.state_info_size);
         var chain: [24]position.StateInfo align(16) = undefined;
         const line_len = rand.intRangeAtMost(usize, 0, 24);
-        var ply: usize = 0;
-        while (ply < line_len) : (ply += 1) {
+        for (0..line_len) |ply| {
             var moves: [256]u16 = undefined;
             const cnt = movegen.generateLegal(&p, &moves);
             if (cnt == 0) break;

@@ -371,6 +371,21 @@ checks nothing, so the detector lives in the safe modes. `memory.poison_uninitia
 fills those blocks with `0xAA` in Debug and ReleaseSafe, so a read-before-write fails
 loudly instead of riding whatever the heap held.
 
+## Count with `for` over a range — from zero, or from a start the bound cannot undercut
+
+Write a counted loop as `for (0..n) |i|`, and as `|_|` when the body never reads the
+counter. It says in one line what a C-style `var i = 0; while (i < n) : (i += 1)` says
+in two, and on this tree it compiles to the same machine code. Keep the `while` form
+where it means something else:
+
+- the counter is read after the loop, or the body assigns it;
+- the bound can move inside the loop — `for` evaluates it once, `while` every pass;
+- the start can exceed the bound. `while (i < n)` from 1 simply does not run when
+  `n == 0`, but `for (1..n)` with `n < 1` is illegal behaviour: a panic in a safe
+  build, and in the shipped fast build a wrapped length that walks off the array. A
+  mechanical rewrite of `waitForSearchFinished`'s loop to `for (1..thread_count)`
+  crashed every bench at startup, where it runs while the pool still has no threads.
+
 ## Keep memory safety where the input is not yours
 
 Zig gives spatial safety through bounds-checked slices and temporal safety through a

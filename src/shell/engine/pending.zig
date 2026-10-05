@@ -56,8 +56,7 @@ fn removePendingStateStorage(slot_key: usize) ?*PendingStateStorage {
 }
 
 fn findPendingStateIndex(slot_key: usize) ?usize {
-    var index: usize = 0;
-    while (index < pending_state_entries.items.len) : (index += 1) {
+    for (0..pending_state_entries.items.len) |index| {
         if (pending_state_entries.items[index].slot_key == slot_key) {
             return index;
         }
