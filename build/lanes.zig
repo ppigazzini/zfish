@@ -63,7 +63,7 @@ fn subsumedBy(step: *std.Build.Step, set: *const std.AutoHashMap(*std.Build.Step
 pub fn classify(b: *std.Build, aggregates: []const *std.Build.Step) []const Classified {
     const gpa = b.allocator;
 
-    var agg_set = std.AutoHashMap(*std.Build.Step, void).init(gpa);
+    var agg_set: std.AutoHashMap(*std.Build.Step, void) = .init(gpa);
     for (aggregates) |agg| reach(&agg_set, agg);
 
     // Every top-level step, paired with the set its own graph reaches. Built once: the
@@ -74,7 +74,7 @@ pub fn classify(b: *std.Build, aggregates: []const *std.Build.Step) []const Clas
     var it = b.top_level_steps.iterator();
     while (it.next()) |entry| {
         const step = &entry.value_ptr.*.step;
-        var set = std.AutoHashMap(*std.Build.Step, void).init(gpa);
+        var set: std.AutoHashMap(*std.Build.Step, void) = .init(gpa);
         reach(&set, step);
         roots.append(gpa, .{ .name = entry.key_ptr.*, .step = step, .set = set }) catch @panic("OOM");
     }

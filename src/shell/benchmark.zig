@@ -99,7 +99,7 @@ pub fn setupBenchmark(args: []const u8, hardware_concurrency: i32) BenchmarkSetu
 }
 
 fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![]u8 {
-    var arena_impl = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    var arena_impl: std.heap.ArenaAllocator = .init(std.heap.c_allocator);
     defer arena_impl.deinit();
     const arena = arena_impl.allocator();
     const allocator = std.heap.c_allocator;
@@ -123,7 +123,7 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![]u8 {
     else
         try arena.print("go {s} {s}", .{ limit_type, limit });
 
-    var commands = std.ArrayList(u8).empty;
+    var commands: std.ArrayList(u8) = .empty;
     defer commands.deinit(allocator);
 
     try appendCommandFmt(&commands, allocator, "setoption name Threads value {s}", .{threads});
@@ -179,16 +179,16 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![]u8 {
 }
 
 fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: i32) !BenchmarkSetupOutput {
-    var arena_impl = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    var arena_impl: std.heap.ArenaAllocator = .init(std.heap.c_allocator);
     defer arena_impl.deinit();
     const arena = arena_impl.allocator();
     const allocator = std.heap.c_allocator;
 
     var token_iter = std.mem.tokenizeAny(u8, args, " \t\r\n");
-    var original_invocation = std.ArrayList(u8).empty;
+    var original_invocation: std.ArrayList(u8) = .empty;
     defer original_invocation.deinit(allocator);
 
-    var notice = std.ArrayList(u8).empty;
+    var notice: std.ArrayList(u8) = .empty;
     defer notice.deinit(allocator);
 
     const parsed_threads = token_iter.next();
@@ -231,7 +231,7 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: i32) !BenchmarkSe
 
     const time_scale_factor = @as(f32, @floatFromInt(desired_time_s * 1000)) / total_time;
 
-    var commands = std.ArrayList(u8).empty;
+    var commands: std.ArrayList(u8) = .empty;
     defer commands.deinit(allocator);
     for (games) |game| {
         try appendCommand(&commands, allocator, "ucinewgame");

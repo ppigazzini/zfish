@@ -25,7 +25,7 @@ const NumaConfig = config.NumaConfig;
 ///   * only a repeated CPU (`addCpuToNode` false) rejects the whole string;
 ///   * parsing nothing at all (no node advanced) rejects it too.
 pub fn parse(allocator: std.mem.Allocator, s: []const u8) error{ OutOfMemory, BadNuma }!NumaConfig {
-    var cfg = NumaConfig.empty(allocator);
+    var cfg: NumaConfig = .empty(allocator);
     errdefer cfg.deinit();
 
     var node: usize = 0;

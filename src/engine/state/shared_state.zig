@@ -65,7 +65,7 @@ test "SharedStateOf reproduces the 24-byte footprint and binds typed references"
     var tt: Mock = 3;
     var hists: Mock = 4;
 
-    const ss = SS.init(&threads, &tt, &hists);
+    const ss: SS = .init(&threads, &tt, &hists);
     try testing.expectEqual(&threads, ss.threads);
     try testing.expectEqual(&hists, ss.shared_histories);
     try testing.expectEqual(@as(u32, 3), ss.tt.*);

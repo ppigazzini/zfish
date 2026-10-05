@@ -118,7 +118,7 @@ fn referenceMoves(from: u8, moves: []u16, to_bb_in: u64) usize {
 
 test "splatPawnMoves/splatMoves match scalar references over random masks" {
     if (comptime !use_avx512_movegen) return error.SkipZigTest;
-    var rng = std.Random.DefaultPrng.init(0xF00D_BABE_1234_5678);
+    var rng: std.Random.DefaultPrng = .init(0xF00D_BABE_1234_5678);
     const random = rng.random();
 
     for (0..20000) |trial| {

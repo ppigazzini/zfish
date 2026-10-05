@@ -76,7 +76,7 @@ pub const NumaConfig = struct {
     /// divergence here is a divergence in the UCI transcript. Hand the caller an owned
     /// slice.
     pub fn toString(self: *const NumaConfig, gpa: std.mem.Allocator) error{OutOfMemory}![]u8 {
-        var out = std.ArrayList(u8).empty;
+        var out: std.ArrayList(u8) = .empty;
         errdefer out.deinit(gpa);
 
         for (self.nodes.items, 0..) |cpus, node_index| {
@@ -116,7 +116,7 @@ pub const NumaConfig = struct {
     /// /sys read + BundledL3 split unimplemented (it only matters on real multi-socket
     /// hosts, and the WSL2/CI gate target exposes no NUMA nodes).
     pub fn fromSystem(allocator: std.mem.Allocator) error{OutOfMemory}!NumaConfig {
-        var cfg = NumaConfig.empty(allocator);
+        var cfg: NumaConfig = .empty(allocator);
         errdefer cfg.deinit();
 
         if (builtin.target.os.tag == .linux) {
@@ -241,7 +241,7 @@ fn insertSorted(node: *Node, allocator: std.mem.Allocator, cpu: usize) error{Out
 const testing = std.testing;
 
 test "addCpuToNode keeps nodes ascending/unique and one node per cpu" {
-    var cfg = NumaConfig.empty(testing.allocator);
+    var cfg: NumaConfig = .empty(testing.allocator);
     defer cfg.deinit();
 
     try testing.expect(try cfg.addCpuToNode(0, 5));
@@ -275,7 +275,7 @@ test "toString collapses consecutive runs and joins nodes with ':'" {
         .{ .nodes = &.{ &.{ 0, 1, 2, 3, 8 }, &.{ 4, 5, 6, 7 } }, .want = "0-3,8:4-7" }, // run + gap
     };
     for (cases) |case_entry| {
-        var cfg = NumaConfig.empty(testing.allocator);
+        var cfg: NumaConfig = .empty(testing.allocator);
         defer cfg.deinit();
         for (case_entry.nodes, 0..) |cpus, node| {
             for (cpus) |cpu| try testing.expect(try cfg.addCpuToNode(node, cpu));
@@ -286,7 +286,7 @@ test "toString collapses consecutive runs and joins nodes with ':'" {
     }
 
     // Render an empty config as the empty string, as upstream's loop does.
-    var none = NumaConfig.empty(testing.allocator);
+    var none: NumaConfig = .empty(testing.allocator);
     defer none.deinit();
     const empty_str = try none.toString(testing.allocator);
     defer testing.allocator.free(empty_str);
@@ -299,7 +299,7 @@ test "insertSorted stays fast on an ascending node, not quadratic" {
     // fast path makes it linear. The assertion is the CONTENTS; the point of the case is
     // that it completes at all, which a quadratic insert does not within a test run.
     const n = 1 << 20;
-    var cfg = NumaConfig.empty(testing.allocator);
+    var cfg: NumaConfig = .empty(testing.allocator);
     defer cfg.deinit();
     for (0..n) |cpu| try testing.expect(try cfg.addCpuToNode(0, cpu));
 
@@ -311,7 +311,7 @@ test "insertSorted stays fast on an ascending node, not quadratic" {
 
     // Insert out of order too, so the binary-search path is exercised and the list stays
     // ascending and unique -- which is what toString's run-collapsing depends on.
-    var mixed = NumaConfig.empty(testing.allocator);
+    var mixed: NumaConfig = .empty(testing.allocator);
     defer mixed.deinit();
     for ([_]usize{ 9, 3, 7, 1, 3, 5 }) |cpu| _ = try mixed.addCpuToNode(0, cpu);
     try testing.expectEqualSlices(usize, &.{ 1, 3, 5, 7, 9 }, mixed.nodes.items[0].items);
@@ -339,14 +339,14 @@ test "fromSystem names the CPUs the process may run on, not 0..n-1" {
 
 test "suggestsBindingThreads: custom affinity binds; a single node never does" {
     // bind always for user-set affinity
-    var custom = NumaConfig.empty(testing.allocator);
+    var custom: NumaConfig = .empty(testing.allocator);
     defer custom.deinit();
     for (0..4) |c| try testing.expect(try custom.addCpuToNode(0, c));
     custom.custom_affinity = true;
     try testing.expect(custom.suggestsBindingThreads(1)); // let custom affinity override the <=1 rule
 
     // build a system-style single node of 4 cpus
-    var sys = NumaConfig.empty(testing.allocator);
+    var sys: NumaConfig = .empty(testing.allocator);
     defer sys.deinit();
     for (0..4) |c| _ = try sys.addCpuToNode(0, c);
     try testing.expect(!sys.suggestsBindingThreads(1)); // never bind a single thread
@@ -375,7 +375,7 @@ test "distributeThreads: single node -> all node 0" {
 }
 
 test "distributeThreads: multi-node places every thread and favors the larger node" {
-    var cfg = NumaConfig.empty(testing.allocator);
+    var cfg: NumaConfig = .empty(testing.allocator);
     defer cfg.deinit();
     for (0..2) |c| _ = try cfg.addCpuToNode(0, c); // build node0: 2 cpus
     for (2..6) |c| _ = try cfg.addCpuToNode(1, c); // build node1: 4 cpus
@@ -404,7 +404,7 @@ test "NumaConfig.distributeThreads unwinds leak-free on every allocation failure
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
             // Force the alloc path with two nodes.
-            var cfg = NumaConfig.empty(a);
+            var cfg: NumaConfig = .empty(a);
             defer cfg.deinit();
             for (0..2) |c| _ = try cfg.addCpuToNode(0, c);
             for (2..6) |c| _ = try cfg.addCpuToNode(1, c);
@@ -417,7 +417,7 @@ test "NumaConfig.distributeThreads unwinds leak-free on every allocation failure
 
 test "numa: suggestsBindingThreads matches upstream's rule" {
     const a = std.testing.allocator;
-    var cfg = NumaConfig.empty(a);
+    var cfg: NumaConfig = .empty(a);
     defer cfg.deinit();
 
     // Two equal 8-CPU nodes: largest=8, not-small=2.
@@ -437,7 +437,7 @@ test "numa: suggestsBindingThreads matches upstream's rule" {
 
 test "numa: a single node never suggests binding" {
     const a = std.testing.allocator;
-    var cfg = NumaConfig.empty(a);
+    var cfg: NumaConfig = .empty(a);
     defer cfg.deinit();
     var cpu: usize = 0;
     while (cpu < 16) : (cpu += 1) _ = try cfg.addCpuToNode(0, cpu);

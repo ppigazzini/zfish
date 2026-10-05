@@ -31,9 +31,9 @@ fn parsePositionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedPo
         token = iter.next() orelse return .{ .ok = 0, .fen = null, .moves = null };
     }
 
-    var fen = std.ArrayList(u8).empty;
+    var fen: std.ArrayList(u8) = .empty;
     defer fen.deinit(allocator);
-    var moves = std.ArrayList(u8).empty;
+    var moves: std.ArrayList(u8) = .empty;
     defer moves.deinit(allocator);
 
     if (std.mem.eql(u8, token, "startpos")) {

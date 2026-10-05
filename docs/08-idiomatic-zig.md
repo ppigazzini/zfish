@@ -398,6 +398,10 @@ meaning, write that:
 - Put a cast's type on the declaration — `const sq: usize = @intCast(square);` — and
   return a cast bare from a function whose return type already names it. Keep `@as` where
   there is no result type: inside arithmetic, or as a comparison's operand.
+- Initialize with a decl literal — `var list: std.ArrayList(u8) = .empty;`,
+  `var prng: std.Random.DefaultPrng = .init(seed);` — so the type is read once, on the
+  name. `try .init(…)` carries the result type through; `.init(…) catch …` does not, so
+  that one form keeps the type in front of `.init`.
 
 ## Keep memory safety where the input is not yours
 

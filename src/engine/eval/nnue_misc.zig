@@ -17,7 +17,7 @@ pub fn formatTrace(input: NnueTraceInput) ?[]u8 {
 
 fn formatTraceAlloc(input: NnueTraceInput) ![]u8 {
     const allocator = std.heap.c_allocator;
-    var buffer = std.ArrayList(u8).empty;
+    var buffer: std.ArrayList(u8) = .empty;
     errdefer buffer.deinit(allocator);
 
     try buffer.appendSlice(

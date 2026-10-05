@@ -183,7 +183,7 @@ pub inline fn packusTransform64(a: [2]@Vector(32, i16), b: [2]@Vector(32, i16)) 
 test "packusTransform64 equals the scalar transform identity" {
     if (comptime !use_packus_avx512) return error.SkipZigTest;
     const testing = std.testing;
-    var prng = std.Random.DefaultPrng.init(0x5DEECE66D2C03579);
+    var prng: std.Random.DefaultPrng = .init(0x5DEECE66D2C03579);
     const rnd = prng.random();
     const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
 
@@ -217,7 +217,7 @@ test "packusTransform64 equals the scalar transform identity" {
 // byte order. Edge values cover both saturating clamps and the negative pass-through.
 test "nnzFold4 equals the per-vector non-zero masks it replaces" {
     if (comptime !use_packus_avx2) return error.SkipZigTest;
-    var rng = std.Random.DefaultPrng.init(0x4E4E_5A46_4F4C_4434);
+    var rng: std.Random.DefaultPrng = .init(0x4E4E_5A46_4F4C_4434);
     const random = rng.random();
     for (0..4096) |_| {
         var packs: [4]@Vector(32, u8) = undefined;
@@ -243,7 +243,7 @@ test "nnzFold4 equals the per-vector non-zero masks it replaces" {
 test "packusTransform32 equals the scalar transform identity" {
     if (comptime !use_packus_avx2) return error.SkipZigTest;
     const testing = std.testing;
-    var prng = std.Random.DefaultPrng.init(0x5DEECE66D2C03579);
+    var prng: std.Random.DefaultPrng = .init(0x5DEECE66D2C03579);
     const rnd = prng.random();
     const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
 
@@ -278,7 +278,7 @@ test "packusTransform32 equals the scalar transform identity" {
 test "packusTransform16 equals the scalar transform identity" {
     if (comptime !use_packus_sse) return error.SkipZigTest;
     const testing = std.testing;
-    var prng = std.Random.DefaultPrng.init(0x5DEECE66D2C03579);
+    var prng: std.Random.DefaultPrng = .init(0x5DEECE66D2C03579);
     const rnd = prng.random();
     const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
 

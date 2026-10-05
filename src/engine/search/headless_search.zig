@@ -271,7 +271,7 @@ test "headless search: searchPosition over many random legal lines stays crash-f
     if (network.ftPtr() == null) return error.SkipZigTest;
 
     const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    var prng = std.Random.DefaultPrng.init(0xC0FFEE);
+    var prng: std.Random.DefaultPrng = .init(0xC0FFEE);
     const rand = prng.random();
     for (0..500) |_| {
         var p: position.Position align(64) = undefined;

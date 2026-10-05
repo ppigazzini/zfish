@@ -208,7 +208,7 @@ test "a load that half-overwrote the live net stops reporting the one it replace
     // Build the blob rather than reading a fixture. A test that needs a net on disk SKIPS
     // when it is absent, and a silent skip is how a gate stops being one.
     const a = std.testing.allocator;
-    var blob = std.ArrayList(u8).empty;
+    var blob: std.ArrayList(u8) = .empty;
     defer blob.deinit(a);
     const desc = "half a net";
     var word: [4]u8 = undefined;

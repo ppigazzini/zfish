@@ -25,7 +25,7 @@ pub fn formatInfoString(gpa: std.mem.Allocator, input: []const u8) ?[]u8 {
 }
 
 fn allocInfoString(gpa: std.mem.Allocator, input: []const u8) ![]u8 {
-    var builder = std.ArrayList(u8).empty;
+    var builder: std.ArrayList(u8) = .empty;
     errdefer builder.deinit(gpa);
     var line_iter = std.mem.splitScalar(u8, input, '\n');
     while (line_iter.next()) |line| {

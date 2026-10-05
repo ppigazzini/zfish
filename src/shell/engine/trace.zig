@@ -186,7 +186,7 @@ pub fn visualize(pos: *const position_port.Position) ?[]u8 {
     const fen_text = positionFen(pos, &pieces) orelse return null;
     defer std.heap.c_allocator.free(fen_text);
 
-    var buffer = std.ArrayList(u8).empty;
+    var buffer: std.ArrayList(u8) = .empty;
     defer buffer.deinit(allocator);
 
     buffer.appendSlice(allocator, "\n +---+---+---+---+---+---+---+---+\n") catch return null;

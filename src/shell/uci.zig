@@ -370,7 +370,7 @@ pub fn loopRuntime(e: *engine_object.EngineObject) void {
     const args = e.cliArgs();
 
     if (args.len != 1) {
-        var command = std.ArrayList(u8).empty;
+        var command: std.ArrayList(u8) = .empty;
         defer command.deinit(allocator);
 
         for (args[@min(1, args.len)..]) |arg| {
@@ -418,7 +418,7 @@ fn dispatchVoid(engine: *engine_object.EngineObject, input: []const u8) void {
 }
 
 fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
-    var views = std.ArrayList(ByteView).empty;
+    var views: std.ArrayList(ByteView) = .empty;
     errdefer views.deinit(std.heap.c_allocator);
 
     if (moves_text.len == 0)

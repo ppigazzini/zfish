@@ -324,7 +324,7 @@ pub fn startThinking(
 
     const none_raw = uci_move.noneRaw();
 
-    var selected_moves = std.ArrayList(u16).empty;
+    var selected_moves: std.ArrayList(u16) = .empty;
     defer selected_moves.deinit(std.heap.c_allocator);
 
     // Trust toMoveRaw's legality: it resolves the text against generateLegal and

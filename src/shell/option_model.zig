@@ -197,7 +197,7 @@ pub const OptionsModel = struct {
 
     // Render the UCI option listing in registration order.
     pub fn renderAlloc(self: *OptionsModel) ![]u8 {
-        var out = std.ArrayList(u8).empty;
+        var out: std.ArrayList(u8) = .empty;
         errdefer out.deinit(self.allocator);
         for (self.entries.items) |entry| {
             const head = try self.allocator.print("\noption name {s} type {s}", .{
@@ -289,7 +289,7 @@ pub fn registerStandardOptions(model: *OptionsModel, params: StandardOptionParam
 }
 
 test "options model stores defaults and reads typed values" {
-    var model = OptionsModel.init(std.testing.allocator);
+    var model: OptionsModel = .init(std.testing.allocator);
     defer model.deinit();
     _ = try model.add("Threads", .spin, "1", 1, 1024, 3);
     _ = try model.add("Ponder", .check, "false", 0, 0, 0);
@@ -303,7 +303,7 @@ test "options model stores defaults and reads typed values" {
 }
 
 test "options model validates and applies setValue" {
-    var model = OptionsModel.init(std.testing.allocator);
+    var model: OptionsModel = .init(std.testing.allocator);
     defer model.deinit();
     _ = try model.add("Threads", .spin, "1", 1, 1024, 3);
     _ = try model.add("Ponder", .check, "false", 0, 0, 0);
@@ -331,7 +331,7 @@ test "options model validates and applies setValue" {
 }
 
 test "standard option set matches engine init" {
-    var model = OptionsModel.init(std.testing.allocator);
+    var model: OptionsModel = .init(std.testing.allocator);
     defer model.deinit();
     try registerStandardOptions(&model, .{
         .max_threads = 1024,
@@ -367,7 +367,7 @@ test "standard option set matches engine init" {
 }
 
 test "options model index-keyed reads track current values" {
-    var model = OptionsModel.init(std.testing.allocator);
+    var model: OptionsModel = .init(std.testing.allocator);
     defer model.deinit();
     const threads_idx = try model.add("Threads", .spin, "1", 1, 1024, 3);
     const eval_idx = try model.add("EvalFile", .string, "nn-x.nnue", 0, 0, 7);
@@ -385,7 +385,7 @@ test "options model index-keyed reads track current values" {
 }
 
 test "options model renders the UCI listing in order" {
-    var model = OptionsModel.init(std.testing.allocator);
+    var model: OptionsModel = .init(std.testing.allocator);
     defer model.deinit();
     _ = try model.add("Threads", .spin, "1", 1, 512, 3);
     _ = try model.add("Ponder", .check, "false", 0, 0, 0);
@@ -412,7 +412,7 @@ test "OptionsModel add/setValue/renderAlloc unwind leak-free on every allocation
     // chains in add/normalize/renderAlloc on the high-traffic UCI options core.
     const Roundtrip = struct {
         fn run(a: std.mem.Allocator) !void {
-            var model = OptionsModel.init(a);
+            var model: OptionsModel = .init(a);
             defer model.deinit();
             _ = try model.add("Threads", .spin, "1", 1, 1024, callback_threads);
             _ = try model.add("EvalFile", .string, "nn-x.nnue", 0, 0, callback_eval_file);

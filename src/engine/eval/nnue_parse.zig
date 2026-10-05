@@ -412,7 +412,7 @@ test "feature transformer layout offsets match the FeatureTransformer format" {
 test "readLebSection rejects a count that outruns its own section" {
     var out: [4]i16 = undefined;
     // [magic][count=1][one byte] -- the section is well-formed but promises 4 values to decode.
-    var blob = std.ArrayList(u8).empty;
+    var blob: std.ArrayList(u8) = .empty;
     defer blob.deinit(testing.allocator);
     try blob.appendSlice(testing.allocator, leb_magic);
     try blob.appendSlice(testing.allocator, &[_]u8{ 1, 0, 0, 0 });

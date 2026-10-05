@@ -222,7 +222,7 @@ test "PendingStateStorage reset after moveOut re-creates the list" {
 }
 
 test "StateList starts with one zeroed root" {
-    var list = try StateList.init(testing.allocator);
+    var list: StateList = try .init(testing.allocator);
     defer list.deinit();
     try testing.expectEqual(@as(usize, 1), list.len());
     try testing.expect(list.hasStates());
@@ -231,7 +231,7 @@ test "StateList starts with one zeroed root" {
 }
 
 test "push grows and keeps earlier StateInfo addresses stable" {
-    var list = try StateList.init(testing.allocator);
+    var list: StateList = try .init(testing.allocator);
     defer list.deinit();
 
     const root = list.back();
@@ -255,7 +255,7 @@ test "push grows and keeps earlier StateInfo addresses stable" {
 }
 
 test "reset drops to a single fresh root and zeroes it" {
-    var list = try StateList.init(testing.allocator);
+    var list: StateList = try .init(testing.allocator);
     defer list.deinit();
 
     _ = try list.push();
@@ -283,7 +283,7 @@ test "state_info_size matches the pinned StateInfo footprint" {
 test "StateList.init/push/reset unwind leak-free on every allocation failure" {
     const Roundtrip = struct {
         fn run(allocator: std.mem.Allocator) !void {
-            var list = try StateList.init(allocator);
+            var list: StateList = try .init(allocator);
             defer list.deinit();
             _ = try list.push();
             _ = try list.push();

@@ -200,7 +200,7 @@ fn networkTransform(
 // inputs -- run it at each -Darch to cover the tier that arch selects.
 test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
     const testing = std.testing;
-    var prng = std.Random.DefaultPrng.init(0x9E3779B97F4A7C15);
+    var prng: std.Random.DefaultPrng = .init(0x9E3779B97F4A7C15);
     const rnd = prng.random();
 
     // Iterate {OUT, IN, sparse} for fc0 / fc1 / fc2 as propagateBucket calls them.
@@ -273,7 +273,7 @@ test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
 test "sqrClipPair matches the split activations through the pair interleave" {
     if (comptime !nnue_parse.pair_activations) return error.SkipZigTest;
     const testing = std.testing;
-    var prng = std.Random.DefaultPrng.init(0xA1B2C3D4E5F60718);
+    var prng: std.Random.DefaultPrng = .init(0xA1B2C3D4E5F60718);
     const rnd = prng.random();
 
     for (0..256) |_| {
@@ -314,7 +314,7 @@ test "sqrClipPair matches the split activations through the pair interleave" {
 test "sqrClipPair128 matches the split activations in natural order" {
     if (comptime !sse_pair_activations) return error.SkipZigTest;
     const testing = std.testing;
-    var prng = std.Random.DefaultPrng.init(0xC0FFEE1234567890);
+    var prng: std.Random.DefaultPrng = .init(0xC0FFEE1234567890);
     const rnd = prng.random();
 
     for (0..256) |_| {

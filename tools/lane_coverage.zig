@@ -205,7 +205,7 @@ pub fn main(init: std.process.Init) !void {
     const root = args.items[1];
     const excuses_path = args.items[2];
 
-    var steps = std.StringHashMap(State).init(gpa);
+    var steps: std.StringHashMap(State) = .init(gpa);
     defer steps.deinit();
     for (args.items[3..]) |spec| {
         var f = std.mem.splitScalar(u8, spec, '|');

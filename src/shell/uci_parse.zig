@@ -110,9 +110,9 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
         .ponder_mode = 0,
         .searchmoves = null,
     };
-    var searchmoves = std.ArrayList(u8).empty;
+    var searchmoves: std.ArrayList(u8) = .empty;
     defer searchmoves.deinit(allocator);
-    var notice = std.ArrayList(u8).empty;
+    var notice: std.ArrayList(u8) = .empty;
     defer notice.deinit(allocator);
     var iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
 
@@ -435,7 +435,7 @@ test "parseLimits bounds movestogo and mate where they enter" {
 const uci_alphabet = "go position startpos fen moves wtime btime depth nodes infinite ponder 0123456789 /-KQkqabcdefgh ";
 
 test "fuzz: the UCI parsers tolerate arbitrary input" {
-    var prng = std.Random.DefaultPrng.init(0xC0FFEE);
+    var prng: std.Random.DefaultPrng = .init(0xC0FFEE);
     const rand = prng.random();
     for (0..30_000) |_| {
         var buf: [128]u8 = undefined;

@@ -77,9 +77,9 @@ fn parseSetOptionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedS
     // accepts. The blind consume is the behaviour, not an oversight to correct.
     _ = token_iter.next();
 
-    var name = std.ArrayList(u8).empty;
+    var name: std.ArrayList(u8) = .empty;
     defer name.deinit(allocator);
-    var value = std.ArrayList(u8).empty;
+    var value: std.ArrayList(u8) = .empty;
     defer value.deinit(allocator);
 
     var in_value = false;
@@ -151,7 +151,7 @@ fn validateAssignmentAlloc(
 
 fn tuneNextAlloc(allocator: std.mem.Allocator, names: []const u8, pop: u8) !TuneNextResult {
     var remaining = names;
-    var token = std.ArrayList(u8).empty;
+    var token: std.ArrayList(u8) = .empty;
     defer token.deinit(allocator);
 
     while (true) {
@@ -177,7 +177,7 @@ fn tuneNextAlloc(allocator: std.mem.Allocator, names: []const u8, pop: u8) !Tune
         }
 
         var balance_names = names;
-        var local_token = std.ArrayList(u8).empty;
+        var local_token: std.ArrayList(u8) = .empty;
         defer local_token.deinit(allocator);
         while (true) {
             const index = std.mem.findScalar(u8, balance_names, ',') orelse balance_names.len;
@@ -303,7 +303,7 @@ fn freeCStr(p: ?[]u8) void {
 }
 
 test "fuzz: parseSetOption survives random and adversarial input" {
-    var prng = std.Random.DefaultPrng.init(0xF00D_CAFE);
+    var prng: std.Random.DefaultPrng = .init(0xF00D_CAFE);
     const rand = prng.random();
     var buf: [160]u8 = undefined;
     for (0..20000) |_| {
@@ -328,7 +328,7 @@ test "fuzz: parseSetOption survives random and adversarial input" {
 }
 
 test "fuzz: caseInsensitiveLess is a strict weak ordering" {
-    var prng = std.Random.DefaultPrng.init(0x1234_5678);
+    var prng: std.Random.DefaultPrng = .init(0x1234_5678);
     const rand = prng.random();
     var a: [24]u8 = undefined;
     var b: [24]u8 = undefined;
@@ -347,7 +347,7 @@ test "fuzz: caseInsensitiveLess is a strict weak ordering" {
 }
 
 test "fuzz: validateAssignment / tuneNext never crash" {
-    var prng = std.Random.DefaultPrng.init(0x9E37_79B9);
+    var prng: std.Random.DefaultPrng = .init(0x9E37_79B9);
     const rand = prng.random();
     const types = [_][]const u8{ "spin", "check", "string", "combo", "button", "junk" };
     var vbuf: [40]u8 = undefined;

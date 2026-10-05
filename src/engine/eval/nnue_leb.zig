@@ -115,7 +115,7 @@ fn encodeOne(comptime IntType: type, v: IntType, buf: *std.ArrayList(u8), a: std
 test "signed LEB128 decode round-trips i16 and i32" {
     const a = testing.allocator;
     const vals16 = [_]i16{ 0, 1, -1, 63, -64, 127, -128, 1000, -1000, 32767, -32768 };
-    var buf = std.ArrayList(u8).empty;
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(a);
     for (vals16) |v| try encodeOne(i16, v, &buf, a);
 
@@ -125,7 +125,7 @@ test "signed LEB128 decode round-trips i16 and i32" {
     try testing.expectEqualSlices(i16, &vals16, &out);
 
     const vals32 = [_]i32{ 0, 1, -1, 123456, -123456, 2147483647, -2147483648 };
-    var buf2 = std.ArrayList(u8).empty;
+    var buf2: std.ArrayList(u8) = .empty;
     defer buf2.deinit(a);
     for (vals32) |v| try encodeOne(i32, v, &buf2, a);
     var out2: [vals32.len]i32 = undefined;
@@ -135,7 +135,7 @@ test "signed LEB128 decode round-trips i16 and i32" {
 
 test "decodeLeb reports exhaustion instead of reading past its slice" {
     const a = testing.allocator;
-    var buf = std.ArrayList(u8).empty;
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(a);
     for ([_]i16{ 1, 2, 3 }) |v| try encodeOne(i16, v, &buf, a);
 

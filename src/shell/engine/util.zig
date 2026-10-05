@@ -72,7 +72,7 @@ pub fn appendCheckers(buffer: *std.ArrayList(u8), checkers: u64) !void {
 const ally = std.heap.c_allocator;
 
 test "appendHexKey: 16-digit uppercase zero-padded (== C %016llX)" {
-    var buf = std.ArrayList(u8).empty;
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(ally);
     try appendHexKey(&buf, 0xDEADBEEF);
     try std.testing.expectEqualStrings("00000000DEADBEEF", buf.items);
@@ -82,7 +82,7 @@ test "appendHexKey: 16-digit uppercase zero-padded (== C %016llX)" {
 }
 
 test "appendPaddedInt: width-4 right-aligned, no forced sign (== C %4d)" {
-    var buf = std.ArrayList(u8).empty;
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(ally);
     try appendPaddedInt(&buf, 5);
     try std.testing.expectEqualStrings("   5", buf.items);
@@ -95,7 +95,7 @@ test "appendPaddedInt: width-4 right-aligned, no forced sign (== C %4d)" {
 }
 
 test "appendCheckers: renders occupied squares as algebraic + space" {
-    var buf = std.ArrayList(u8).empty;
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(ally);
     // a1 (bit 0) and h8 (bit 63)
     try appendCheckers(&buf, (@as(u64, 1) << 0) | (@as(u64, 1) << 63));

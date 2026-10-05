@@ -114,7 +114,7 @@ pub fn sortAll(entries: [*]SortEntry, count: usize) void {
     var scan: usize = 1;
 
     if (comptime movepick_sort_avx512.use_avx512_sort) {
-        var sorter = movepick_sort_avx512.MoveSorter.init(entries[0]);
+        var sorter: movepick_sort_avx512.MoveSorter = .init(entries[0]);
         while (scan < count and scan < movepick_sort_avx512.max) : (scan += 1) {
             sorter.insert(entries[scan]);
         }
@@ -143,7 +143,7 @@ pub fn partialInsertionSort(entries: [*]SortEntry, count: usize, limit: i32) voi
     // below (move_sorter_insert/sorted_end bump run AFTER the fullness check), so the
     // scalar loop picks up exactly where the vector pass left off.
     if (comptime movepick_sort_avx512.use_avx512_sort) {
-        var sorter = movepick_sort_avx512.MoveSorter.init(entries[0]);
+        var sorter: movepick_sort_avx512.MoveSorter = .init(entries[0]);
         while (scan < count) : (scan += 1) {
             if (entries[scan].value >= limit) {
                 if (sorted_end + 1 >= movepick_sort_avx512.max) break; // sorter full

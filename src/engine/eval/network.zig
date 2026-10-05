@@ -193,10 +193,10 @@ pub const ftPtr = weight_storage.ftPtr;
 fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
     markInitialized();
 
-    var arena_state = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    var arena_state: std.heap.ArenaAllocator = .init(std.heap.c_allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var threaded = std.Io.Threaded.init(std.heap.c_allocator, .{});
+    var threaded: std.Io.Threaded = .init(std.heap.c_allocator, .{});
     const io = threaded.io();
 
     const path = std.mem.concat(arena, u8, &.{ dir, evalfile_path }) catch return;
@@ -274,7 +274,7 @@ fn saveNamed(filename: []const u8) bool {
     }
 
     const description = nnDescription();
-    var threaded = std.Io.Threaded.init(std.heap.c_allocator, .{});
+    var threaded: std.Io.Threaded = .init(std.heap.c_allocator, .{});
     const io = threaded.io();
     const file = openFileForWrite(io, filename) catch return false;
     defer file.close(io);
@@ -282,7 +282,7 @@ fn saveNamed(filename: []const u8) bool {
     var writer = file.writer(io, &writer_buffer);
 
     const a = std.heap.c_allocator;
-    var blob = std.ArrayList(u8).empty;
+    var blob: std.ArrayList(u8) = .empty;
     defer blob.deinit(a);
 
     writeHeader(&writer.interface, nnue_hash.networkHashValue(), description) catch return false;

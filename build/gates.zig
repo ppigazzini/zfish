@@ -174,7 +174,7 @@ pub const Context = struct {
 /// Register both steps for every row and return check-name -> the CHECK run, which is what
 /// the aggregates wire themselves onto.
 pub fn register(ctx: Context) std.StringHashMap(*std.Build.Step.Run) {
-    var runs = std.StringHashMap(*std.Build.Step.Run).init(ctx.b.allocator);
+    var runs: std.StringHashMap(*std.Build.Step.Run) = .init(ctx.b.allocator);
     for (golden) |g| {
         const path = ctx.goldenPath(ctx.b, g.golden);
 
