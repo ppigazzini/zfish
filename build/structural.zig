@@ -176,7 +176,7 @@ pub fn registerLints(b: *std.Build) std.StringHashMap(*std.Build.Step.Run) {
     var runs = std.StringHashMap(*std.Build.Step.Run).init(b.allocator);
     for (lint_tools) |t| {
         const exe = b.addExecutable(.{
-            .name = std.fs.path.stem(t.source),
+            .name = std.Io.Dir.path.stem(t.source),
             .root_module = b.createModule(.{
                 .root_source_file = b.path(t.source),
                 .target = b.graph.host,

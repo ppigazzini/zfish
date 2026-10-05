@@ -71,7 +71,7 @@ fn collect(gpa: std.mem.Allocator, io: Io, cache_dir: []const u8) ![]Entry {
     var out: std.ArrayList(Entry) = .empty;
     errdefer out.deinit(gpa);
 
-    const v_path = try std.fs.path.join(gpa, &.{ cache_dir, "v" });
+    const v_path = try std.Io.Dir.path.join(gpa, &.{ cache_dir, "v" });
     defer gpa.free(v_path);
 
     var dir = Io.Dir.cwd().openDir(io, v_path, .{ .iterate = true }) catch |err| switch (err) {

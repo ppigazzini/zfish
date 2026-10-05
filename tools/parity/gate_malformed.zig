@@ -155,7 +155,7 @@ const fixtures = [_]Fixture{
 // Return false when the source table is absent, which is a SKIP rather than a pass.
 fn writeFixture(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, f: Fixture) !bool {
     var src_buf: [64]u8 = undefined;
-    const src = try std.fmt.bufPrint(&src_buf, "syzygy/{s}.rtbw", .{f.stem});
+    const src = try std.mem.print(&src_buf, "syzygy/{s}.rtbw", .{f.stem});
     const bytes = Io.Dir.cwd().readFileAlloc(io, src, gpa, .unlimited) catch return false;
     defer gpa.free(bytes);
 
@@ -169,7 +169,7 @@ fn writeFixture(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, f: Fixture) !bool {
     }
 
     var dst_buf: [64]u8 = undefined;
-    const dst = try std.fmt.bufPrint(&dst_buf, "{s}.rtbw", .{f.stem});
+    const dst = try std.mem.print(&dst_buf, "{s}.rtbw", .{f.stem});
     try dir.writeFile(io, .{ .sub_path = dst, .data = bytes });
     return true;
 }
@@ -181,7 +181,7 @@ fn writeFixture(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, f: Fixture) !bool {
 // its arrays; giving it threads or a deep search would trade that signal for wall clock and for
 // memory this box has no reason to spend.
 fn driveFixture(gpa: std.mem.Allocator, io: Io, bin: []const u8, f: Fixture, fen: []const u8) !void {
-    const script = try std.fmt.allocPrint(gpa,
+    const script = try gpa.print(
         \\setoption name Threads value 1
         \\setoption name SyzygyPath value {s}
         \\position fen {s}
@@ -229,7 +229,7 @@ pub fn runMalformed(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
         // would let a REFUSED file pass on its neighbour's answer.
         for (stems) |s| {
             var buf: [64]u8 = undefined;
-            const p = std.fmt.bufPrint(&buf, "{s}.rtbw", .{s.name}) catch unreachable;
+            const p = std.mem.print(&buf, "{s}.rtbw", .{s.name}) catch unreachable;
             dir.deleteFile(io, p) catch {};
         }
         if (!(writeFixture(gpa, io, dir, f) catch

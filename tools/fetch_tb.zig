@@ -41,14 +41,14 @@ pub fn main(init: std.process.Init) !void {
             const ext = spec.ext;
             const dir = spec.dir;
             const magic = spec.magic;
-            const dst = try std.fmt.allocPrint(gpa, "syzygy/{s}{s}", .{ name, ext });
+            const dst = try gpa.print("syzygy/{s}{s}", .{ name, ext });
             defer gpa.free(dst);
 
             if (Io.Dir.cwd().access(io, dst, .{})) |_| {
                 continue; // already present
             } else |_| {}
 
-            const url = try std.fmt.allocPrint(gpa, "{s}/{s}/{s}{s}", .{ base, dir, name, ext });
+            const url = try gpa.print("{s}/{s}/{s}{s}", .{ base, dir, name, ext });
             defer gpa.free(url);
             var body: Io.Writer.Allocating = .init(gpa);
             defer body.deinit();

@@ -23,7 +23,7 @@ pub fn appendFormatted(
 
 /// Render `fmt` into a fresh owned slice.
 pub fn allocFormatted(gpa: std.mem.Allocator, comptime fmt: []const u8, args: anytype) ![]u8 {
-    return std.fmt.allocPrint(gpa, fmt, args);
+    return gpa.print(fmt, args);
 }
 
 /// Free an optional owned slice, for the `orelse return null` producers below.

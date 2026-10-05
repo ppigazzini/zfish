@@ -119,11 +119,11 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
     const commands = setup.commands_ptr orelse return;
     const total_go_commands = countGoCommands(commands);
 
-    const threads_command = std.fmt.allocPrint(std.heap.c_allocator, "setoption name Threads value {d}", .{setup.threads}) catch return;
+    const threads_command = std.heap.c_allocator.print("setoption name Threads value {d}", .{setup.threads}) catch return;
     defer std.heap.c_allocator.free(threads_command);
     dispatch(uci_ptr, threads_command);
 
-    const hash_command = std.fmt.allocPrint(std.heap.c_allocator, "setoption name Hash value {d}", .{setup.tt_size}) catch return;
+    const hash_command = std.heap.c_allocator.print("setoption name Hash value {d}", .{setup.tt_size}) catch return;
     defer std.heap.c_allocator.free(hash_command);
     dispatch(uci_ptr, hash_command);
 

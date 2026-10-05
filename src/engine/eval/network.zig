@@ -303,7 +303,7 @@ fn saveNamed(filename: []const u8) bool {
 }
 
 fn openFileForRead(io: std.Io, path: []const u8) !std.Io.File {
-    if (std.fs.path.isAbsolute(path)) {
+    if (std.Io.Dir.path.isAbsolute(path)) {
         return std.Io.Dir.openFileAbsolute(io, path, .{});
     }
 
@@ -311,7 +311,7 @@ fn openFileForRead(io: std.Io, path: []const u8) !std.Io.File {
 }
 
 fn openFileForWrite(io: std.Io, path: []const u8) !std.Io.File {
-    if (std.fs.path.isAbsolute(path)) {
+    if (std.Io.Dir.path.isAbsolute(path)) {
         return std.Io.Dir.createFileAbsolute(io, path, .{ .truncate = true });
     }
 
@@ -336,7 +336,7 @@ fn boolToU8(value: bool) u8 {
 }
 
 fn allocMessage(comptime fmt: []const u8, args: anytype) ?[]u8 {
-    return std.fmt.allocPrint(std.heap.c_allocator, fmt, args) catch null;
+    return std.heap.c_allocator.print(fmt, args) catch null;
 }
 
 test {

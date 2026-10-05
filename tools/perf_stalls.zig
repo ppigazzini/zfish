@@ -217,9 +217,7 @@ fn ratio(a: u64, b: u64) f64 {
 }
 
 pub fn main(init: std.process.Init) !void {
-    var gpa_state = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa_state.deinit();
-    const gpa = gpa_state.allocator();
+    const gpa = init.gpa;
 
     var arg_it = try std.process.Args.Iterator.initAllocator(init.minimal.args, gpa);
     defer arg_it.deinit();

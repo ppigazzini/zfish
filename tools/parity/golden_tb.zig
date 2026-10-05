@@ -71,7 +71,7 @@ fn buildTbProbe(gpa: std.mem.Allocator, io: Io, bin: []const u8, prefix: []const
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     for (tb_probe_runs) |r| {
-        const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy\nposition fen {s}\nd\nquit\n", .{r.fen});
+        const input = try gpa.print("setoption name SyzygyPath value syzygy\nposition fen {s}\nd\nquit\n", .{r.fen});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
@@ -120,7 +120,7 @@ pub fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try s.init(io, gpa, bin);
         s.send("setoption name SyzygyPath value syzygy\nsetoption name Threads value 1\n");
         var cmdbuf: [256]u8 = undefined;
-        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo depth {d}\n", .{ r.fen, r.depth }) catch fail("golden_tb: command buffer too small for the case table", .{}));
+        s.send(std.mem.print(&cmdbuf, "position fen {s}\ngo depth {d}\n", .{ r.fen, r.depth }) catch fail("golden_tb: command buffer too small for the case table", .{}));
         _ = s.fillUntil("\nbestmove");
         const buf = s.buffered();
 
@@ -164,7 +164,7 @@ pub fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         defer src.close(io);
         for (stems) |stem| {
             var nb: [64]u8 = undefined;
-            const name = std.fmt.bufPrint(&nb, "{s}.rtbw", .{stem}) catch unreachable;
+            const name = std.mem.print(&nb, "{s}.rtbw", .{stem}) catch unreachable;
             src.copyFile(name, dest, name, io, .{}) catch
                 fail("tb-root: staging {s} into {s} failed (is resources/syzygy fetched?)", .{ name, wdl_dir });
         }
@@ -180,7 +180,7 @@ pub fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
             var s: Interactive = undefined;
             try s.init(io, gpa, bin);
             var setup: [256]u8 = undefined;
-            s.send(std.fmt.bufPrint(&setup, "setoption name SyzygyPath value {s}\nsetoption name Threads value 1\nsetoption name Syzygy50MoveRule value {s}\n", .{ wdl_dir, c.value }) catch unreachable);
+            s.send(std.mem.print(&setup, "setoption name SyzygyPath value {s}\nsetoption name Threads value 1\nsetoption name Syzygy50MoveRule value {s}\n", .{ wdl_dir, c.value }) catch unreachable);
             s.send("position fen 8/8/8/8/8/8/4k3/K6R w - - 99 100\ngo depth 12\n");
             _ = s.fillUntil("\nbestmove");
             var last: ?InfoLine = null;
@@ -273,7 +273,7 @@ pub fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     for (runs) |r| {
-        const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy5:syzygy\nposition fen {s}\nd\nquit\n", .{r.fen});
+        const input = try gpa.print("setoption name SyzygyPath value syzygy5:syzygy\nposition fen {s}\nd\nquit\n", .{r.fen});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
@@ -303,7 +303,7 @@ pub fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     defer Io.Dir.cwd().deleteFile(io, "tb_cursed_tmp.epd") catch {};
     for (node_runs) |r| {
         try Io.Dir.cwd().writeFile(io, .{ .sub_path = "tb_cursed_tmp.epd", .data = r.fen });
-        const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy5:syzygy\nbench 16 1 {d} tb_cursed_tmp.epd nodes\nquit\n", .{r.limit});
+        const input = try gpa.print("setoption name SyzygyPath value syzygy5:syzygy\nbench 16 1 {d} tb_cursed_tmp.epd nodes\nquit\n", .{r.limit});
         defer gpa.free(input);
         const nodes_tb = try benchNodes(gpa, io, bin, input);
         try out.print(gpa, "{s} nodes-tb={d}\n", .{ r.label, nodes_tb });

@@ -324,7 +324,7 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
     option_port.setByName(name_ptr[0..name_len], vptr[0..vlen], &res);
     if (res.found == 0) {
         var buf: [256]u8 = undefined;
-        const out = std.fmt.bufPrint(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
+        const out = std.mem.print(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
         uci_output.printLine(out);
         return;
     }
@@ -334,7 +334,7 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
         var relay_int: i32 = 0;
         if (res.kind == 1 or res.kind == 2) {
             relay_int = option_port.intByIndex(res.idx);
-            relay_value = std.fmt.bufPrint(&relay_buf, "{d}", .{relay_int}) catch "";
+            relay_value = std.mem.print(&relay_buf, "{d}", .{relay_int}) catch "";
         } else if (res.kind == 0) {
             relay_value = option_port.currentByIndex(res.idx);
         }

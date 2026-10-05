@@ -148,7 +148,7 @@ pub fn main(init: std.process.Init) !void {
     defer unused.deinit(gpa);
     const main_i = g.idx("main").?;
     for (adj.items[main_i].items) |t| {
-        const needle = try std.fmt.allocPrint(gpa, "@import(\"{s}\")", .{g.names[t]});
+        const needle = try gpa.print("@import(\"{s}\")", .{g.names[t]});
         defer gpa.free(needle);
         if (std.mem.find(u8, main_src, needle) == null) try unused.append(gpa, g.names[t]);
     }
@@ -174,8 +174,8 @@ pub fn main(init: std.process.Init) !void {
     }
     while (try walker.next(io)) |entry| {
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".zig")) continue;
-        try fpaths.append(gpa, try std.fmt.allocPrint(gpa, "src/{s}", .{entry.path}));
-        try fnames.append(gpa, toPosixSep(try std.fmt.allocPrint(gpa, "src/{s}", .{entry.path})));
+        try fpaths.append(gpa, try gpa.print("src/{s}", .{entry.path}));
+        try fnames.append(gpa, toPosixSep(try gpa.print("src/{s}", .{entry.path})));
         try fadj.append(gpa, .empty);
     }
     var fg = Graph{ .names = fnames.items, .adj = fadj.items };
@@ -183,18 +183,18 @@ pub fn main(init: std.process.Init) !void {
     for (fg.names, 0..) |path, i| {
         const body = try Io.Dir.cwd().readFileAlloc(io, fpaths.items[i], gpa, .unlimited);
         defer gpa.free(body);
-        const dirname = std.fs.path.dirname(path) orelse "src";
+        const dirname = std.Io.Dir.path.dirname(path) orelse "src";
         var it = std.mem.splitSequence(u8, body, "@import(\"");
         _ = it.next();
         while (it.next()) |chunk| {
             const e = std.mem.findScalar(u8, chunk, '"') orelse continue;
             const imp = chunk[0..e];
             if (!std.mem.endsWith(u8, imp, ".zig")) continue;
-            const joined = try std.fs.path.join(gpa, &.{ dirname, imp });
+            const joined = try std.Io.Dir.path.join(gpa, &.{ dirname, imp });
             defer gpa.free(joined);
-            const resolved = try std.fs.path.resolve(gpa, &.{joined});
+            const resolved = try std.Io.Dir.path.resolveAlloc(gpa, &.{joined});
             defer gpa.free(resolved);
-            const cwd_prefix = try std.fs.path.resolve(gpa, &.{"."});
+            const cwd_prefix = try std.Io.Dir.path.resolveAlloc(gpa, &.{"."});
             defer gpa.free(cwd_prefix);
             const rel = if (std.mem.startsWith(u8, resolved, cwd_prefix))
                 resolved[cwd_prefix.len + 1 ..]
@@ -238,7 +238,7 @@ pub fn main(init: std.process.Init) !void {
         while (it.next()) |chunk| {
             const e = std.mem.findScalar(u8, chunk, '"') orelse continue;
             if (!std.mem.endsWith(u8, chunk[0..e], ".zig")) continue;
-            const path = try std.fmt.allocPrint(gpa, "src/{s}", .{chunk[0..e]});
+            const path = try gpa.print("src/{s}", .{chunk[0..e]});
             defer gpa.free(path);
             const rid = fg.idx(path) orelse continue;
             if (!reachable[rid]) {

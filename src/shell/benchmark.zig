@@ -74,8 +74,7 @@ fn clampReported(
 ) !i32 {
     const bounded = std.math.clamp(value, lo, hi);
     if (bounded != value) {
-        const line = try std.fmt.allocPrint(
-            allocator,
+        const line = try allocator.print(
             "speedtest: {s} {d} is outside [{d}, {d}]; using {d}\n",
             .{ what, value, lo, hi, bounded },
         );
@@ -122,7 +121,7 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![]u8 {
     const go = if (std.mem.eql(u8, limit_type, "eval"))
         "eval"
     else
-        try std.fmt.allocPrint(arena, "go {s} {s}", .{ limit_type, limit });
+        try arena.print("go {s} {s}", .{ limit_type, limit });
 
     var commands = std.ArrayList(u8).empty;
     defer commands.deinit(allocator);
@@ -217,8 +216,7 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: i32) !BenchmarkSe
         break :blk try clampReported(&notice, allocator, "seconds", given, min_seconds, max_seconds);
     } else 150;
 
-    const filled_invocation = try std.fmt.allocPrint(
-        arena,
+    const filled_invocation = try arena.print(
         "{d} {d} {d}",
         .{ threads, tt_size, desired_time_s },
     );
@@ -288,7 +286,7 @@ fn appendCommandFmt(
     comptime fmt: []const u8,
     args: anytype,
 ) !void {
-    const command = try std.fmt.allocPrint(allocator, fmt, args);
+    const command = try allocator.print(fmt, args);
     defer allocator.free(command);
     try appendCommand(buffer, allocator, command);
 }
@@ -368,10 +366,10 @@ test "speedtest arguments are clamped instead of overflowing" {
         const out = setupBenchmark("4 128 2147484", hw);
         defer freeSetup(out);
         const notice = out.clamp_notice_ptr orelse return error.TestExpectedClampNotice;
-        try std.testing.expect(std.mem.indexOf(u8, notice, "seconds 2147484 is outside") != null);
+        try std.testing.expect(std.mem.find(u8, notice, "seconds 2147484 is outside") != null);
         // No movetime may be negative, which is what the wrapped scale factor produced.
         const commands = out.commands_ptr orelse return error.TestExpectedCommands;
-        try std.testing.expect(std.mem.indexOf(u8, commands, "movetime -") == null);
+        try std.testing.expect(std.mem.find(u8, commands, "movetime -") == null);
     }
 
     // `128 * threads` overflowed i32 and emitted a negative Hash, which the option range then
@@ -382,7 +380,7 @@ test "speedtest arguments are clamped instead of overflowing" {
         const out = setupBenchmark("100000000", hw);
         defer freeSetup(out);
         const notice = out.clamp_notice_ptr orelse return error.TestExpectedClampNotice;
-        try std.testing.expect(std.mem.indexOf(u8, notice, "threads 100000000 is outside") != null);
+        try std.testing.expect(std.mem.find(u8, notice, "threads 100000000 is outside") != null);
         try std.testing.expectEqual(hw, out.threads);
         try std.testing.expectEqual(@as(i32, 128 * hw), out.tt_size);
         try std.testing.expect(out.tt_size > 0);

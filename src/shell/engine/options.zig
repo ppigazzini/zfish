@@ -31,7 +31,7 @@ fn engineAddOption(
     var buf: [16]u8 = undefined;
     const default_slice: []const u8 = switch (option_kind) {
         1 => if (default_value != 0) "true" else "false", // check
-        2 => std.fmt.bufPrint(&buf, "{d}", .{default_value}) catch unreachable, // spin
+        2 => std.mem.print(&buf, "{d}", .{default_value}) catch unreachable, // spin
         3 => "", // button
         0 => default_ptr[0..default_len], // string
         else => @panic("engineAddOption: bad option kind"),

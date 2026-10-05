@@ -200,18 +200,18 @@ pub const OptionsModel = struct {
         var out = std.ArrayList(u8).empty;
         errdefer out.deinit(self.allocator);
         for (self.entries.items) |entry| {
-            const head = try std.fmt.allocPrint(self.allocator, "\noption name {s} type {s}", .{
+            const head = try self.allocator.print("\noption name {s} type {s}", .{
                 entry.name, optionKindName(entry.kind),
             });
             defer self.allocator.free(head);
             try out.appendSlice(self.allocator, head);
 
             const tail: ?[]u8 = switch (entry.kind) {
-                .check => try std.fmt.allocPrint(self.allocator, " default {s}", .{entry.default_value}),
-                .string => try std.fmt.allocPrint(self.allocator, " default {s}", .{
+                .check => try self.allocator.print(" default {s}", .{entry.default_value}),
+                .string => try self.allocator.print(" default {s}", .{
                     if (entry.default_value.len == 0) "<empty>" else entry.default_value,
                 }),
-                .spin => try std.fmt.allocPrint(self.allocator, " default {d} min {d} max {d}", .{
+                .spin => try self.allocator.print(" default {d} min {d} max {d}", .{
                     parseSignedInt(entry.default_value) orelse 0, entry.min, entry.max,
                 }),
                 .button => null,
@@ -265,7 +265,7 @@ pub const StandardOptionParams = struct {
 // the caller, so this set stays in lockstep with engine.zig initBody.
 pub fn registerStandardOptions(model: *OptionsModel, params: StandardOptionParams) !void {
     var elo_buf: [16]u8 = undefined;
-    const elo_default = std.fmt.bufPrint(&elo_buf, "{d}", .{params.skill_lowest_elo}) catch unreachable;
+    const elo_default = std.mem.print(&elo_buf, "{d}", .{params.skill_lowest_elo}) catch unreachable;
 
     _ = try model.add("Debug Log File", .string, "", 0, 0, callback_debug_log_file);
     _ = try model.add("NumaPolicy", .string, "auto", 0, 0, callback_numa_policy);

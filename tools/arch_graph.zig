@@ -34,7 +34,7 @@ pub const Metrics = struct {
 //
 // Every key in the file graph -- the walked names, the roots parsed out of the build files,
 // the resolved import targets -- is compared with `std.mem.eql`, so all three have to spell a
-// separator the same way. `Io.Dir.Walker` appends `std.fs.path.sep`, which is '\\' on Windows,
+// separator the same way. `Io.Dir.Walker` appends `std.Io.Dir.path.sep`, which is '\\' on Windows,
 // while the build files spell every path with '/'. Without this the two never match THERE and
 // always match here, so the whole file graph reads empty on the Windows runners while every
 // Linux run says it is fine. `arch-report` is in the `parity-portable` aggregate, which is
@@ -157,7 +157,7 @@ fn countSccs(gpa: std.mem.Allocator, g: *const Graph, in_cycles: *usize, list: ?
                     nontrivial += 1;
                     in_cycles.* += members;
                     if (list) |l| {
-                        const line = try std.fmt.allocPrint(gpa, "    SCC({d}): {s}\n", .{ members, names.items });
+                        const line = try gpa.print("    SCC({d}): {s}\n", .{ members, names.items });
                         defer gpa.free(line);
                         try l.appendSlice(gpa, line);
                     }

@@ -31,8 +31,7 @@ pub fn engineInfoText(gpa: std.mem.Allocator, to_uci: bool) ?[]u8 {
     const version_text = engineVersionOwned(gpa) catch return null;
     defer gpa.free(version_text);
 
-    return std.fmt.allocPrint(
-        gpa,
+    return gpa.print(
         "{s}{s}the Stockfish developers (see AUTHORS file)",
         .{ version_text, if (to_uci) "\nid author " else " by " },
     ) catch null;
@@ -44,8 +43,7 @@ pub fn compilerInfoText(gpa: std.mem.Allocator) ?[]u8 {
     const settings = compilationSettingsOwned(gpa) catch return null;
     defer gpa.free(settings);
 
-    return std.fmt.allocPrint(
-        gpa,
+    return gpa.print(
         "\nCompiled by                : {s}{s}\n" ++
             "Compilation architecture   : {s}\n" ++
             "Compilation settings       : {s}\n" ++
@@ -121,11 +119,10 @@ fn getWorkingDirectoryAlloc(gpa: std.mem.Allocator) ![]u8 {
 
 fn engineVersionOwned(allocator: std.mem.Allocator) ![]u8 {
     if (!std.mem.eql(u8, version, "dev")) {
-        return std.fmt.allocPrint(allocator, "Stockfish {s}", .{version});
+        return allocator.print("Stockfish {s}", .{version});
     }
 
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         "Stockfish {s}-{s}-{s}",
         .{ version, gitDateText(), gitShaText() },
     );
@@ -151,7 +148,7 @@ fn compilerNameOwned(allocator: std.mem.Allocator) ![]u8 {
     // Note that Stockfish reports the C++ compiler via preprocessor macros (__clang__ / __GNUC__ /
     // _MSC_VER / ...). zfish compiles no C++ and is built by Zig (LLVM backend), so
     // report the Zig toolchain instead.
-    return std.fmt.allocPrint(allocator, "Zig {s} (LLVM)", .{builtin.zig_version_string});
+    return allocator.print("Zig {s} (LLVM)", .{builtin.zig_version_string});
 }
 
 fn compilerOsText() []const u8 {

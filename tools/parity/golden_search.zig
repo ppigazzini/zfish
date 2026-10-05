@@ -75,7 +75,7 @@ pub fn buildSearchParity(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 
                     if (std.mem.eql(u8, prev, "score")) {
                         const kind = tok;
                         const val = t.next() orelse "";
-                        if (std.fmt.bufPrint(&sc, "{s} {s}", .{ kind, val })) |printed| {
+                        if (std.mem.print(&sc, "{s} {s}", .{ kind, val })) |printed| {
                             sc_len = printed.len;
                         } else |_| {}
                     }
@@ -122,7 +122,7 @@ pub fn buildPerft(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var totals: usize = 0;
     for (runs) |r| {
         try out.print(gpa, "{s}\n", .{r.label});
-        const input = try std.fmt.allocPrint(gpa, "{s}\nquit\n", .{r.seq});
+        const input = try gpa.print("{s}\nquit\n", .{r.seq});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
@@ -171,7 +171,7 @@ pub fn buildEval(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var finals: usize = 0;
     for (runs) |r| {
         try out.print(gpa, "{s}\n", .{r.label});
-        const input = try std.fmt.allocPrint(gpa, "{s}\neval\nquit\n", .{r.pos});
+        const input = try gpa.print("{s}\neval\nquit\n", .{r.pos});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
@@ -212,7 +212,7 @@ pub fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     for (bench_matrix_configs) |args| {
-        const input = try std.fmt.allocPrint(gpa, "bench {s}\nquit\n", .{args});
+        const input = try gpa.print("bench {s}\nquit\n", .{args});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
@@ -322,7 +322,7 @@ pub fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try s.init(io, gpa, bin);
         s.send("setoption name Threads value 1\n");
         var cmdbuf: [256]u8 = undefined;
-        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo mate {d}\n", .{ r.fen, r.n }) catch fail("golden_search: command buffer too small for the case table", .{}));
+        s.send(std.mem.print(&cmdbuf, "position fen {s}\ngo mate {d}\n", .{ r.fen, r.n }) catch fail("golden_search: command buffer too small for the case table", .{}));
         _ = s.fillUntil("\nbestmove");
         const buf = s.buffered();
 
@@ -370,7 +370,7 @@ pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try s.init(io, gpa, bin);
         s.send("setoption name Threads value 1\nsetoption name UCI_Chess960 value true\n");
         var cb: [160]u8 = undefined;
-        s.send(std.fmt.bufPrint(&cb, "position fen {s}\ngo nodes 300000\n", .{p.fen}) catch fail("golden_search: command buffer too small for the case table", .{}));
+        s.send(std.mem.print(&cb, "position fen {s}\ngo nodes 300000\n", .{p.fen}) catch fail("golden_search: command buffer too small for the case table", .{}));
         _ = s.fillUntil("\nbestmove");
         const buf = s.buffered();
         var info: ?InfoLine = null;
@@ -413,7 +413,7 @@ pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 
     // --- FRC eval: capture the NNUE eval on FRC king placements (Final evaluation line).
     for (positions) |p| {
-        const input = try std.fmt.allocPrint(gpa, "setoption name UCI_Chess960 value true\nposition fen {s}\neval\nquit\n", .{p.fen});
+        const input = try gpa.print("setoption name UCI_Chess960 value true\nposition fen {s}\neval\nquit\n", .{p.fen});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
@@ -444,7 +444,7 @@ pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
             .{ .label = "opt-on ", .setup = "setoption name UCI_Chess960 value true\n", .fen = "4k3/8/8/8/8/8/8/qR2K3 w B - 0 1" },
         };
         for (sloppy) |c| {
-            const input = try std.fmt.allocPrint(gpa, "{s}position fen {s}\ngo perft 1\nquit\n", .{ c.setup, c.fen });
+            const input = try gpa.print("{s}position fen {s}\ngo perft 1\nquit\n", .{ c.setup, c.fen });
             defer gpa.free(input);
             var cap = try runEngine(gpa, io, bin, &.{}, input);
             defer cap.deinit(gpa);

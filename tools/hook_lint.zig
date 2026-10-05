@@ -123,7 +123,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     for (files.items) |rel| {
-        const path = try std.fmt.allocPrint(gpa, "src/{s}", .{rel});
+        const path = try gpa.print("src/{s}", .{rel});
         defer gpa.free(path);
         const body = try Io.Dir.cwd().readFileAlloc(io, path, gpa, .unlimited);
         defer gpa.free(body);
@@ -200,7 +200,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Rule 4: require the shipped composition root to register every hook.
     for (hooks.items) |h| {
-        const needle = try std.fmt.allocPrint(gpa, ".{s} = ", .{h.name});
+        const needle = try gpa.print(".{s} = ", .{h.name});
         defer gpa.free(needle);
         var found = false;
         for (registrar_src.items) |s| {

@@ -235,7 +235,7 @@ fn prettyAlloc(bitboard: u64) ![]u8 {
             try buffer.appendSlice(allocator, if ((bitboard & squareBb(square)) != 0) "| X " else "|   ");
         }
 
-        const label = try std.fmt.allocPrint(allocator, "| {d}\n+---+---+---+---+---+---+---+---+\n", .{rank + 1});
+        const label = try allocator.print("| {d}\n+---+---+---+---+---+---+---+---+\n", .{rank + 1});
         defer allocator.free(label);
         try buffer.appendSlice(allocator, label);
 

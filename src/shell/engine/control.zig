@@ -59,7 +59,7 @@ pub fn tbInit(path: []const u8) void {
     tablebase.init(path.ptr, path.len);
     if (path.len == 0) return;
     var buf: [96]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, "Found {d} WDL and {d} DTZ tablebase files (up to {d}-man).", .{
+    const msg = std.mem.print(&buf, "Found {d} WDL and {d} DTZ tablebase files (up to {d}-man).", .{
         tablebase.foundWdl(), tablebase.foundDtz(), tablebase.discoveredMax(),
     }) catch return;
     engine_nnue.printInfoString(msg);

@@ -4,7 +4,7 @@
 //! Keep stdio out of here -- route file reads, stdout/stderr writes, the stdin command loop, the
 //! cwd lookup, and every numeric/float trace format through std.Io / std.fmt
 //! (`std.Io.Dir.readFileAlloc`, `std.Io.File.writeStreamingAll`, a `std.Io` stdin reader,
-//! `std.process.currentPath`, `std.fmt.bufPrint`). Note the float trace formats are only ever
+//! `std.process.currentPath`, `std.mem.print`). Note the float trace formats are only ever
 //! `centipawns*0.01`, values on the 2-decimal grid, so C's round-half-to-even and
 //! std.fmt's round-half-away can never disagree (proven byte-exact over cp in +-2e6).
 //!

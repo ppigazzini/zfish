@@ -29,7 +29,7 @@ pub fn printInfoString(str: []const u8) void {
         }
         if (all_ws) continue;
         var buf: [1024]u8 = undefined;
-        const out = std.fmt.bufPrint(&buf, "info string {s}", .{line}) catch continue;
+        const out = std.mem.print(&buf, "info string {s}", .{line}) catch continue;
         uci_output.printLine(out);
     }
 }

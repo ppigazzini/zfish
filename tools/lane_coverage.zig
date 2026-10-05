@@ -73,10 +73,10 @@ fn scanLine(line: []const u8, steps: *std.StringHashMap(State)) void {
     const trimmed = std.mem.trim(u8, line, " \t");
     if (trimmed.len == 0 or trimmed[0] == '#') return;
     // Cut a trailing YAML comment; ` #` mid-line starts one.
-    const content = if (std.mem.indexOf(u8, trimmed, " #")) |h| trimmed[0..h] else trimmed;
+    const content = if (std.mem.find(u8, trimmed, " #")) |h| trimmed[0..h] else trimmed;
 
     var rest = content;
-    while (std.mem.indexOf(u8, rest, "zig build")) |at| {
+    while (std.mem.find(u8, rest, "zig build")) |at| {
         rest = rest[at + "zig build".len ..];
         var tok_it = std.mem.tokenizeAny(u8, rest, " \t");
         while (tok_it.next()) |raw_tok| {
@@ -104,8 +104,8 @@ fn scanLine(line: []const u8, steps: *std.StringHashMap(State)) void {
 /// sentence.
 fn invokesZig(content: []const u8) bool {
     var rest = content;
-    while (std.mem.indexOf(u8, rest, "zig ")) |at| {
-        const before_ok = at == 0 or std.mem.indexOfScalar(u8, " \t(\"'`|&;", rest[at - 1]) != null;
+    while (std.mem.find(u8, rest, "zig ")) |at| {
+        const before_ok = at == 0 or std.mem.findScalar(u8, " \t(\"'`|&;", rest[at - 1]) != null;
         const after = rest[at + "zig ".len ..];
         if (before_ok and after.len > 0 and std.ascii.isLower(after[0])) return true;
         rest = rest[at + 1 ..];
@@ -163,16 +163,16 @@ fn auditToolchainOrder(wf: []const u8, body: []const u8, jobs: *usize) usize {
             continue;
         }
         if (trimmed[0] == '#') continue;
-        const content = if (std.mem.indexOf(u8, trimmed, " #")) |h| trimmed[0..h] else trimmed;
+        const content = if (std.mem.find(u8, trimmed, " #")) |h| trimmed[0..h] else trimmed;
 
-        if (std.mem.indexOf(u8, content, "mlugg/setup-zig") != null) {
+        if (std.mem.find(u8, content, "mlugg/setup-zig") != null) {
             installed = true;
             continue;
         }
 
         const inline_run = std.mem.startsWith(u8, content, "run:") or std.mem.startsWith(u8, content, "- run:");
         if (inline_run) {
-            const val = std.mem.trim(u8, content[std.mem.indexOfScalar(u8, content, ':').? + 1 ..], " \t");
+            const val = std.mem.trim(u8, content[std.mem.findScalar(u8, content, ':').? + 1 ..], " \t");
             if (val.len > 0 and (val[0] == '|' or val[0] == '>')) block = indent;
         }
         if (!inline_run and block == null) continue;
@@ -222,7 +222,7 @@ pub fn main(init: std.process.Init) !void {
             "lane-coverage: SHRUNKEN step list, which would report OK over nothing. Refusing.", .{ steps.count(), step_floor });
 
     // --- what CI dispatches ---------------------------------------------------------
-    const wf_dir_path = try std.fmt.allocPrint(gpa, "{s}/.github/workflows", .{root});
+    const wf_dir_path = try gpa.print("{s}/.github/workflows", .{root});
     defer gpa.free(wf_dir_path);
     var wf_dir = Io.Dir.cwd().openDir(io, wf_dir_path, .{ .iterate = true }) catch
         fail("cannot open {s} -- nothing to read lanes out of", .{wf_dir_path});
@@ -260,7 +260,7 @@ pub fn main(init: std.process.Init) !void {
     while (lines.next()) |raw| {
         const line = std.mem.trim(u8, raw, " \t\r");
         if (line.len == 0 or line[0] == '#') continue;
-        const sep = std.mem.indexOfAny(u8, line, " \t") orelse {
+        const sep = std.mem.findAny(u8, line, " \t") orelse {
             std.debug.print("lane-coverage: EXCUSE WITH NO REASON  `{s}` -- an excuse is an argument, not a name\n", .{line});
             fail_count += 1;
             continue;

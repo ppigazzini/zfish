@@ -173,7 +173,7 @@ pub fn buildFenErrors(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     for (fen_error_cases) |c| {
-        const stdin_bytes = try std.fmt.allocPrint(gpa, "position fen {s}\nisready\nquit\n", .{c.fen});
+        const stdin_bytes = try gpa.print("position fen {s}\nisready\nquit\n", .{c.fen});
         defer gpa.free(stdin_bytes);
         var cap = try runEngine(gpa, io, bin, &.{}, stdin_bytes);
         defer cap.deinit(gpa);
@@ -220,7 +220,7 @@ pub fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var keys: usize = 0;
     for (runs) |r| {
         try out.print(gpa, "{s}\n", .{r.label});
-        const input = try std.fmt.allocPrint(gpa, "{s}\nquit\n", .{r.seq});
+        const input = try gpa.print("{s}\nquit\n", .{r.seq});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
