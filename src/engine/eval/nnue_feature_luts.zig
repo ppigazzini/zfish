@@ -67,12 +67,10 @@ fn initThreatOffsets() struct { first: [16]HelperOffsets, second: [16][64]u32 } 
     var indices = std.mem.zeroes([16]HelperOffsets);
     var local_offsets = std.mem.zeroes([16][64]u32);
     var cumulative_offset: u32 = 0;
-    var piece_index: usize = 0;
-    while (piece_index < all_pieces.len) : (piece_index += 1) {
+    for (0..all_pieces.len) |piece_index| {
         const piece = all_pieces[piece_index];
         var cumulative_piece_offset: u32 = 0;
-        var from: usize = 0;
-        while (from < 64) : (from += 1) {
+        for (0..64) |from| {
             local_offsets[piece][from] = cumulative_piece_offset;
             if (typeOf(piece) != pawn_piece_type) {
                 cumulative_piece_offset += constexprPopcount(pseudoAttacks(typeOf(piece), from));
@@ -93,11 +91,9 @@ fn initThreatOffsets() struct { first: [16]HelperOffsets, second: [16][64]u32 } 
 fn initIndexLuts() [16][16][2]u32 {
     @setEvalBranchQuota(200000);
     var indices = std.mem.zeroes([16][16][2]u32);
-    var attacker_idx: usize = 0;
-    while (attacker_idx < all_pieces.len) : (attacker_idx += 1) {
+    for (0..all_pieces.len) |attacker_idx| {
         const attacker = all_pieces[attacker_idx];
-        var attacked_idx: usize = 0;
-        while (attacked_idx < all_pieces.len) : (attacked_idx += 1) {
+        for (0..all_pieces.len) |attacked_idx| {
             const attacked = all_pieces[attacked_idx];
             const enemy = (attacker ^ attacked) == 8;
             const attacker_type = typeOf(attacker);

@@ -71,8 +71,7 @@ pub const Pool = struct {
         const vec = try self.allocator.alloc(*worker_layout.Thread, count);
         var built: usize = 0;
         errdefer {
-            var i: usize = 0;
-            while (i < built) : (i += 1) {
+            for (0..built) |i| {
                 const t: *SearchThread = @ptrCast(@alignCast(vec[i]));
                 t.deinit(self.allocator);
                 self.allocator.destroy(t);
@@ -231,8 +230,7 @@ test "Pool lays the ThreadPool footprint and reads back the thread vector" {
     try testing.expectEqual(@as(usize, 4), tp.threads.len);
     try testing.expect(tp.threads.len != 0);
     // Verify each threads[i] is a live SearchThread with the right idx and worker@8 slot.
-    var i: usize = 0;
-    while (i < 4) : (i += 1) {
+    for (0..4) |i| {
         const t: *SearchThread = @ptrCast(@alignCast(tp.threadAt(i)));
         try testing.expectEqual(i, t.idx);
         // Read the offset-8 worker (null here; a real builder would set it).

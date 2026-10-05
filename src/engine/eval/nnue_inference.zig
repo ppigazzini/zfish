@@ -149,8 +149,7 @@ pub fn traceEvaluate(
     var nnz: nnue_accumulator_port.NnzOut = undefined;
     networkTransform(pos, accumulator_stack, cache, @ptrCast(&transformed), &nnz);
 
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
+    for (0..layer_stacks) |bucket| {
         output.positional[bucket] = @divTrunc(propagateBucket(bucket, @ptrCast(&transformed), &nnz), output_scale);
     }
 
@@ -208,8 +207,7 @@ test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
         const SPARSE: bool = shape[2];
         const groups = IN / 4;
 
-        var iter: usize = 0;
-        while (iter < 32) : (iter += 1) {
+        for (0..32) |_| {
             var input: [IN]u8 align(64) = undefined;
             for (&input) |*v| {
                 // Draw from the ClippedReLU output range, with ~half zeroed so the sparse skip is hit.
@@ -275,8 +273,7 @@ test "sqrClipPair matches the split activations through the pair interleave" {
     var prng = std.Random.DefaultPrng.init(0xA1B2C3D4E5F60718);
     const rnd = prng.random();
 
-    var iter: usize = 0;
-    while (iter < 256) : (iter += 1) {
+    for (0..256) |_| {
         var in: [32]i32 = undefined;
         for (&in) |*v| {
             v.* = switch (rnd.intRangeAtMost(u8, 0, 3)) {
@@ -317,8 +314,7 @@ test "sqrClipPair128 matches the split activations in natural order" {
     var prng = std.Random.DefaultPrng.init(0xC0FFEE1234567890);
     const rnd = prng.random();
 
-    var iter: usize = 0;
-    while (iter < 256) : (iter += 1) {
+    for (0..256) |_| {
         var in: [32]i32 = undefined;
         for (&in) |*v| {
             v.* = switch (rnd.intRangeAtMost(u8, 0, 3)) {

@@ -187,8 +187,7 @@ test "packusTransform64 equals the scalar transform identity" {
     const rnd = prng.random();
     const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
 
-    var iter: usize = 0;
-    while (iter < 512) : (iter += 1) {
+    for (0..512) |_| {
         var a: [64]i16 = undefined;
         var b: [64]i16 = undefined;
         for (0..64) |i| {
@@ -220,8 +219,7 @@ test "nnzFold4 equals the per-vector non-zero masks it replaces" {
     if (comptime !use_packus_avx2) return error.SkipZigTest;
     var rng = std.Random.DefaultPrng.init(0x4E4E_5A46_4F4C_4434);
     const random = rng.random();
-    var trial: usize = 0;
-    while (trial < 4096) : (trial += 1) {
+    for (0..4096) |_| {
         var packs: [4]@Vector(32, u8) = undefined;
         var expected: u32 = 0;
         for (&packs, 0..) |*pk, v| {
@@ -249,8 +247,7 @@ test "packusTransform32 equals the scalar transform identity" {
     const rnd = prng.random();
     const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
 
-    var iter: usize = 0;
-    while (iter < 512) : (iter += 1) {
+    for (0..512) |_| {
         var a: [32]i16 = undefined;
         var b: [32]i16 = undefined;
         for (0..32) |i| {
@@ -285,8 +282,7 @@ test "packusTransform16 equals the scalar transform identity" {
     const rnd = prng.random();
     const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
 
-    var iter: usize = 0;
-    while (iter < 512) : (iter += 1) {
+    for (0..512) |_| {
         var a: [16]i16 = undefined;
         var b: [16]i16 = undefined;
         for (0..16) |i| {

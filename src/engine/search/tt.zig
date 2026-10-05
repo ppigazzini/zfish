@@ -248,8 +248,7 @@ pub fn hashfull(
     const limit = @min(cluster_count, 1000);
 
     while (cluster_index < limit) : (cluster_index += 1) {
-        var entry_index: usize = 0;
-        while (entry_index < cluster_size) : (entry_index += 1) {
+        for (0..cluster_size) |entry_index| {
             const entry = &clusters[cluster_index].entry[entry_index];
             if (rlx(u8, &entry.depth8) != 0 and entryRelativeAge(entry, generation) <= max_age) {
                 count += 1;
@@ -285,8 +284,7 @@ pub fn probe(
 ) TtProbeOutput {
     const key16: u16 = @truncate(key);
 
-    var entry_index: usize = 0;
-    while (entry_index < cluster_size) : (entry_index += 1) {
+    for (0..cluster_size) |entry_index| {
         const entry = &cluster.entry[entry_index];
         if (rlx(u16, &entry.key16) == key16) {
             const depth8 = rlx(u8, &entry.depth8);

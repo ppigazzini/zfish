@@ -130,8 +130,7 @@ pub const NumaConfig = struct {
                 const bits = @bitSizeOf(usize);
                 const total = set.len * bits;
                 var found = false;
-                var i: usize = 0;
-                while (i < total) : (i += 1) {
+                for (0..total) |i| {
                     if ((set[i / bits] >> @as(u6, @intCast(i % bits))) & 1 == 0) continue;
                     if (!try cfg.addCpuToNode(0, i)) unreachable;
                     found = true;
@@ -141,8 +140,7 @@ pub const NumaConfig = struct {
         }
 
         const count = @max(std.Thread.getCpuCount() catch 1, 1);
-        var c: usize = 0;
-        while (c < count) : (c += 1) {
+        for (0..count) |c| {
             if (!try cfg.addCpuToNode(0, c)) unreachable;
         }
         return cfg;
@@ -425,8 +423,7 @@ test "numa: suggestsBindingThreads matches upstream's rule" {
     // Two equal 8-CPU nodes: largest=8, not-small=2.
     // Upstream: (n > 8/2 || n >= 2*4) && nodes>1  ->  binds from n=5.
     // The old `n > largest` rule needed n=9: a whole node's worth, so `auto` never bound.
-    var node: usize = 0;
-    while (node < 2) : (node += 1) {
+    for (0..2) |node| {
         var cpu: usize = 0;
         while (cpu < 8) : (cpu += 1) _ = try cfg.addCpuToNode(node, node * 8 + cpu);
     }

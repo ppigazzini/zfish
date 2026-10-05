@@ -160,8 +160,7 @@ pub fn dbgPrint() void {
 }
 
 pub fn dbgClear() void {
-    var index: usize = 0;
-    while (index < max_debug_slots) : (index += 1) {
+    for (0..max_debug_slots) |index| {
         @atomicStore(i64, &dbg_hit[index][0], 0, .seq_cst);
         @atomicStore(i64, &dbg_hit[index][1], 0, .seq_cst);
         @atomicStore(i64, &dbg_mean[index][0], 0, .seq_cst);

@@ -437,8 +437,7 @@ const uci_alphabet = "go position startpos fen moves wtime btime depth nodes inf
 test "fuzz: the UCI parsers tolerate arbitrary input" {
     var prng = std.Random.DefaultPrng.init(0xC0FFEE);
     const rand = prng.random();
-    var iter: usize = 0;
-    while (iter < 30_000) : (iter += 1) {
+    for (0..30_000) |_| {
         var buf: [128]u8 = undefined;
         const len = rand.intRangeAtMost(usize, 0, buf.len);
         for (buf[0..len]) |*b| b.* = uci_alphabet[rand.uintLessThan(usize, uci_alphabet.len)];

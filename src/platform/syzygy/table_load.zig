@@ -150,8 +150,7 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     pos += pos & 1; // word alignment (base is 64-aligned, so pos parity == address parity)
 
     for (files) |f| {
-        var i: usize = 0;
-        while (i < sides) : (i += 1) {
+        for (0..sides) |i| {
             decode_header.setSizes(arena(), t.get(dtz, i, f), buf, &pos) catch return false;
         }
     }
@@ -165,24 +164,21 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     // usize and turn an absurd promise into a small, satisfiable one. Saturating keeps it absurd,
     // and `take` then rejects it.
     for (files) |f| {
-        var i: usize = 0;
-        while (i < sides) : (i += 1) {
+        for (0..sides) |i| {
             const d = t.get(dtz, i, f);
             d.sparse_index = take(buf, &pos, d.sparse_index_size *| @sizeOf(probe.SparseEntry)) orelse
                 return false;
         }
     }
     for (files) |f| {
-        var i: usize = 0;
-        while (i < sides) : (i += 1) {
+        for (0..sides) |i| {
             const d = t.get(dtz, i, f);
             d.block_length = take(buf, &pos, @as(usize, d.block_length_size) *| 2) orelse
                 return false;
         }
     }
     for (files) |f| {
-        var i: usize = 0;
-        while (i < sides) : (i += 1) {
+        for (0..sides) |i| {
             pos = (pos + 0x3F) & ~@as(usize, 0x3F); // 64-byte alignment
             const d = t.get(dtz, i, f);
             d.data = takeAtMost(buf, &pos, @as(usize, d.blocks_num) *| d.sizeof_block) orelse
@@ -244,8 +240,7 @@ fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, files: []const encode.Tb
                     pos.* += 2 * @as(usize, rdU16(buf[pos.*..])) + 2;
                 }
             } else {
-                var i: usize = 0;
-                while (i < 4) : (i += 1) {
+                for (0..4) |i| {
                     if (pos.* >= buf.len) return false;
                     d.map_idx[i] = @intCast(pos.* - map_base + 1);
                     pos.* += @as(usize, buf[pos.*]) + 1;

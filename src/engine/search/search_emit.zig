@@ -96,8 +96,7 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
     const pv_len = pv_moves.len;
     var pv_buf: [4096]u8 = undefined;
     var pv_n: usize = 0;
-    var i: usize = 0;
-    while (i < pv_len) : (i += 1) {
+    for (0..pv_len) |i| {
         if (i != 0) {
             pv_buf[pv_n] = ' ';
             pv_n += 1;
@@ -271,8 +270,7 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
     searchCbPvContext(manager, worker, threads, tt_ptr, &ctx);
-    var i: usize = 0;
-    while (i < ctx.multipv) : (i += 1) {
+    for (0..ctx.multipv) |i| {
         const rm = &ctx.root_moves[i];
         const use_prev = rm.score == -value_infinite;
         if (depth == 1 and use_prev and i > 0) continue;

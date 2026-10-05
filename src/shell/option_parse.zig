@@ -23,8 +23,7 @@ pub const TuneNextResult = struct {
 
 pub fn caseInsensitiveLess(left: []const u8, right: []const u8) bool {
     const limit = @min(left.len, right.len);
-    var index: usize = 0;
-    while (index < limit) : (index += 1) {
+    for (0..limit) |index| {
         const lhs = asciiLower(left[index]);
         const rhs = asciiLower(right[index]);
         if (lhs != rhs) {
@@ -307,8 +306,7 @@ test "fuzz: parseSetOption survives random and adversarial input" {
     var prng = std.Random.DefaultPrng.init(0xF00D_CAFE);
     const rand = prng.random();
     var buf: [160]u8 = undefined;
-    var i: usize = 0;
-    while (i < 20000) : (i += 1) {
+    for (0..20000) |_| {
         const len = rand.uintLessThan(usize, buf.len + 1);
         for (buf[0..len]) |*b| b.* = rand.int(u8);
         const parsed = parseSetOption(buf[0..len]);
@@ -334,8 +332,7 @@ test "fuzz: caseInsensitiveLess is a strict weak ordering" {
     const rand = prng.random();
     var a: [24]u8 = undefined;
     var b: [24]u8 = undefined;
-    var i: usize = 0;
-    while (i < 50000) : (i += 1) {
+    for (0..50000) |_| {
         const la = rand.uintLessThan(usize, a.len + 1);
         const lb = rand.uintLessThan(usize, b.len + 1);
         for (a[0..la]) |*x| x.* = rand.int(u8);
@@ -354,8 +351,7 @@ test "fuzz: validateAssignment / tuneNext never crash" {
     const rand = prng.random();
     const types = [_][]const u8{ "spin", "check", "string", "combo", "button", "junk" };
     var vbuf: [40]u8 = undefined;
-    var i: usize = 0;
-    while (i < 20000) : (i += 1) {
+    for (0..20000) |_| {
         const ty = types[rand.uintLessThan(usize, types.len)];
         const vlen = rand.uintLessThan(usize, vbuf.len + 1);
         for (vbuf[0..vlen]) |*x| x.* = rand.int(u8);

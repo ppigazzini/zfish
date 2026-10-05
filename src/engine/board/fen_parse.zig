@@ -221,8 +221,7 @@ pub fn setPosition(
             const rsq_cand = makeSquare(token - 'A', rel_rank1);
             if (pos.board[rsq_cand] == rook) rsq = rsq_cand;
             var sq: i32 = relativeSquare(c, 1); // SQ_B1
-            var n: usize = 0;
-            while (n < 6) : (n += 1) {
+            for (0..6) |_| {
                 if (pos.board[@intCast(sq)] == king) ksq = sq;
                 sq += 1;
             }

@@ -58,8 +58,7 @@ pub fn searchIdCollectBmc(wl: *const worker_layout.WorkerLayout) f64 {
     const tp = wl.threads;
     const count = tp.numThreads();
     var tot: f64 = 0;
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
+    for (0..count) |i| {
         const wkr = tp.threadTyped(i).worker.?;
         // Read and clear another worker's counter while it is running, as upstream does through
         // RelaxedAtomic (search.cpp:563-564).
@@ -354,8 +353,7 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     const modw: u32 = @intFromFloat(weakness);
     var max_score: i32 = -q_value_inf;
     var best: u16 = 0;
-    var i: usize = 0;
-    while (i < multi_pv) : (i += 1) {
+    for (0..multi_pv) |i| {
         const r: u32 = @truncate(skillRand64());
         const term1 = weakness * @as(f64, @floatFromInt(top_score - id.root_moves[i].score));
         const term2: i32 = delta * @as(i32, @intCast(r % modw));

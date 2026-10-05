@@ -121,8 +121,7 @@ test "splatPawnMoves/splatMoves match scalar references over random masks" {
     var rng = std.Random.DefaultPrng.init(0xF00D_BABE_1234_5678);
     const random = rng.random();
 
-    var trial: usize = 0;
-    while (trial < 20000) : (trial += 1) {
+    for (0..20000) |trial| {
         // Real callers only ever pass masks with <= 8 (pawn) or <= 32 (piece) bits
         // set (upstream's own asserted bounds); bias there but also cover 0 and the
         // full 64-bit sparse case as an extra margin.

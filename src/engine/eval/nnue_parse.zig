@@ -225,8 +225,7 @@ pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8, scrambl
     var pos = biases_dst.len;
     const n = weights_dst.len; // int8 weights
     const padded_input = n / output_dims;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         weights_dst[weightIndexScrambled(i, padded_input, output_dims, scrambled_input)] = blob[pos + i];
     }
     pos += n;
@@ -305,8 +304,7 @@ fn serializeLayerOne(biases: []const u8, weights: []const u8, scrambled_input: b
     const output_dims = biases.len / @sizeOf(i32);
     const n = weights.len;
     const padded_input = n / output_dims;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         try out.append(a, weights[weightIndexScrambled(i, padded_input, output_dims, scrambled_input)]);
     }
 }
@@ -325,8 +323,7 @@ pub fn serializeLayer(
     var hdr: [4]u8 = undefined;
     std.mem.writeInt(u32, &hdr, hash_value, .little);
     try out.appendSlice(a, &hdr);
-    var idx: usize = 0;
-    while (idx < 3) : (idx += 1) {
+    for (0..3) |idx| {
         try serializeLayerOne(biases[idx], weights[idx], scrambled_activations and idx > 0, out, a);
     }
 }
@@ -398,8 +395,7 @@ test "weightIndexScrambled's pair interleave matches the upstream ScrambledInput
     // Typed @splat, not `[_]bool{false} ** 128`: Zig 0.17 rejects `**`
     // directly after `}` -- the cross-version idiom the master-compat lane guards.
     var seen: [128]bool = @splat(false);
-    var i: usize = 0;
-    while (i < 128) : (i += 1) {
+    for (0..128) |i| {
         const idx = weightIndexScrambled(i, 128, 1, true);
         try testing.expect(!seen[idx]);
         seen[idx] = true;

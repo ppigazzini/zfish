@@ -69,8 +69,7 @@ pub fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
         return clearLoadedAfterPartialWrite();
     }
 
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
+    for (0..layer_stacks) |bucket| {
         if (!readLayer(bucket, bytes, &offset)) {
             return clearLoadedAfterPartialWrite();
         }

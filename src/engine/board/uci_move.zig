@@ -61,8 +61,7 @@ fn matchesUciText(raw_move: u16, text: []const u8, chess960: bool) bool {
     var buffer: [5]u8 = undefined;
     const rendered = renderMoveText(&buffer, raw_move, chess960);
 
-    var index: usize = 0;
-    while (index < rendered.len) : (index += 1) {
+    for (0..rendered.len) |index| {
         if (std.ascii.toLower(text[index]) != rendered[index])
             return false;
     }

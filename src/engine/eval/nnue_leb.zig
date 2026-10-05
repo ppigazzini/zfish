@@ -40,8 +40,7 @@ pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count:
         break :blk m;
     };
     var pos: usize = 0;
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
+    for (0..count) |i| {
         // Decode a value that fits two bytes branch-free: select the second byte's
         // contribution and the encoded length by the first byte's continuation bit
         // arithmetically instead of testing it -- that test is the one data-dependent

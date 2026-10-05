@@ -145,8 +145,7 @@ test "writeMultipleDirties matches a scalar reference over random boards/masks/s
 
     const shift_pairs = [_][2]u5{ .{ 8, 16 }, .{ 0, 20 } };
 
-    var trial: usize = 0;
-    while (trial < 20000) : (trial += 1) {
+    for (0..20000) |trial| {
         const pos = randomPosition(random);
         // Real call sites only ever mask down to <= 16 set bits (single-piece reach /
         // slider-attacker sets); bias toward that range but also cover 0 and the full

@@ -152,8 +152,7 @@ inline fn affineSsse3(
             }
         }
     } else {
-        var g: usize = 0;
-        while (g < groups) : (g += 1) {
+        for (0..groups) |g| {
             const in4: [4]u8 = input[g * 4 ..][0..4].*;
             const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
             inline for (0..OUT / 4) |c| {
@@ -384,8 +383,7 @@ pub inline fn affineDpbusd(
             }
         }
     } else {
-        var g: usize = 0;
-        while (g < groups) : (g += 1) {
+        for (0..groups) |g| {
             const in4: @Vector(4, i16) = .{
                 @intCast(input[g * 4]),     @intCast(input[g * 4 + 1]),
                 @intCast(input[g * 4 + 2]), @intCast(input[g * 4 + 3]),

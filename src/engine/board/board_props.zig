@@ -26,8 +26,7 @@ fn perft(pos: *position.Position, depth: i32, states: *[perft_max_depth]StateBuf
     const n = movegen.generateLegal(pos, &moves);
     if (depth == 1) return n;
     var nodes: u64 = 0;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         position.doMoveState(pos, moves[i], &states[ply]);
         nodes += perft(pos, depth - 1, states, ply + 1);
         position.undoMove(pos, moves[i]);
@@ -109,8 +108,7 @@ fn checkRoundTrip(fen: []const u8) !void {
     const n = movegen.generateLegal(&p, &moves);
     try std.testing.expect(n > 0);
 
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         const key0 = pos.st.key;
         const by_type0 = pos.by_type_bb;
         const by_color0 = pos.by_color_bb;
@@ -186,8 +184,7 @@ fn checkMoveGenLegalityAgree(fen: []const u8) !void {
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
     try std.testing.expect(n > 0);
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         try std.testing.expect(position.legal(pp, moves[i]));
         try std.testing.expect(position.pseudoLegal(pp, moves[i]));
     }
@@ -217,8 +214,7 @@ fn checkGivesCheck(fen: []const u8) !void {
     const pp = &p;
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         const predicted = position.givesCheck(&p, moves[i]);
         var new_st: position.StateInfo align(16) = undefined;
         position.doMoveState(&p, moves[i], &new_st);
@@ -344,8 +340,7 @@ test "fuzz: setPosition tolerates arbitrary input without crashing" {
     var prng = std.Random.DefaultPrng.init(0x5EED_F00D);
     const rand = prng.random();
 
-    var iter: usize = 0;
-    while (iter < 50_000) : (iter += 1) {
+    for (0..50_000) |_| {
         var buf: [96]u8 = undefined;
         const len = rand.intRangeAtMost(usize, 0, buf.len);
         for (buf[0..len]) |*byte| byte.* = fen_alphabet[rand.uintLessThan(usize, fen_alphabet.len)];

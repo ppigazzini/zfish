@@ -186,8 +186,7 @@ pub fn main(init: std.process.Init) !void {
         const samples = try gpa.alloc(f64, rounds_b);
         defer gpa.free(samples);
         var nodes: u64 = 0;
-        var round: usize = 0;
-        while (round < rounds_b) : (round += 1) {
+        for (0..rounds_b) |round| {
             const c = try runOnce(gpa, argv_b1.items, 0);
             // Pin the workload with the tree size, the same guard the A/B path applies on
             // every round: a count taken over a different node total is not a datum this
