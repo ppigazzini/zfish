@@ -11,20 +11,20 @@ const std = @import("std");
 const uci_format = @import("uci_format");
 const uci_output = @import("uci_output");
 
-// Hold the command line being dispatched so the error path can echo it whole, as
-// upstream's `currentCmd = cmd` does -- hence ``Command `position fen not_a_fen` failed``
-// rather than ``Command `position` ``. The UCI listener is single-threaded, so a plain
-// global matches upstream's member.
+/// Hold the command line being dispatched so the error path can echo it whole, as
+/// upstream's `currentCmd = cmd` does -- hence ``Command `position fen not_a_fen` failed``
+/// rather than ``Command `position` ``. The UCI listener is single-threaded, so a plain
+/// global matches upstream's member.
 var current_cmd: []const u8 = "";
 
 pub fn setCurrentCmd(cmd: []const u8) void {
     current_cmd = cmd;
 }
 
-// Report the failure and exit(1), mirroring upstream. A failed command must not leave the
-// engine running: printing and continuing left the PREVIOUS position live, so the next
-// `go` searched a stale board and answered with a plausible bestmove for the wrong
-// position. Route the line through the output sink (stdout + `Debug Log File` tee).
+/// Report the failure and exit(1), mirroring upstream. A failed command must not leave the
+/// engine running: printing and continuing left the PREVIOUS position live, so the next
+/// `go` searched a stale board and answered with a plausible bestmove for the wrong
+/// position. Route the line through the output sink (stdout + `Debug Log File` tee).
 pub fn terminateOnCriticalError(message: []const u8) noreturn {
     const gpa = std.heap.c_allocator;
     if (uci_format.formatCriticalError(gpa, current_cmd, message)) |line| {

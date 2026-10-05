@@ -12,7 +12,7 @@ const std = @import("std");
 const position_types = @import("position_types");
 const Position = position_types.Position;
 
-// Define the piece types (low 3 bits of a piece code).
+/// Define the piece types (low 3 bits of a piece code).
 pub const pawn_pt: u8 = 1;
 pub const knight_pt: u8 = 2;
 pub const bishop_pt: u8 = 3;
@@ -28,13 +28,13 @@ pub const file_h_bb: u64 = 0x8080808080808080;
 pub const rank1_bb: u64 = 0xFF;
 pub const rank8_bb: u64 = 0xFF << 56;
 
-// Define the MoveType (top 2 bits of the 16-bit move word).
+/// Define the MoveType (top 2 bits of the 16-bit move word).
 pub const mt_normal: u16 = 0;
 pub const mt_promotion: u16 = 1 << 14;
 pub const mt_en_passant: u16 = 2 << 14;
 pub const mt_castling: u16 = 3 << 14;
 
-// List the non-pawn material value by piece type (index by piece & 7); pawn/none = 0.
+/// List the non-pawn material value by piece type (index by piece & 7); pawn/none = 0.
 pub const piece_value_by_type = [8]i32{ 0, 208, 781, 825, 1276, 2538, 0, 0 };
 
 pub inline fn sqBb(s: u8) u64 {
@@ -43,10 +43,10 @@ pub inline fn sqBb(s: u8) u64 {
 pub inline fn lsbBb(bb: u64) u64 {
     return bb & (~bb +% 1);
 }
-// Mark "no square" in-band, as upstream does: 64 is one past the last real square, so it fits
-// the u8 the board and StateInfo already store and needs no widening. Single-source it -- every
-// `1 << square` shift is guarded against exactly this value, and a second definition drifting
-// would silently unguard one of them.
+/// Mark "no square" in-band, as upstream does: 64 is one past the last real square, so it fits
+/// the u8 the board and StateInfo already store and needs no widening. Single-source it -- every
+/// `1 << square` shift is guarded against exactly this value, and a second definition drifting
+/// would silently unguard one of them.
 pub const sq_none: u8 = 64;
 
 pub inline fn moveFrom(m: u16) u8 {
@@ -83,9 +83,9 @@ pub inline fn isEmpty(pos: *const Position, s: u8) bool {
     return pos.board[s] == 0;
 }
 
-// Return the squares a color-c pawn on `s` attacks (attacks_bb<PAWN>(s, c)).
-// Hold the pawn attack table -- upstream's PawnAttacks[c][s]. position.initRuntime calls
-// initPawnAttacks() before any position setup or search.
+/// Return the squares a color-c pawn on `s` attacks (attacks_bb<PAWN>(s, c)).
+/// Hold the pawn attack table -- upstream's PawnAttacks[c][s]. position.initRuntime calls
+/// initPawnAttacks() before any position setup or search.
 var pawn_attacks_bb: [2][64]u64 = undefined;
 pub fn initPawnAttacks() void {
     for (0..64) |sq| {

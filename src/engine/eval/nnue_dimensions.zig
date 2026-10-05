@@ -23,22 +23,22 @@
 //! still runs, and the evaluation is a plausible wrong number. One derivation cannot
 //! disagree with itself.
 
-// Count the FullThreats features (upstream FullThreats::Dimensions). Also the
-// index base of the pawn-pair block, and the sentinel a threat LUT stores for a
-// combination that names no feature -- readers drop `>= threat_dimensions`.
+/// Count the FullThreats features (upstream FullThreats::Dimensions). Also the
+/// index base of the pawn-pair block, and the sentinel a threat LUT stores for a
+/// combination that names no feature -- readers drop `>= threat_dimensions`.
 pub const threat_dimensions = 59808;
 
-// Number the pawn ids: ranks 2-7 (48 squares) per color, id = 48 * color + (sq - a2).
+/// Number the pawn ids: ranks 2-7 (48 squares) per color, id = 48 * color + (sq - a2).
 pub const pp_pawn_ids = 2 * 48;
-// Count the PP_3Wide features: every unordered pair of pawn ids, C(pp_pawn_ids, 2).
+/// Count the PP_3Wide features: every unordered pair of pawn ids, C(pp_pawn_ids, 2).
 pub const pp_dimensions = pp_pawn_ids * (pp_pawn_ids - 1) / 2;
 
-// Place the first pawn-pair feature directly after the last threat feature. This
-// is the whole reason the two sets can share one array; deriving it is what keeps
-// it true.
+/// Place the first pawn-pair feature directly after the last threat feature. This
+/// is the whole reason the two sets can share one array; deriving it is what keeps
+/// it true.
 pub const pp_index_base = threat_dimensions;
 
-// Size the shared array both sets are stored in.
+/// Size the shared array both sets are stored in.
 pub const threat_and_pp_dimensions = threat_dimensions + pp_dimensions;
 
 comptime {
@@ -52,39 +52,39 @@ comptime {
 
 // ---- the blob layout those cardinalities determine ---------------------------
 
-// Size the transformer's own arrays. `half_dimensions` is upstream's
-// TransformedFeatureDimensions and `psq_feature_dimensions` is HalfKAv2_hm::Dimensions.
-// SFNNv17 dropped the PSQTBuckets output, so no array here is sized by a bucket count.
+/// Size the transformer's own arrays. `half_dimensions` is upstream's
+/// TransformedFeatureDimensions and `psq_feature_dimensions` is HalfKAv2_hm::Dimensions.
+/// SFNNv17 dropped the PSQTBuckets output, so no array here is sized by a bucket count.
 pub const half_dimensions: usize = 1024;
 pub const psq_feature_dimensions: usize = 22528;
 
-// Align every region on a cache line, which is what upstream's `alignas(CacheLineSize)`
-// on each member spells. The accumulator arena carries the same alignment for the same
-// SIMD reason and derives it from here rather than restating 64.
+/// Align every region on a cache line, which is what upstream's `alignas(CacheLineSize)`
+/// on each member spells. The accumulator arena carries the same alignment for the same
+/// SIMD reason and derives it from here rather than restating 64.
 pub const cache_line_bytes: usize = 64;
 
 fn roundUp(x: usize, a: usize) usize {
     return @divCeil(x, a) * a;
 }
 
-// Count the elements of the feature-transformer arrays. The threat weight region holds
-// the FullThreats rows followed by the PP_3Wide rows (one contiguous array).
+/// Count the elements of the feature-transformer arrays. The threat weight region holds
+/// the FullThreats rows followed by the PP_3Wide rows (one contiguous array).
 pub const biases_count = half_dimensions; // i16
 pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i16
 pub const threat_weights_count = half_dimensions * threat_and_pp_dimensions; // i8 (threat ++ pp)
 
-// The stream splits the concatenated region back into separate sections (threat, then
-// pp), each framed on its own; these are the per-section element counts.
+/// The stream splits the concatenated region back into separate sections (threat, then
+/// pp), each framed on its own; these are the per-section element counts.
 pub const threat_only_weights_count = half_dimensions * threat_dimensions; // i8
 pub const pp_only_weights_count = half_dimensions * pp_dimensions; // i8
 
-// Lay out the in-memory byte offsets (member order, each alignas(64)): biases,
-// weights(psq), threatAndPpWeights.
+/// Lay out the in-memory byte offsets (member order, each alignas(64)): biases,
+/// weights(psq), threatAndPpWeights.
 pub const biases_off = 0;
 pub const weights_off = roundUp(biases_count * 2, cache_line_bytes);
 pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 2, cache_line_bytes);
 pub const ft_total_bytes = roundUp(threat_weights_off + threat_weights_count * 1, cache_line_bytes);
-// Byte offset of the pp sub-region within the concatenated threat region.
+/// Byte offset of the pp sub-region within the concatenated threat region.
 pub const pp_weights_off = threat_weights_off + threat_only_weights_count * 1;
 
 comptime {

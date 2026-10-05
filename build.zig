@@ -1,11 +1,11 @@
 const std = @import("std");
-// One import for the whole build package (build/main.zig re-exports it), so the
-// package can be reorganised without touching this list.
+/// One import for the whole build package (build/main.zig re-exports it), so the
+/// package can be reorganised without touching this list.
 const buildpkg = @import("build/main.zig");
-// Shared by the few test artifacts still wired here and by build/tests.zig.
+/// Shared by the few test artifacts still wired here and by build/tests.zig.
 const addTestRun = buildpkg.tests.addTestRun;
-// One definition, in build/gates.zig -- build.zig kept a byte-identical copy after the
-// gate table moved, which is how two implementations of one helper start.
+/// One definition, in build/gates.zig -- build.zig kept a byte-identical copy after the
+/// gate table moved, which is how two implementations of one helper start.
 const addHarnessRun = buildpkg.gates.addHarnessRun;
 const repoPath = buildpkg.config.repoPath;
 const graph = buildpkg.modules;
@@ -18,8 +18,8 @@ const archConfigFor = arch_cfg.archConfigFor;
 const hasMacro = arch_cfg.hasMacro;
 const native_arch = arch_cfg.native_arch;
 
-// Enumerate the owned runtime OSes. Select with -Dos=; each maps to an (os_tag, abi) pair
-// in build(). Keep orthogonal to -Darch= (the ISA tier), so any arch tier can target any OS.
+/// Enumerate the owned runtime OSes. Select with -Dos=; each maps to an (os_tag, abi) pair
+/// in build(). Keep orthogonal to -Darch= (the ISA tier), so any arch tier can target any OS.
 const TargetOs = enum { linux, windows, macos };
 
 const GitInfo = struct {

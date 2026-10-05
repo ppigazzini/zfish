@@ -23,9 +23,9 @@ pub const square_count: usize = 64;
 /// Match PieceType.king.
 const king_piece_type: u8 = 6;
 pub const max_stack_size: usize = 247;
-// Align the accumulator arena on the same cache line the weight blob's regions use,
-// for the same SIMD reason. Derived, not restated: two independent spellings of 64
-// is the shape the feature-transformer layout was just pulled out of.
+/// Align the accumulator arena on the same cache line the weight blob's regions use,
+/// for the same SIMD reason. Derived, not restated: two independent spellings of 64
+/// is the shape the feature-transformer layout was just pulled out of.
 pub const nnue_align: usize = dims.cache_line_bytes;
 pub const color_count: usize = 2;
 pub const half_dimensions: usize = 1024;
@@ -60,15 +60,15 @@ pub const transform_vec_width: usize = blk: {
 };
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
-// HalfKA changed/active index element type. u16 the way upstream's
-// `HalfKAv2_hm::IndexList` is (d96c183f), which is what lets the AVX-512 writer store its
-// 32 index words with one unmasked 512-bit store instead of widening them to u32 first.
-// The comptime assert below is what keeps the narrowing honest.
+/// HalfKA changed/active index element type. u16 the way upstream's
+/// `HalfKAv2_hm::IndexList` is (d96c183f), which is what lets the AVX-512 writer store its
+/// 32 index words with one unmasked 512-bit store instead of widening them to u32 first.
+/// The comptime assert below is what keeps the narrowing honest.
 pub const PsqIndex = u16;
-// Holds the per-ply threat AND pawn-pair changed-feature indices (both index the shared
-// threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
+/// Holds the per-ply threat AND pawn-pair changed-feature indices (both index the shared
+/// threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
 pub const threat_index_capacity: usize = 256;
-// FullThreats::Dimensions (SFNNv16); also PP_3Wide's IndexBase.
+/// FullThreats::Dimensions (SFNNv16); also PP_3Wide's IndexBase.
 pub const threat_dimensions: u32 = dims.threat_dimensions;
 pub const psq_feature_dimensions: usize = 22528;
 comptime {
@@ -99,12 +99,12 @@ pub const DirtyThreatListView = extern struct {
     size_: usize,
 };
 
-// The per-ply threat diff plus the pawn-pair diff (before/after pawn bitboards per color),
-// upstream's Dirties.dirtyThreats + Dirties.dirtyPawnPairs stored together in the threat
-// slot (both feature sets refresh as a unit). Byte-layout-identical to
-// position_types.DirtyThreats -- do_move writes through that alias; keep the two in sync.
-// extern (C declaration-order layout), byte-identical to position_types.DirtyThreats -- see
-// the note there. A cross-struct comptime assert below re-checks the two agree.
+/// The per-ply threat diff plus the pawn-pair diff (before/after pawn bitboards per color),
+/// upstream's Dirties.dirtyThreats + Dirties.dirtyPawnPairs stored together in the threat
+/// slot (both feature sets refresh as a unit). Byte-layout-identical to
+/// position_types.DirtyThreats -- do_move writes through that alias; keep the two in sync.
+/// extern (C declaration-order layout), byte-identical to position_types.DirtyThreats -- see
+/// the note there. A cross-struct comptime assert below re-checks the two agree.
 pub const ThreatDiffView = extern struct {
     list: DirtyThreatListView,
     pp_before: [2]u64,
@@ -127,14 +127,14 @@ pub const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + col
 pub const computed_offset = color_count * half_dimensions * @sizeOf(i16);
 pub const accumulator_state_bytes = roundUp(accumulator_bytes, nnue_align);
 pub const psq_diff_offset = accumulator_bytes;
-// The combined accumulator lives in the psq_feature slot (see nnue_acc_update.zig), so the
-// threat slot holds ONLY its per-ply diff -- there is no threat accumulator to reserve a
-// prefix for. Place the diff at offset 0: that sheds ~4160 B of dead padding per slot (threat
-// stride ~4608 -> ~448), halving the per-thread accumulator arena and shrinking the DTLB reach
-// of the N-ply incremental-replay walk. The threat `computed` flags that used to sit in that
-// prefix are write-only (nothing reads stateComputed(threat_feature)), so their clears are
-// dropped with it (stackReset/stackPush). Port of mcfish fa04404. 0 satisfies any alignment,
-// and the slot base is nnue_align'd, so the ThreatDiffView load stays aligned.
+/// The combined accumulator lives in the psq_feature slot (see nnue_acc_update.zig), so the
+/// threat slot holds ONLY its per-ply diff -- there is no threat accumulator to reserve a
+/// prefix for. Place the diff at offset 0: that sheds ~4160 B of dead padding per slot (threat
+/// stride ~4608 -> ~448), halving the per-thread accumulator arena and shrinking the DTLB reach
+/// of the N-ply incremental-replay walk. The threat `computed` flags that used to sit in that
+/// prefix are write-only (nothing reads stateComputed(threat_feature)), so their clears are
+/// dropped with it (stackReset/stackPush). Port of mcfish fa04404. 0 satisfies any alignment,
+/// and the slot base is nnue_align'd, so the ThreatDiffView load stays aligned.
 pub const threat_diff_offset = 0;
 pub const psq_state_stride = accumulator_state_bytes;
 pub const threat_state_stride = roundUp(threat_diff_offset + @sizeOf(ThreatDiffView), nnue_align);
@@ -142,13 +142,13 @@ pub const psq_array_bytes = psq_state_stride * max_stack_size;
 pub const threat_array_offset = psq_array_bytes;
 pub const threat_array_bytes = threat_state_stride * max_stack_size;
 pub const stack_size_offset = threat_array_offset + threat_array_bytes;
-// The arena's total footprint: both state arrays plus the trailing size field, rounded
-// to the arena alignment. The Worker embeds a buffer of exactly this many bytes;
-// search_id comptime-asserts worker_layout.accumulator_stack_size against this.
+/// The arena's total footprint: both state arrays plus the trailing size field, rounded
+/// to the arena alignment. The Worker embeds a buffer of exactly this many bytes;
+/// search_id comptime-asserts worker_layout.accumulator_stack_size against this.
 pub const arena_bytes = roundUp(stack_size_offset + @sizeOf(usize), nnue_align);
-// Derive the us/prev_ksq/ksq offset from the field itself, not from @sizeOf(list): the added
-// align-8 pp_before/pp_after fields may sort ahead of the u8 scalars, so the scalars no
-// longer sit immediately after the list.
+/// Derive the us/prev_ksq/ksq offset from the field itself, not from @sizeOf(list): the added
+/// align-8 pp_before/pp_after fields may sort ahead of the u8 scalars, so the scalars no
+/// longer sit immediately after the list.
 pub const threat_refresh_diff_offset = threat_diff_offset + @offsetOf(ThreatDiffView, "us");
 
 // Assert what the accessors' @alignCasts assume. Every state base is reached as
@@ -300,9 +300,9 @@ pub fn psqDiff(bytes: [*]const u8) HalfDiff {
     return @as(*const HalfDiff, @ptrCast(@alignCast(bytes + psq_diff_offset))).*;
 }
 
-// Return a POINTER into the (stable) accumulator state bytes, not a by-value copy: the view
-// embeds a [96]DirtyThreatRaw list (~392 B), so `.*` was a per-node compiler_rt memcpy (776k/
-// search). Callers only read, and the state bytes outlive the read, so the pointer is safe.
+/// Return a POINTER into the (stable) accumulator state bytes, not a by-value copy: the view
+/// embeds a [96]DirtyThreatRaw list (~392 B), so `.*` was a per-node compiler_rt memcpy (776k/
+/// search). Callers only read, and the state bytes outlive the read, so the pointer is safe.
 pub fn threatDiff(bytes: [*]const u8) *const ThreatDiffView {
     return @ptrCast(@alignCast(bytes + threat_diff_offset));
 }

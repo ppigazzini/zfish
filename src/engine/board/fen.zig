@@ -14,8 +14,8 @@
 
 const std = @import("std");
 
-// Map a piece code -> FEN letter (index by the engine's piece encoding: 1..6 white,
-// 9..14 black). Mirrors position.zig's table; FEN letters are intrinsic here.
+/// Map a piece code -> FEN letter (index by the engine's piece encoding: 1..6 white,
+/// 9..14 black). Mirrors position.zig's table; FEN letters are intrinsic here.
 const piece_to_char = " PNBRQK  pnbrqk";
 
 const white_oo: u8 = 1;
@@ -23,8 +23,8 @@ const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
 const black_ooo: u8 = 8;
 const black: u8 = 1;
-// Keep a local copy: fen.zig is a standalone unit-test root (build.zig) and must build
-// against std alone, so it cannot reach board_core.sq_none.
+/// Keep a local copy: fen.zig is a standalone unit-test root (build.zig) and must build
+/// against std alone, so it cannot reach board_core.sq_none.
 const sq_none: u8 = 64;
 
 pub fn flipFen(fen: []const u8) ?[]u8 {

@@ -30,9 +30,9 @@ pub fn applyMacros(module: *std.Build.Module, macros: []const Macro) void {
         module.addCMacro(macro.name, macro.value);
 }
 
-// Map the native CPU -> best Stockfish ARCH tier in pure, unit-tested Zig (tools/native_arch.zig).
-// Use the host CPU features Zig's build graph already resolved via cpuid -- no
-// /proc/cpuinfo grep, no `sh`.
+/// Map the native CPU -> best Stockfish ARCH tier in pure, unit-tested Zig (tools/native_arch.zig).
+/// Use the host CPU features Zig's build graph already resolved via cpuid -- no
+/// /proc/cpuinfo grep, no `sh`.
 pub const native_arch = @import("../tools/native_arch.zig");
 
 pub fn resolveArch(b: *std.Build, requested_arch: []const u8) ArchConfig {

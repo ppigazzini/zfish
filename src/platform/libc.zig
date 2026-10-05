@@ -15,7 +15,7 @@
 //! Exclude compiler-detection preprocessor macros (`__GNUC__`, `__clang_*`, `__VERSION__`, ...) --
 //! they have no libc symbol; misc.zig reports the Zig/LLVM build info instead.
 
-// <stdlib.h>
+/// <stdlib.h>
 pub extern "c" fn malloc(size: usize) ?*anyopaque;
 pub extern "c" fn free(ptr: ?*anyopaque) void;
 pub extern "c" fn exit(code: i32) noreturn;

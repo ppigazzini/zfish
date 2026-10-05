@@ -11,7 +11,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const registry = @import("registry.zig");
 
-// Match Stockfish PieceType indices: 1=Pawn 2=Knight 3=Bishop 4=Rook 5=Queen 6=King.
+/// Match Stockfish PieceType indices: 1=Pawn 2=Knight 3=Bishop 4=Rook 5=Queen 6=King.
 const piece_char = " PNBRQK"; // index by piece type; `code += PieceToChar[pt]`
 const king: u8 = 6;
 const pawn: u8 = 1;
@@ -42,8 +42,8 @@ pub fn foundDtz() usize {
     return found_dtz;
 }
 
-// Build the Syzygy file stem: concat PieceToChar[pt], then insert 'v' before the second 'K'
-// (SF `TBTables::add`). E.g. {K,Q,K} -> "KQK" -> "KQvK"; {K,R,P,K,R} -> "KRPKR" -> "KRPvKR".
+/// Build the Syzygy file stem: concat PieceToChar[pt], then insert 'v' before the second 'K'
+/// (SF `TBTables::add`). E.g. {K,Q,K} -> "KQK" -> "KQvK"; {K,R,P,K,R} -> "KRPKR" -> "KRPvKR".
 fn buildName(pieces: []const u8, out: *[16]u8) []const u8 {
     var n: usize = 0;
     for (pieces) |pt| {
@@ -69,7 +69,7 @@ fn fileExists(full: []const u8) bool {
     return std.c.access(z, 0) == 0;
 }
 
-// Report true if `<stem><ext>` exists in any of the (sep-separated) SyzygyPath directories.
+/// Report true if `<stem><ext>` exists in any of the (sep-separated) SyzygyPath directories.
 fn tbFileExists(stem: []const u8, ext: []const u8) bool {
     var it = std.mem.splitScalar(u8, path_str, sep_char);
     while (it.next()) |dir| {
@@ -81,8 +81,8 @@ fn tbFileExists(stem: []const u8, ext: []const u8) bool {
     return false;
 }
 
-// Port SF `TBTables::add`: count the DTZ file if present, then the WDL file (required -- a table is
-// only "found" when its .rtbw exists), and raise maxCardinality to this config's piece count.
+/// Port SF `TBTables::add`: count the DTZ file if present, then the WDL file (required -- a table
+/// is only "found" when its .rtbw exists), and raise maxCardinality to this config's piece count.
 fn add(pieces: []const u8) void {
     var nb: [16]u8 = undefined;
     const stem = buildName(pieces, &nb);
@@ -93,7 +93,7 @@ fn add(pieces: []const u8) void {
     registry.register(pieces); // register the WDL table in the probe registry
 }
 
-// Port SF `Tablebases::init`: enumerate every material configuration up to 7 men and `add` each.
+/// Port SF `Tablebases::init`: enumerate every material configuration up to 7 men and `add` each.
 pub fn init(path_ptr: [*]const u8, path_len: usize) void {
     found_wdl = 0;
     found_dtz = 0;

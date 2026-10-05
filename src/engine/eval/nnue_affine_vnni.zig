@@ -10,29 +10,29 @@ const builtin = @import("builtin");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const loadW = @import("nnue_affine_load.zig").loadW;
 
-// Work around LLVM's refusal to lower the portable @Vector int8-dot pattern to `vpdpbusd`:
-// on an AVX-512-VNNI target the affine reaches the instruction through the vpdpbusd512
-// LLVM intrinsic below. Every tier computes the same pure integer dot, so all paths are
-// bit-identical and the bench signature holds on each.
+/// Work around LLVM's refusal to lower the portable @Vector int8-dot pattern to `vpdpbusd`:
+/// on an AVX-512-VNNI target the affine reaches the instruction through the vpdpbusd512
+/// LLVM intrinsic below. Every tier computes the same pure integer dot, so all paths are
+/// bit-identical and the bench signature holds on each.
 pub const has_vnni = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vnni);
 
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 const vpdpbusd512 = struct {
     extern fn @"llvm.x86.avx512.vpdpbusd.512"(@Vector(16, i32), @Vector(16, i32), @Vector(16, i32)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i32);
 }.@"llvm.x86.avx512.vpdpbusd.512";
 
-// acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.
+/// acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.
 pub inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i8)) @Vector(16, i32) {
     return vpdpbusd512(acc, @bitCast(a), @bitCast(b));
 }
-// Compute the VNNI affine: the scrambled layout stores each group's OUT*4 weights contiguously, so a
-// 16-output chunk is one vpdpbusd with the group's 4 input bytes broadcast across the 16
-// outputs. Honor the sparse-input skip.
+/// Compute the VNNI affine: the scrambled layout stores each group's OUT*4 weights contiguously, so a
+/// 16-output chunk is one vpdpbusd with the group's 4 input bytes broadcast across the 16
+/// outputs. Honor the sparse-input skip.
 pub inline fn affineVnni(
     comptime OUT: usize,
     comptime sparse: bool,

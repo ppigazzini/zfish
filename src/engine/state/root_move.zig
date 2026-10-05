@@ -11,13 +11,13 @@ pub const value_infinite = 32001; // VALUE_INFINITE
 pub const Move = u16; // raw Move word
 pub const move_none: Move = 0;
 
-// Bound the FIXED carrier. A node's PV is its own move plus the child's, so a search stopping
-// at `max_ply` cannot build a longer one. The root list reserves against this name too
-// (root_move_build), which is what keeps the two in step when `max_ply` moves.
+/// Bound the FIXED carrier. A node's PV is its own move plus the child's, so a search stopping
+/// at `max_ply` cannot build a longer one. The root list reserves against this name too
+/// (root_move_build), which is what keeps the two in step when `max_ply` moves.
 pub const pv_capacity: usize = max_ply + 1;
 
-// Hold the SEARCH STACK's PV: a fixed `pv_capacity` buffer plus a length. extern because
-// worker_layout embeds one in the Worker graph (`last_iteration_pv`) and asserts its size.
+/// Hold the SEARCH STACK's PV: a fixed `pv_capacity` buffer plus a length. extern because
+/// worker_layout embeds one in the Worker graph (`last_iteration_pv`) and asserts its size.
 pub const PVMoves = extern struct {
     moves: [pv_capacity]Move,
     length: usize,
@@ -57,9 +57,9 @@ comptime {
     std.debug.assert(@sizeOf(PVMoves) == 504);
 }
 
-// Report a failed PV allocation the way upstream's report_failed_allocation does (memory.h):
-// name the byte count and exit, never a signal. Restated rather than imported because this file
-// is a POD leaf whose only dependency is std.
+/// Report a failed PV allocation the way upstream's report_failed_allocation does (memory.h):
+/// name the byte count and exit, never a signal. Restated rather than imported because this file
+/// is a POD leaf whose only dependency is std.
 fn reportFailedAllocation(bytes: usize) noreturn {
     std.debug.print("Failed to allocate {d} bytes.\n", .{bytes});
     std.process.exit(1);
@@ -81,9 +81,9 @@ pub const RootPVMoves = extern struct {
     length: usize = 0,
     capacity: usize = 0,
 
-    // Bake the allocator in: an extern struct cannot carry one, and every list in the tree is
-    // created and released by the same two owners (root_move_build for the engine's list,
-    // thread.zig for each worker's copy), both of which allocate here.
+    /// Bake the allocator in: an extern struct cannot carry one, and every list in the tree is
+    /// created and released by the same two owners (root_move_build for the engine's list,
+    /// thread.zig for each worker's copy), both of which allocate here.
     const allocator = std.heap.c_allocator;
 
     /// Reserve at least `n` moves. The search path never reaches the growth: the root list is
@@ -148,17 +148,17 @@ pub const RootPVMoves = extern struct {
     }
 };
 
-// Pin the RootMove element size the strided rootMoves vector uses: the scalar head plus two
-// RootPVMoves handles. This stride is paid by every rootMoves scan and every sort swap, which is
-// why the PVs are held through a handle rather than inline.
+/// Pin the RootMove element size the strided rootMoves vector uses: the scalar head plus two
+/// RootPVMoves handles. This stride is paid by every rootMoves scan and every sort swap, which is
+/// why the PVs are held through a handle rather than inline.
 pub const root_move_footprint: usize = 96;
 
-// extern, in upstream's exact declared order (search.h:140-168): effort, then all the
-// hot per-sort scalars together, then pv/previousPV last. A plain struct sorts by
-// descending alignment, which put the two ~504B PVMoves fields in the SAME alignment
-// class as `effort` (both align-8), floating `effort` away from the score cluster
-// upstream declares it beside -- the same "hot scalar pulled into a cold field's
-// alignment class" bug already found and fixed in WorkerLayout.
+/// extern, in upstream's exact declared order (search.h:140-168): effort, then all the
+/// hot per-sort scalars together, then pv/previousPV last. A plain struct sorts by
+/// descending alignment, which put the two ~504B PVMoves fields in the SAME alignment
+/// class as `effort` (both align-8), floating `effort` away from the score cluster
+/// upstream declares it beside -- the same "hot scalar pulled into a cold field's
+/// alignment class" bug already found and fixed in WorkerLayout.
 pub const RootMove = extern struct {
     effort: u64 = 0,
     score: i32 = -value_infinite,
@@ -188,7 +188,7 @@ pub const RootMove = extern struct {
     pv: RootPVMoves = .{},
     previous_pv: RootPVMoves = .{},
 
-    // Push m onto the pv in init(m).
+    /// Push m onto the pv in init(m).
     pub fn init(m: Move) RootMove {
         var rm = RootMove{};
         rm.pv.pushBack(m);
@@ -222,16 +222,16 @@ pub const RootMove = extern struct {
         self.inexact_lower = false;
         self.inexact_upper = false;
     }
-    // Report an exact (non-inexact) proven loss, mirroring upstream's
-    // `is_exact_loss()` (search.h:143). Take is_loss as a parameter: the loss
-    // threshold lives in the search's value module, and this type stays free of it.
+    /// Report an exact (non-inexact) proven loss, mirroring upstream's
+    /// `is_exact_loss()` (search.h:143). Take is_loss as a parameter: the loss
+    /// threshold lives in the search's value module, and this type stays free of it.
     pub fn isExactLoss(self: *const RootMove, is_loss: bool) bool {
         return self.score != -value_infinite and is_loss and !self.isInexact();
     }
     pub fn eqMove(self: *const RootMove, m: Move) bool {
         return self.pv.at(0) == m;
     }
-    // Sort descending by score, then previousScore.
+    /// Sort descending by score, then previousScore.
     pub fn lessThan(_: void, a: RootMove, b: RootMove) bool {
         return if (b.score != a.score) b.score < a.score else b.previous_score < a.previous_score;
     }

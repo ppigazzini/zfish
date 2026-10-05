@@ -1,9 +1,9 @@
 const std = @import("std");
 
-// Re-export the history and correction-table update formulas, which live in search_stats.zig
-// (path-imported, so it stays inside this module). The seam is what a formula is for: the
-// margins a node prunes and reduces by stay here, the numbers written back to the tables
-// afterwards live there. Callers keep reading them off `search`.
+/// Re-export the history and correction-table update formulas, which live in search_stats.zig
+/// (path-imported, so it stays inside this module). The seam is what a formula is for: the
+/// margins a node prunes and reduces by stay here, the numbers written back to the tables
+/// afterwards live there. Callers keep reading them off `search`.
 const stats = @import("search_stats.zig");
 
 pub const ttMoveHistoryDepthBonus = stats.ttMoveHistoryDepthBonus;
@@ -27,8 +27,8 @@ pub const correctionValue = stats.correctionValue;
 pub const statBonus = stats.statBonus;
 pub const statMalus = stats.statMalus;
 
-// Restate the value model rather than importing search_values.zig: Zig gives a file to ONE
-// module, and search_driver already path-imports that one. Keep the two in step by hand.
+/// Restate the value model rather than importing search_values.zig: Zig gives a file to ONE
+/// module, and search_driver already path-imports that one. Keep the two in step by hand.
 const value_draw: i32 = 0;
 const value_inf: i32 = 32001;
 const value_none: i32 = 32002;
@@ -69,17 +69,17 @@ pub fn valueDraw(nodes: usize) i32 {
     return value_draw - 1 + @as(i32, @intCast(nodes & 0x2));
 }
 
-// Adjust a mate or TB score to "plies to mate from the current position"
-// before storing it in the transposition table. Standard scores are unchanged.
+/// Adjust a mate or TB score to "plies to mate from the current position"
+/// before storing it in the transposition table. Standard scores are unchanged.
 pub fn valueToTt(v: i32, ply: i32) i32 {
     if (isWin(v)) return v + ply;
     if (isLoss(v)) return v - ply;
     return v;
 }
 
-// Invert valueToTt(): adjust a mate/TB score read from the transposition
-// table back to plies-from-root, downgrading potentially false mate/TB scores
-// related to the 50-move rule and graph-history interaction.
+/// Invert valueToTt(): adjust a mate/TB score read from the transposition
+/// table back to plies-from-root, downgrading potentially false mate/TB scores
+/// related to the 50-move rule and graph-history interaction.
 pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
     if (!isValid(v)) return value_none;
 
@@ -112,17 +112,17 @@ pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
     return v;
 }
 
-// Report whether the ROOT is already hunting a mate: the current PV line's score clears
-// 750 + 220000 / root_depth^2, a curve that falls towards 750 as the iteration deepens
-// (2950 at depth 10, 1609 at 16, 838 at 50). It replaced a step -- depth 16 or more and a
-// score past 2000 -- that a line evaluated just under 2000 could sit below for every
-// iteration (upstream a35e229e). The depth condition on Step 9 is what finds mates, so it is
-// not tunable -- but the question it was asked to answer, "is this line worth searching
-// deep", is answered better at the root than per node. A LUT over abs(eval) + abs(beta) used
-// to step the cutoff from 19 down to 13 (upstream fa8b6add); one root-level predicate that
-// swaps 19 for 6 finds the same mates through a far smaller tree, and it is the same
-// predicate that stops the singular extension re-searching a line the root has already
-// resolved. Leave both constants alone when tuning: they buy mate finding, not strength.
+/// Report whether the ROOT is already hunting a mate: the current PV line's score clears
+/// 750 + 220000 / root_depth^2, a curve that falls towards 750 as the iteration deepens
+/// (2950 at depth 10, 1609 at 16, 838 at 50). It replaced a step -- depth 16 or more and a
+/// score past 2000 -- that a line evaluated just under 2000 could sit below for every
+/// iteration (upstream a35e229e). The depth condition on Step 9 is what finds mates, so it is
+/// not tunable -- but the question it was asked to answer, "is this line worth searching
+/// deep", is answered better at the root than per node. A LUT over abs(eval) + abs(beta) used
+/// to step the cutoff from 19 down to 13 (upstream fa8b6add); one root-level predicate that
+/// swaps 19 for 6 finds the same mates through a far smaller tree, and it is the same
+/// predicate that stops the singular extension re-searching a line the root has already
+/// resolved. Leave both constants alone when tuning: they buy mate finding, not strength.
 pub fn seekMate(root_depth: i32, root_move_score: i32) bool {
     std.debug.assert(root_depth > 0);
     return absInt(root_move_score) >= 750 + @divTrunc(220000, root_depth * root_depth);
@@ -132,15 +132,15 @@ fn absInt(v: i32) i32 {
     return if (v < 0) -v else v;
 }
 
-// Bound Step 9's futility pruning: search to 6 while the root seeks a mate, 19 otherwise.
-// Leave BOTH bounds alone when tuning -- the depth condition is what lets the search find
-// mates at all, so a tuner that treats it as one more margin trades mates for Elo
-// (upstream 074b1eac).
+/// Bound Step 9's futility pruning: search to 6 while the root seeks a mate, 19 otherwise.
+/// Leave BOTH bounds alone when tuning -- the depth condition is what lets the search find
+/// mates at all, so a tuner that treats it as one more margin trades mates for Elo
+/// (upstream 074b1eac).
 pub fn futilityDepth(seek_mate: bool) i32 {
     return if (seek_mate) 6 else 19;
 }
 
-// Prune child-node futility (Step 9): futilityMult = min(45 + depth*4, 85).
+/// Prune child-node futility (Step 9): futilityMult = min(45 + depth*4, 85).
 pub fn futilityMargin(
     depth: i32,
     tt_hit: bool,
@@ -162,8 +162,8 @@ pub fn futilityReturn(beta: i32, eval: i32) i32 {
     return @divTrunc(661 * beta + 363 * eval, 1024);
 }
 
-// Prune quiet moves in the move loop: continuation-history prune threshold,
-// parent-node futility value, and the negative-SEE margin.
+/// Prune quiet moves in the move loop: continuation-history prune threshold,
+/// parent-node futility value, and the negative-SEE margin.
 pub fn historyPruneThreshold(depth: i32) i32 {
     return -4136 * depth;
 }
@@ -176,15 +176,15 @@ pub fn quietSeeMargin(lmr_depth: i32) i32 {
     return 23 * lmr_depth * lmr_depth;
 }
 
-// Scale the move-loop history into lmr_depth. (*Scaler): generally, lower divisors
-// scale well. The tuned 16-entry table this replaced was a parabola in disguise
-// (upstream ce330df8).
+/// Scale the move-loop history into lmr_depth. (*Scaler): generally, lower divisors
+/// scale well. The tuned 16-entry table this replaced was a parabola in disguise
+/// (upstream ce330df8).
 pub fn lmrDivisor(depth: i32) i32 {
     const d = @min(depth, 16);
     return 3000 + 7 * (d - 8) * (d - 8);
 }
 
-// Adjust the LMR reduction (r) before the reduced search.
+/// Adjust the LMR reduction (r) before the reduced search.
 pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut_node: bool) i32 {
     return 3023 + @as(i32, @intFromBool(pv_node)) * 1004 +
         @as(i32, @intFromBool(value_gt_alpha)) * 885 +
@@ -200,10 +200,10 @@ pub fn lmrStatScoreReduction(stat_score: i32) i32 {
     return @divTrunc(stat_score * 439, 4096);
 }
 
-// Scale the reduction by how far alpha sits from the node's eval -- upstream 5f7348f0.
-// A larger r is a SHALLOWER search, so this reduces more when alpha is above the eval and
-// less when it is below, bounded at 3*96 and 3*64. Quiet moves only, and only while alpha
-// is non-decisive: inside the mate range the difference is not a margin.
+/// Scale the reduction by how far alpha sits from the node's eval -- upstream 5f7348f0.
+/// A larger r is a SHALLOWER search, so this reduces more when alpha is above the eval and
+/// less when it is below, bounded at 3*96 and 3*64. Quiet moves only, and only while alpha
+/// is non-decisive: inside the mate range the difference is not a margin.
 pub fn lmrLooseAlphaReduction(alpha: i32, eval: i32) i32 {
     return 3 * std.math.clamp(alpha - eval, -64, 96);
 }
@@ -212,8 +212,8 @@ pub fn lmrAllNodeScale(r: i32, depth: i32) i32 {
     return @divTrunc(r * 276, 256 * depth + 268);
 }
 
-// Compute the singular extension margins. corrValAdj = abs(correctionValue)/198368 is
-// shared by both margins.
+/// Compute the singular extension margins. corrValAdj = abs(correctionValue)/198368 is
+/// shared by both margins.
 fn corrValAdj(correction_value: i32) i32 {
     const a = absInt(correction_value);
     return @divTrunc(a, 198368);
@@ -235,8 +235,8 @@ pub fn singularTripleMargin(pv_node: bool, not_tt_capture: bool, ttpv: bool, cor
         @as(i32, @intFromBool(ply_gt_root)) * 43;
 }
 
-// Prune captures in the move loop: futility value (piece_value is the
-// piece-value lookup, passed in) and the SEE pruning margin.
+/// Prune captures in the move loop: futility value (piece_value is the
+/// piece-value lookup, passed in) and the SEE pruning margin.
 pub fn captureFutilityValue(static_eval: i32, lmr_depth: i32, piece_value: i32, capt_hist: i32) i32 {
     return static_eval + 234 + 247 * lmr_depth + piece_value + @divTrunc(134 * capt_hist, 1024);
 }
@@ -246,12 +246,12 @@ pub fn captureSeeMargin(depth: i32, capt_hist: i32) i32 {
     return 177 * depth + @divTrunc(capt_hist * 34, 1024);
 }
 
-// Prune by late move count: skip quiets once moveCount reaches this limit.
+/// Prune by late move count: skip quiets once moveCount reaches this limit.
 pub fn moveCountLimit(depth: i32, improving: bool) i32 {
     return @divTrunc(3 + depth * depth, 2 - @as(i32, @intFromBool(improving)));
 }
 
-// Compute the Step 12 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
+/// Compute the Step 12 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
 pub fn probCutBeta(beta: i32, improving: bool) i32 {
     return beta + 241 - 64 * @as(i32, @intFromBool(improving));
 }
@@ -260,30 +260,30 @@ pub fn probCutBetaDeep(beta: i32) i32 {
     return beta + 428;
 }
 
-// Prune with the null move (Step 10): static-eval cutoff threshold, dynamic reduction R,
-// and the verification-search nmpMinPly.
+/// Prune with the null move (Step 10): static-eval cutoff threshold, dynamic reduction R,
+/// and the verification-search nmpMinPly.
 pub fn nullMoveThreshold(beta: i32, depth: i32, improving: bool) i32 {
     return beta - 13 * depth - 47 * @as(i32, @intFromBool(improving)) + 365;
 }
 
-// Credit the static eval with every null-move fail-high this ply has already scored
-// under the current parent: a ply that keeps cutting is admitted to Step 10 on a
-// staler eval than one that never has.
+/// Credit the static eval with every null-move fail-high this ply has already scored
+/// under the current parent: a ply that keeps cutting is admitted to Step 10 on a
+/// staler eval than one that never has.
 pub fn nullMoveEvalBonus(static_eval: i32, prior_nmp_fail_high: i32) i32 {
     return static_eval + 50 * prior_nmp_fail_high;
 }
 
-// Deepen the null-move reduction when the static eval already towers over beta:
-// the more the position is winning, the less the null search needs to prove.
-// C++ `(ss->staticEval - beta) / 256` truncates toward zero, so use @divTrunc;
-// the clamp to 0 makes the two rounding directions agree anyway.
+/// Deepen the null-move reduction when the static eval already towers over beta:
+/// the more the position is winning, the less the null search needs to prove.
+/// C++ `(ss->staticEval - beta) / 256` truncates toward zero, so use @divTrunc;
+/// the clamp to 0 makes the two rounding directions agree anyway.
 pub fn nullMoveReduction(depth: i32, static_eval: i32, beta: i32) i32 {
     return 7 + @divTrunc(depth, 3) + @max(@divTrunc(static_eval - beta, 256), 0);
 }
 
-// Gate Step 10 on beta being outside the decisive range. This margin is stricter
-// than `!is_loss(beta)` so that the static-eval-scaled reduction above cannot
-// cost a mate find.
+/// Gate Step 10 on beta being outside the decisive range. This margin is stricter
+/// than `!is_loss(beta)` so that the static-eval-scaled reduction above cannot
+/// cost a mate find.
 pub fn nullMoveBetaOk(beta: i32) bool {
     return beta >= -2000;
 }
@@ -292,14 +292,14 @@ pub fn nmpMinPly(ply: i32, depth: i32, r: i32) i32 {
     return ply + @divTrunc(3 * (depth - r), 4);
 }
 
-// Compute the Step 8 razoring threshold subtracted from alpha (search()).
+/// Compute the Step 8 razoring threshold subtracted from alpha (search()).
 pub fn razorMargin(depth: i32) i32 {
     return 342 * depth;
 }
 
-// Blend the qsearch beta-trend: when a non-decisive bestValue clears beta it is
-// pulled partway toward beta. Step 4 stand-pat uses 441/583; the pre-TT-store
-// fail-high path uses 462/562. Both divide by 1024 with toward-zero truncation.
+/// Blend the qsearch beta-trend: when a non-decisive bestValue clears beta it is
+/// pulled partway toward beta. Step 4 stand-pat uses 441/583; the pre-TT-store
+/// fail-high path uses 462/562. Both divide by 1024 with toward-zero truncation.
 pub fn qsearchStandPatBlend(best_value: i32, beta: i32) i32 {
     return @divTrunc(441 * best_value + 583 * beta, 1024);
 }
@@ -308,22 +308,22 @@ pub fn qsearchFailHighBlend(best_value: i32, beta: i32) i32 {
     return @divTrunc(462 * best_value + 562 * beta, 1024);
 }
 
-// Order quiets by static-eval difference (search(), after the moves_loop check
-// guard): clamp the negated sum of the previous and current static evals into
-// [-189, 194] and bias by 60. The caller scales it (*10, *13) into history.
+/// Order quiets by static-eval difference (search(), after the moves_loop check
+/// guard): clamp the negated sum of the previous and current static evals into
+/// [-189, 194] and bias by 60. The caller scales it (*10, *13) into history.
 pub fn evalDiff(prev_static_eval: i32, static_eval: i32) i32 {
     return @max(@as(i32, -189), @min(@as(i32, 194), -(prev_static_eval + static_eval))) + 60;
 }
 
-// Compute the qsearch futility base = static eval plus a fixed margin. The move loop later
-// adds the captured piece value to this base.
+/// Compute the qsearch futility base = static eval plus a fixed margin. The move loop later
+/// adds the captured piece value to this base.
 pub fn qsearchFutilityBase(static_eval: i32) i32 {
     return static_eval + 306;
 }
 
-// Size the aspiration window in iterative_deepening(). The starting half-width
-// mixes a base, a per-thread stagger, and the root move's mean-squared score;
-// on each fail high/low it grows by 47/128.
+/// Size the aspiration window in iterative_deepening(). The starting half-width
+/// mixes a base, a per-thread stagger, and the root move's mean-squared score;
+/// on each fail high/low it grows by 47/128.
 pub fn aspirationInitialDelta(thread_idx: usize, mean_squared_score: i32) i32 {
     const tmod: i32 = @intCast(thread_idx % 8);
     const abs_mss = absInt(mean_squared_score);
@@ -334,21 +334,21 @@ pub fn aspirationDeltaGrow(delta: i32) i32 {
     return delta + @divTrunc(47 * delta, 128);
 }
 
-// Compute eval optimism from the root move's average score (iterative_deepening()):
-// a saturating 114*avg/(|avg|+85). The caller mirrors it for the opponent.
+/// Compute eval optimism from the root move's average score (iterative_deepening()):
+/// a saturating 114*avg/(|avg|+85). The caller mirrors it for the opponent.
 pub fn optimism(avg: i32) i32 {
     const abs_avg = absInt(avg);
     return @divTrunc(114 * avg, abs_avg + 85);
 }
 
-// Populate the reductions[] lookup table: reductions[i] = int(2872/128.0 * ln i)
-// for i in [1, count). Index 0 is left untouched, matching upstream clear().
-//
-// The entry is u16 rather than i32 because the table is a SCALED LOGARITHM and so has no
-// negative entry -- 22.4375 * ln(255) is 124, and there is nothing below it. Stored signed,
-// that range is a fact no backend can use, and `reductionAcc`'s divide by 512 then had to
-// allow for a negative dividend on every reduced move. See the comment there. The table also
-// halves, 1024 bytes to 512, which nothing here measures.
+/// Populate the reductions[] lookup table: reductions[i] = int(2872/128.0 * ln i)
+/// for i in [1, count). Index 0 is left untouched, matching upstream clear().
+///
+/// The entry is u16 rather than i32 because the table is a SCALED LOGARITHM and so has no
+/// negative entry -- 22.4375 * ln(255) is 124, and there is nothing below it. Stored signed,
+/// that range is a fact no backend can use, and `reductionAcc`'s divide by 512 then had to
+/// allow for a negative dividend on every reduced move. See the comment there. The table also
+/// halves, 1024 bytes to 512, which nothing here measures.
 pub fn fillReductions(reductions_ptr: [*]u16, count: usize) void {
     var i: usize = 1;
     while (i < count) : (i += 1) {

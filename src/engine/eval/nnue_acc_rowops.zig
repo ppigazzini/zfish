@@ -286,15 +286,15 @@ pub fn applyHybridDelta(
     }
 }
 
-// Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
-// one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register,
-// with both feature sets' removed/added weight rows applied in-register (psq int16 rows
-// via i16 add/sub, threat int8 rows widened to i16), then stored ONCE. Replaces the two
-// separate load/store round-trips (one per feature) of the split-accumulator design.
-// Integer +%/-% commute under 2's-complement i16 wrap (upstream `_mm*_add/sub_epi16`), so
-// the final tile value equals
-// source + Σpsq_added − Σpsq_removed + Σthr_added − Σthr_removed regardless of order:
-// bit-exact with the prior two-accumulator path (signature 2497913).
+/// Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
+/// one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register,
+/// with both feature sets' removed/added weight rows applied in-register (psq int16 rows
+/// via i16 add/sub, threat int8 rows widened to i16), then stored ONCE. Replaces the two
+/// separate load/store round-trips (one per feature) of the split-accumulator design.
+/// Integer +%/-% commute under 2's-complement i16 wrap (upstream `_mm*_add/sub_epi16`), so
+/// the final tile value equals
+/// source + Σpsq_added − Σpsq_removed + Σthr_added − Σthr_removed regardless of order:
+/// bit-exact with the prior two-accumulator path (signature 2497913).
 pub fn applyCombinedDelta(
     target: []i16,
     source: []const i16,

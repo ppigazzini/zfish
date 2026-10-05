@@ -22,7 +22,7 @@ const SsCtx = search_ctx.SsCtx;
 const ZfishIdState = search_ctx.ZfishIdState;
 const RootMove = worker_layout.RootMove;
 
-// Define the value bounds the ID loop's mate/TB checks read (search.h constants).
+/// Define the value bounds the ID loop's mate/TB checks read (search.h constants).
 const q_value_inf: i32 = 32001;
 const q_value_mate_in_max: i32 = 31754; // q_value_mate(32000) - q_max_ply(246)
 const q_value_tb_win: i32 = 31507; // q_value_tb(31753) - q_max_ply(246)
@@ -53,7 +53,7 @@ pub fn ssPrologue(wl: *worker_layout.WorkerLayout) void {
     wl.last_iteration_pv.length = 0;
 }
 
-// Sum and reset each thread's worker bestMoveChanges (atomic u64), as a double.
+/// Sum and reset each thread's worker bestMoveChanges (atomic u64), as a double.
 pub fn searchIdCollectBmc(wl: *const worker_layout.WorkerLayout) f64 {
     const tp = wl.threads;
     const count = tp.numThreads();
@@ -73,10 +73,10 @@ pub fn ssSetStop(wl: *const worker_layout.WorkerLayout) void {
     @atomicStore(u8, &workerThreadsPool(wl).stop, 1, .monotonic);
 }
 
-// !threads.stop && (manager->ponder || limits.infinite).
-//
-// Load both flags atomically: the caller spins on this in an empty loop, where a plain load is
-// loop-invariant and hoists out of the loop into `jmp .`.
+/// !threads.stop && (manager->ponder || limits.infinite).
+///
+/// Load both flags atomically: the caller spins on this in an empty loop, where a plain load is
+/// loop-invariant and hoists out of the loop into `jmp .`.
 pub fn ssShouldBusywait(wl: *const worker_layout.WorkerLayout) u8 {
     if (@atomicLoad(u8, &workerThreadsPool(wl).stop, .monotonic) != 0) return 0;
     const ponder = @atomicLoad(u8, &workerManager(wl).?.ponder, .monotonic);
@@ -95,7 +95,7 @@ pub fn optInt(name: []const u8) i32 {
     return option_port.intByName(name);
 }
 
-// Read the per-search context flags off the worker graph + the OptionsModel.
+/// Read the per-search context flags off the worker graph + the OptionsModel.
 pub fn ssContext(wl: *const worker_layout.WorkerLayout, out: *SsCtx) void {
     const limit_strength = optInt("UCI_LimitStrength") != 0;
     const uci_elo: i32 = if (limit_strength) optInt("UCI_Elo") else 0;
@@ -109,10 +109,10 @@ pub fn ssContext(wl: *const worker_layout.WorkerLayout, out: *SsCtx) void {
     out.skill_enabled = @intFromBool(skill_enabled);
 }
 
-// Init per-search TimeManagement + TT new-search (main thread). Build the timeman
-// input from the worker's limits/rootPos + the manager's tm, read nodestime/Move
-// Overhead/Ponder from the OptionsModel, write the outputs back, and bump the TT
-// generation.
+/// Init per-search TimeManagement + TT new-search (main thread). Build the timeman
+/// input from the worker's limits/rootPos + the manager's tm, read nodestime/Move
+/// Overhead/Ponder from the OptionsModel, write the outputs back, and bump the TT
+/// generation.
 pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
     const lim = &wl.limits;
     const smgr = wl.manager.?;
@@ -164,8 +164,8 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
     search_timing.markStart(time_source.now());
 }
 
-// Compute the skill level as a float: from UCI_Elo (interpolated) when UCI_LimitStrength is set,
-// else the raw Skill Level option.
+/// Compute the skill level as a float: from UCI_Elo (interpolated) when UCI_LimitStrength is set,
+/// else the raw Skill Level option.
 pub fn skillLevel() f64 {
     const limit_strength = optInt("UCI_LimitStrength") != 0;
     const uci_elo: i32 = if (limit_strength) optInt("UCI_Elo") else 0;
@@ -177,8 +177,8 @@ pub fn skillLevel() f64 {
     return @floatFromInt(optInt("Skill Level"));
 }
 
-// Snapshot the iterative-deepening state (worker/pool member pointers + scalars) for
-// the search root loop. Read only the graph + the OptionsModel.
+/// Snapshot the iterative-deepening state (worker/pool member pointers + scalars) for
+/// the search root loop. Read only the graph + the OptionsModel.
 pub fn searchIdState(wl: *worker_layout.WorkerLayout, out: *ZfishIdState) void {
     const thread_idx = wl.thread_idx;
     const is_main = thread_idx == 0;
@@ -240,7 +240,7 @@ pub fn searchIdState(wl: *worker_layout.WorkerLayout, out: *ZfishIdState) void {
     }
 }
 
-// Start / wait the sibling search threads.
+/// Start / wait the sibling search threads.
 pub fn ssThreadsStart(wl: *const worker_layout.WorkerLayout) void {
     thread_ops.startSiblings(wl.threads);
 }
@@ -248,14 +248,14 @@ pub fn ssWaitFinished(wl: *const worker_layout.WorkerLayout) void {
     thread_ops.waitSiblings(wl.threads);
 }
 
-// Return the worker of the vote-winning thread (Lazy-SMP best-thread selection via
-// the leaf thread_vote model).
+/// Return the worker of the vote-winning thread (Lazy-SMP best-thread selection via
+/// the leaf thread_vote model).
 pub fn ssGetBestThread(wl: *const worker_layout.WorkerLayout) ?*worker_layout.WorkerLayout {
     const pool = wl.threads;
     return thread_ops.bestThreadWorker(pool);
 }
 
-// Advance the nodestime available-nodes (tm.advance_nodes_time).
+/// Advance the nodestime available-nodes (tm.advance_nodes_time).
 pub fn ssNpmsecAdvance(wl: *const worker_layout.WorkerLayout) void {
     const avail = &wl.manager.?.tm.available_nodes;
     const us: usize = sideToMove(&wl.root_pos);
@@ -278,12 +278,12 @@ pub inline fn idIsMate(v: i32) bool {
 pub inline fn idIsMated(v: i32) bool {
     return v <= -q_value_mate_in_max;
 }
-// Order RootMoves descending by (score, previousScore).
+/// Order RootMoves descending by (score, previousScore).
 pub inline fn rootLess(a: *const RootMove, b: *const RootMove) bool {
     return if (a.score != b.score) a.score > b.score else a.previous_score > b.previous_score;
 }
-// Insertion-sort root_moves[lo, hi) stably by the RootMove
-// ordering (equal elements keep their relative order).
+/// Insertion-sort root_moves[lo, hi) stably by the RootMove
+/// ordering (equal elements keep their relative order).
 pub fn stableSortRoot(rm: [*]RootMove, lo: usize, hi: usize) void {
     if (hi <= lo) return;
     var i: usize = lo + 1;
@@ -294,7 +294,7 @@ pub fn stableSortRoot(rm: [*]RootMove, lo: usize, hi: usize) void {
         rm[j] = key;
     }
 }
-// Rotate the first RootMove whose pv[0]==target to front (move-to-front).
+/// Rotate the first RootMove whose pv[0]==target to front (move-to-front).
 pub fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
     var fi: usize = 0;
     while (fi < count and rm[fi].pv.at(0) != target) : (fi += 1) {}
@@ -315,8 +315,8 @@ pub inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
     return @max(lo, @min(v, hi));
 }
 
-// Handicap strength (skill). Treat 0 as the none-move. Match misc.h's
-// xorshift* for the PRNG, seeded once from now() on first use (non-deterministic by design).
+/// Handicap strength (skill). Treat 0 as the none-move. Match misc.h's
+/// xorshift* for the PRNG, seeded once from now() on first use (non-deterministic by design).
 const skill_pawn_value: i32 = 208;
 var skill_rng_state: u64 = 0;
 fn skillRand64() u64 {
@@ -331,7 +331,7 @@ fn skillRand64() u64 {
 pub inline fn skillTimeToPick(level: f64, depth: i32) bool {
     return depth == 1 + @as(i32, @intFromFloat(level));
 }
-// Pick the skill best move by a statistical rule over the (descending-sorted) rootMoves.
+/// Pick the skill best move by a statistical rule over the (descending-sorted) rootMoves.
 pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     // Scan for the score range explicitly rather than assuming rootMoves[0] and
     // rootMoves[multiPV-1] bracket it. With tablebases at the root the moves are ordered
@@ -365,7 +365,7 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     }
     return best;
 }
-// Swap rootMoves[0] with the RootMove whose pv[0]==move.
+/// Swap rootMoves[0] with the RootMove whose pv[0]==move.
 pub fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
     var i: usize = 0;
     while (i < id.root_moves_count and id.root_moves[i].pv.at(0) != move) : (i += 1) {}

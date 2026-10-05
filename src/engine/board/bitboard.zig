@@ -1,36 +1,36 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Gate the PEXT slider-index path on the BMI2 target feature. This tracks the arch matrix's
-// USE_PEXT macro 1:1 (every USE_PEXT tier sets .bmi2 in target_features and no other tier
-// does), and unlike @import("build_options") it is also visible when this file is compiled as
-// a standalone unit-test root -- matching how nnue_affine.zig gates its ISA kernels.
+/// Gate the PEXT slider-index path on the BMI2 target feature. This tracks the arch matrix's
+/// USE_PEXT macro 1:1 (every USE_PEXT tier sets .bmi2 in target_features and no other tier
+/// does), and unlike @import("build_options") it is also visible when this file is compiled as
+/// a standalone unit-test root -- matching how nnue_affine.zig gates its ISA kernels.
 const use_pext = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .bmi2);
 
-// Alias the dual hyperbola quintessence slider kernel from its own leaf. It owns the
-// AVX2/GFNI gates, the per-square masks and the vector pass; this file keeps the magic
-// fallback it dispatches to, the derived tables built on top, and the tests that check
-// the two answers agree.
+/// Alias the dual hyperbola quintessence slider kernel from its own leaf. It owns the
+/// AVX2/GFNI gates, the per-square masks and the vector pass; this file keeps the magic
+/// fallback it dispatches to, the derived tables built on top, and the tests that check
+/// the two answers agree.
 const bitboard_dual = @import("bitboard_dual.zig");
 const use_avx2 = bitboard_dual.use_avx2;
 const bothAttacksAvx2 = bitboard_dual.bothAttacksAvx2;
 const initDualMagics = bitboard_dual.initDualMagics;
 pub const DualAttacks = bitboard_dual.DualAttacks;
 
-// LLVM's BMI2 parallel-bit-extract (PEXT). Referenced only on the use_pext path, behind
-// the comptime gate in computeMagicIndex, so non-BMI2 targets never analyse or lower it.
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// LLVM's BMI2 parallel-bit-extract (PEXT). Referenced only on the use_pext path, behind
+/// the comptime gate in computeMagicIndex, so non-BMI2 targets never analyse or lower it.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 const pext64 = struct {
     extern fn @"llvm.x86.bmi.pext.64"(u64, u64) callconv(.{ .x86_64_sysv = .{} }) u64;
 }.@"llvm.x86.bmi.pext.64";
 
-// Alias back the geometry/magic-index helpers, which now live in a std-only
-// leaf (top-level decls are order-independent).
+/// Alias back the geometry/magic-index helpers, which now live in a std-only
+/// leaf (top-level decls are order-independent).
 const bitboard_geom = @import("bitboard_geom.zig");
 const PieceType = bitboard_geom.PieceType;
 const betweenSquares = bitboard_geom.betweenSquares;
@@ -62,21 +62,21 @@ const rook_piece: u8 = 4;
 const queen_piece: u8 = 5;
 const king_piece: u8 = 6;
 
-// Hold the runtime magic-bitboard attack tables (Stockfish-style): built once at startup by
-// initSliderMagics() (invoked from position.initRuntime, before any position setup or
-// search), read-only during search. The magic search builds each entry from the
-// ray-cast slidingAttack reference, so attacksBb() returns bit-identical attack sets
-// while replacing the per-node direction loop with an O(1) mask/multiply/shift/load.
-// ~860 KB total; the single-threaded startup init is the only writer.
+/// Hold the runtime magic-bitboard attack tables (Stockfish-style): built once at startup by
+/// initSliderMagics() (invoked from position.initRuntime, before any position setup or
+/// search), read-only during search. The magic search builds each entry from the
+/// ray-cast slidingAttack reference, so attacksBb() returns bit-identical attack sets
+/// while replacing the per-node direction loop with an O(1) mask/multiply/shift/load.
+/// ~860 KB total; the single-threaded startup init is the only writer.
 var rook_magic_attacks: [0x19000]u64 = undefined;
 var bishop_magic_attacks: [0x1480]u64 = undefined;
-// Align the table to a cache line, as upstream declares it (`alignas(64) Magic
-// Magics[SQUARE_NB][2]`, attacks.cpp). @sizeOf(Magic) is 32, so a square's bishop/rook
-// pair is exactly one line -- but only if the array starts on one. At the natural
-// alignment of 8 that holds only by placement luck; land it at offset 16 and every
-// probe of both sliders from one square straddles two lines, because `magic` and
-// `shift` of the second entry fall past the boundary. Those two fields are read on the
-// non-PEXT path, i.e. the sse41 tier.
+/// Align the table to a cache line, as upstream declares it (`alignas(64) Magic
+/// Magics[SQUARE_NB][2]`, attacks.cpp). @sizeOf(Magic) is 32, so a square's bishop/rook
+/// pair is exactly one line -- but only if the array starts on one. At the natural
+/// alignment of 8 that holds only by placement luck; land it at offset 16 and every
+/// probe of both sliders from one square straddles two lines, because `magic` and
+/// `shift` of the second entry fall past the boundary. Those two fields are read on the
+/// non-PEXT path, i.e. the sse41 tier.
 var slider_magics: [64][2]Magic align(64) = undefined;
 
 comptime {
@@ -89,25 +89,25 @@ comptime {
     std.debug.assert(@sizeOf([2]Magic) == 64);
 }
 
-// Hold the derived square-pair geometry, built once from the magics at startup and read-only during
-// search -- the same tables upstream keeps (LineBB / BetweenBB / ray-pass). Without them
-// line/between/rayPass each re-ray-cast on every call, and rayPass runs per slider per
-// threat update per node.
+/// Hold the derived square-pair geometry, built once from the magics at startup and read-only
+/// during search -- the same tables upstream keeps (LineBB / BetweenBB / ray-pass). Without them
+/// line/between/rayPass each re-ray-cast on every call, and rayPass runs per slider per threat
+/// update per node.
 var line_bb: [64][64]u64 = undefined;
 var between_bb: [64][64]u64 = undefined;
 var ray_pass_bb: [64][64]u64 = undefined;
 
-// Hold the leaper attack tables -- upstream's PseudoAttacks[KNIGHT|KING][s]. The generators in
-// bitboard_geom walk eight offsets through a bounds-checked squareAt() per call, so
-// without these attacks() re-derives a leaper attack set on every SEE, movegen and
-// threat update. Built once here from those same generators, so the sets are identical.
+/// Hold the leaper attack tables -- upstream's PseudoAttacks[KNIGHT|KING][s]. The generators in
+/// bitboard_geom walk eight offsets through a bounds-checked squareAt() per call, so
+/// without these attacks() re-derives a leaper attack set on every SEE, movegen and
+/// threat update. Built once here from those same generators, so the sets are identical.
 var knight_attacks_bb: [64]u64 = undefined;
 var king_attacks_bb: [64]u64 = undefined;
 
-// Hold the occupancy-free attack sets -- upstream's PseudoAttacks[pt][s]. A slider's empty-board
-// reach depends only on its square, so deriving it through the magic pipeline (mask,
-// multiply, shift, then a load from the ~860 KB attack table) re-computes a constant and
-// touches cold memory. Upstream reads a 64-entry table; attacks_bb<Pt>(s) IS that read.
+/// Hold the occupancy-free attack sets -- upstream's PseudoAttacks[pt][s]. A slider's empty-board
+/// reach depends only on its square, so deriving it through the magic pipeline (mask,
+/// multiply, shift, then a load from the ~860 KB attack table) re-computes a constant and
+/// touches cold memory. Upstream reads a 64-entry table; attacks_bb<Pt>(s) IS that read.
 var pseudo_attacks_bb: [8][64]u64 = undefined;
 
 pub fn initSliderMagics() void {
@@ -149,7 +149,7 @@ fn initLeaperTables() void {
     }
 }
 
-// Return upstream's attacks_bb<Pt>(s): the empty-board attack set, one table read.
+/// Return upstream's attacks_bb<Pt>(s): the empty-board attack set, one table read.
 pub fn pseudoAttacks(piece_type: u8, square: u8) u64 {
     return pseudo_attacks_bb[piece_type][@as(usize, square)];
 }
@@ -180,14 +180,14 @@ fn initDerivedTables() void {
     }
 }
 
-// Return upstream's attacks_bb(pt, s, occupied) -- one function with a RUNTIME piece type,
-// the shape upstream d8f77ce4 merged its template and non-template forms into.
-//
-// A deliberate divergence at use_avx2: upstream answers a SINGLE-ray query there through
-// the dual pass too (its magic tables are not compiled above sse41), while this keeps the
-// magic/PEXT lookup and leaves the dual pass to bothAttacks, whose callers want both rays.
-// The two are value-identical; upstream's form was ported, measured MORE instructions on
-// an identical tree at every AVX2+ tier, and reverted (tools/upstream/README.md, d8f77ce4).
+/// Return upstream's attacks_bb(pt, s, occupied) -- one function with a RUNTIME piece type,
+/// the shape upstream d8f77ce4 merged its template and non-template forms into.
+///
+/// A deliberate divergence at use_avx2: upstream answers a SINGLE-ray query there through
+/// the dual pass too (its magic tables are not compiled above sse41), while this keeps the
+/// magic/PEXT lookup and leaves the dual pass to bothAttacks, whose callers want both rays.
+/// The two are value-identical; upstream's form was ported, measured MORE instructions on
+/// an identical tree at every AVX2+ tier, and reverted (tools/upstream/README.md, d8f77ce4).
 pub fn attacks(piece_type: u8, square: u8, occupied: u64) u64 {
     const sq: usize = @intCast(square);
     return switch (piece_type) {
@@ -205,14 +205,14 @@ pub fn between(from: u8, to: u8) u64 {
     return between_bb[from][to];
 }
 
-// Return the full line through two squares (both endpoints + the ray extended to the board
-// edges) if they are aligned, else 0. Mirrors upstream LineBB construction.
+/// Return the full line through two squares (both endpoints + the ray extended to the board
+/// edges) if they are aligned, else 0. Mirrors upstream LineBB construction.
 pub fn line(s1: u8, s2: u8) u64 {
     return line_bb[s1][s2];
 }
 
-// Return RayPassBB[s1][s2]: from s1's attacks along the s1-s2 line, the squares at or
-// beyond s2 (s1 removed from the occupancy). Mirrors the upstream init formula.
+/// Return RayPassBB[s1][s2]: from s1's attacks along the s1-s2 line, the squares at or
+/// beyond s2 (s1 removed from the occupancy). Mirrors the upstream init formula.
 pub fn rayPass(s1: u8, s2: u8) u64 {
     return ray_pass_bb[s1][s2];
 }
@@ -333,12 +333,12 @@ fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic)
     return magic_ref.attacks[computeMagicIndex(magic_ref, occupied)];
 }
 
-// Index the shared magic attack table. On BMI2 targets (use_pext) upstream drops the magic
-// multiply and per-square shift entirely: @pext(occupied, mask) compacts the masked-occupancy
-// bits into a dense [0, 2^popcount(mask)) index directly -- fewer per-node instructions.
-// initMagics fills the table by this same index, so both paths return the bit-identical attack
-// set (the bench signature is unchanged on every tier). Non-BMI2 targets keep the fixed-shift
-// magic multiply.
+/// Index the shared magic attack table. On BMI2 targets (use_pext) upstream drops the magic
+/// multiply and per-square shift entirely: @pext(occupied, mask) compacts the masked-occupancy
+/// bits into a dense [0, 2^popcount(mask)) index directly -- fewer per-node instructions.
+/// initMagics fills the table by this same index, so both paths return the bit-identical attack
+/// set (the bench signature is unchanged on every tier). Non-BMI2 targets keep the fixed-shift
+/// magic multiply.
 fn computeMagicIndex(magic_ref: Magic, occupied: u64) usize {
     if (comptime use_pext) {
         return @intCast(pext64(occupied, magic_ref.mask));

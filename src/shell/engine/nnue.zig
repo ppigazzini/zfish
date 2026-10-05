@@ -34,20 +34,20 @@ pub fn printInfoString(str: []const u8) void {
     }
 }
 
-// Treat the external net as a RUNTIME input, not a build-time one: network.zig's
-// embedded net is an unconditional 1-byte stub, so the real net must come from disk.
-// `network.load` resolves EvalFile against the cwd and the binary directory, and
-// reports nothing when every candidate misses. Worker construction then reads the
-// feature-transformer biases (worker_construct.constructFull), which `orelse return`s
-// on a null ftPtr and leaves the Worker zeroed -- so the miss first surfaces as a
-// null shared_history in the clear job, on a worker thread, in an unrelated
-// subsystem. Report it here instead, at the site that requires the net: name the
-// file sought and every directory searched, and exit non-zero.
-//
-// Check ftPtr() -- it IS the contract constructFull needs.
-// Write to stderr, not through uci_output: this is a fatal startup diagnostic, so
-// it must not be swallowed by `Quiet` (a bench/parity run is quiet) nor depend on
-// the output_sink hook being registered.
+/// Treat the external net as a RUNTIME input, not a build-time one: network.zig's
+/// embedded net is an unconditional 1-byte stub, so the real net must come from disk.
+/// `network.load` resolves EvalFile against the cwd and the binary directory, and
+/// reports nothing when every candidate misses. Worker construction then reads the
+/// feature-transformer biases (worker_construct.constructFull), which `orelse return`s
+/// on a null ftPtr and leaves the Worker zeroed -- so the miss first surfaces as a
+/// null shared_history in the clear job, on a worker thread, in an unrelated
+/// subsystem. Report it here instead, at the site that requires the net: name the
+/// file sought and every directory searched, and exit non-zero.
+///
+/// Check ftPtr() -- it IS the contract constructFull needs.
+/// Write to stderr, not through uci_output: this is a fatal startup diagnostic, so
+/// it must not be swallowed by `Quiet` (a bench/parity run is quiet) nor depend on
+/// the output_sink hook being registered.
 pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
     if (network_port.ftPtr() != null) return;
 
@@ -77,18 +77,18 @@ pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
     c.exit(1);
 }
 
-// Report how each network replica is backed, the line upstream prints after the net
-// summary in `Engine::verify_network` (engine.cpp:271-299). Upstream reads a status per
-// replica off a system-wide shared allocation and prints "No allocation." / "Local
-// memory." / "Shared memory." / "Unknown status."; the oracle on a single-node box says
-// `Network replica 1: Shared memory.` because it maps the weights through shm.
-//
-// zfish holds ONE network in ordinary process memory -- it has no system-wide shared
-// mapping to report -- so one line, and "Local memory." is the honest status rather than
-// upstream's byte. That is a deliberate CONTENT difference on a line whose SHAPE and
-// count now match; the alternative is printing a claim about the allocation that is
-// false. Emitting nothing, which is what zfish did, was the worse third option: a GUI
-// parsing the announcement block saw one fewer line than every other Stockfish.
+/// Report how each network replica is backed, the line upstream prints after the net
+/// summary in `Engine::verify_network` (engine.cpp:271-299). Upstream reads a status per
+/// replica off a system-wide shared allocation and prints "No allocation." / "Local
+/// memory." / "Shared memory." / "Unknown status."; the oracle on a single-node box says
+/// `Network replica 1: Shared memory.` because it maps the weights through shm.
+///
+/// zfish holds ONE network in ordinary process memory -- it has no system-wide shared
+/// mapping to report -- so one line, and "Local memory." is the honest status rather than
+/// upstream's byte. That is a deliberate CONTENT difference on a line whose SHAPE and
+/// count now match; the alternative is printing a claim about the allocation that is
+/// false. Emitting nothing, which is what zfish did, was the worse third option: a GUI
+/// parsing the announcement block saw one fewer line than every other Stockfish.
 fn printNetworkReplicaStatus() void {
     printInfoString("Network replica 1: Local memory.");
 }
@@ -111,9 +111,9 @@ pub fn verifyNetwork() void {
     }
 }
 
-// Load a network from the given EvalFile path directly through the network module
-// the engine owns the network pointer + binary directory, so no C-ABI round
-// trip to main is needed. Mirror the startup load in engine_object.constructMembers.
+/// Load a network from the given EvalFile path directly through the network module
+/// the engine owns the network pointer + binary directory, so no C-ABI round
+/// trip to main is needed. Mirror the startup load in engine_object.constructMembers.
 pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path: []const u8) void {
     const e = engine_ptr;
     network_port.load(e.binary_directory orelse "", evalfile_path);
@@ -125,11 +125,11 @@ pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path:
     thread_port.ensureNetworkReplicated(threads);
 }
 
-// Report the outcome, as upstream does: `sync_cout << (saved ? "Network saved
-// successfully to " + name : "Failed to export a net")` (nnue/network.cpp:133). save()
-// already builds exactly that message -- the result was simply discarded with `_ =`, so
-// `export_net` completed silently AND leaked the message allocMessage had built. Print it
-// as a plain line (upstream does not prefix it with `info string`).
+/// Report the outcome, as upstream does: `sync_cout << (saved ? "Network saved
+/// successfully to " + name : "Failed to export a net")` (nnue/network.cpp:133). save()
+/// already builds exactly that message -- the result was simply discarded with `_ =`, so
+/// `export_net` completed silently AND leaked the message allocMessage had built. Print it
+/// as a plain line (upstream does not prefix it with `info string`).
 pub fn saveNetworkEngine(filename_opt: ?[]const u8) void {
     const result = network_port.save(filename_opt);
     if (result.message) |message| {

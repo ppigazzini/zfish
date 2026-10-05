@@ -21,11 +21,11 @@ const tt_mod = @import("tt");
 const TranspositionTable = tt_mod.TranspositionTable;
 const sm = @import("search_manager");
 const UpdateContext = sm.UpdateContext;
-// Treat shared_state as the generic SharedStateOf; this scaffolding binds its own referents
-// (ThreadPool + TranspositionTable typed, the rest erased here), so it
-// instantiates its own view. Use engine.SharedState on the live engine path.
-// Bind the three live references the worker needs in the SharedState bundle
-// (threads/tt/sharedHistories); options/network are NOT in the bundle (never read).
+/// Treat shared_state as the generic SharedStateOf; this scaffolding binds its own referents
+/// (ThreadPool + TranspositionTable typed, the rest erased here), so it
+/// instantiates its own view. Use engine.SharedState on the live engine path.
+/// Bind the three live references the worker needs in the SharedState bundle
+/// (threads/tt/sharedHistories); options/network are NOT in the bundle (never read).
 const OptionsModel = @import("option").OptionsModel;
 const Network = @import("network").Network;
 const SharedHistoriesMap = @import("shared_history").SharedHistoriesMap;
@@ -35,22 +35,22 @@ pub const NumaConfig = @import("numa").NumaConfig;
 pub const NumaReplicationContext = @import("numa").NumaReplicationContext;
 pub const PositionStorage = @import("position_storage").PositionStorage;
 
-// Map the Engine graph's full member set, in declaration order:
-//
-//   binary_directory  -> []const u8                 [trivial slot]
-//   numa_context      -> *NumaReplicationContext    [config + replica registry]
-//   position          -> *PositionStorage           [owns the 1032B Position block]
-//   states            -> *StateList                 [the StateInfo list]
-//   options           -> *OptionsModel
-//   threads           -> *ThreadPool
-//   tt                -> TranspositionTable
-//   network           -> *Network                  [opaque{} handle, a real type]
-//   update_context    -> UpdateContext
-//   shared_histories  -> *SharedHistoriesMap
-//
-// Every member owns its type; `network` is an `opaque {}` handle, which is a real type the
-// compiler distinguishes rather than an erasure. Take this as the complete definition of the
-// Engine graph.
+/// Map the Engine graph's full member set, in declaration order:
+///
+///   binary_directory  -> []const u8                 [trivial slot]
+///   numa_context      -> *NumaReplicationContext    [config + replica registry]
+///   position          -> *PositionStorage           [owns the 1032B Position block]
+///   states            -> *StateList                 [the StateInfo list]
+///   options           -> *OptionsModel
+///   threads           -> *ThreadPool
+///   tt                -> TranspositionTable
+///   network           -> *Network                  [opaque{} handle, a real type]
+///   update_context    -> UpdateContext
+///   shared_histories  -> *SharedHistoriesMap
+///
+/// Every member owns its type; `network` is an `opaque {}` handle, which is a real type the
+/// compiler distinguishes rather than an erasure. Take this as the complete definition of the
+/// Engine graph.
 pub const EngineGraph = struct {
     binary_directory: []const u8,
     numa_context: *NumaReplicationContext, // NUMA context: config + replica registry
@@ -63,8 +63,8 @@ pub const EngineGraph = struct {
     shared_histories: *SharedHistoriesMap,
     update_context: UpdateContext,
 
-    // Build the SharedState handed to every Worker, bound to this graph's own
-    // subsystems.
+    /// Build the SharedState handed to every Worker, bound to this graph's own
+    /// subsystems.
     pub fn sharedState(self: *EngineGraph) SharedState {
         return SharedState.init(
             self.threads,
@@ -73,11 +73,11 @@ pub const EngineGraph = struct {
         );
     }
 
-    // Construct the graph's OWNED members (states, numaContext,
-    // position storage): default-construct binaryDirectory/numaContext/states + pos.
-    // Pass in the other members -- subsystems the graph references, not owns: options (the
-    // global OptionsModel), threads (the thread pool), network, shared_histories,
-    // update_context; tt starts empty (sized later by resize).
+    /// Construct the graph's OWNED members (states, numaContext,
+    /// position storage): default-construct binaryDirectory/numaContext/states + pos.
+    /// Pass in the other members -- subsystems the graph references, not owns: options (the
+    /// global OptionsModel), threads (the thread pool), network, shared_histories,
+    /// update_context; tt starts empty (sized later by resize).
     pub fn init(
         allocator: std.mem.Allocator,
         binary_directory: []const u8,
@@ -115,8 +115,8 @@ pub const EngineGraph = struct {
         };
     }
 
-    // Destroy the owned members in reverse construction order (the referenced
-    // subsystems are not owned here). Mirror the engine teardown for the owned slots.
+    /// Destroy the owned members in reverse construction order (the referenced
+    /// subsystems are not owned here). Mirror the engine teardown for the owned slots.
     pub fn deinit(self: *EngineGraph, allocator: std.mem.Allocator) void {
         allocator.destroy(self.position);
         self.numa_context.deinit();

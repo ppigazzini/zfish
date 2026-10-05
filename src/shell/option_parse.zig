@@ -212,8 +212,8 @@ pub fn parseSignedInt(input: []const u8) ?i32 {
     return std.fmt.parseInt(i32, trimmed, 10) catch null;
 }
 
-// Copy `value` into an owned slice; injecting the allocator makes the parsers' OOM
-// paths reachable by checkAllAllocationFailures.
+/// Copy `value` into an owned slice; injecting the allocator makes the parsers' OOM
+/// paths reachable by checkAllAllocationFailures.
 fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[]u8 {
     return try allocator.dupe(u8, value);
 }

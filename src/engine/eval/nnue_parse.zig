@@ -25,15 +25,15 @@ const std = @import("std");
 const builtin = @import("builtin");
 const dims = @import("nnue_dimensions");
 
-// The SSE4.1 packus lane order (which happens to be the identity {0..7}). A test fixture for
-// permuteBlocks only: the live parse never permutes on any tier (see the header), so no target
-// swaps this -- it does not gate correctness.
+/// The SSE4.1 packus lane order (which happens to be the identity {0..7}). A test fixture for
+/// permuteBlocks only: the live parse never permutes on any tier (see the header), so no target
+/// swaps this -- it does not gate correctness.
 pub const packus_epi16_order_sse41 = [8]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
 pub const decodeLeb = @import("nnue_leb.zig").decodeLeb;
 
-// Reorder blocks per permute<BlockSize>: `order.len` blocks of `block_size` bytes
-// within each (block_size * order.len)-byte chunk of `data`.
+/// Reorder blocks per permute<BlockSize>: `order.len` blocks of `block_size` bytes
+/// within each (block_size * order.len)-byte chunk of `data`.
 pub fn permuteBlocks(data: []u8, block_size: usize, order: []const usize, scratch: []u8) void {
     const chunk = block_size * order.len;
     std.debug.assert(data.len % chunk == 0);
@@ -69,13 +69,13 @@ pub const pair_activations = builtin.target.cpu.arch == .x86_64 and
 /// decides is the interleave ITSELF -- see pairScrambledInputIndex.
 pub const scrambled_activations = pair_activations;
 
-// Map an input index to where the paired activation packs put its value, and rearrange the
-// next layer's weights by that map instead of issuing a lane-restoring permute in the packs
-// (upstream get_weight_index_scrambled, affine_transform.h). Both narrows work per 128-bit
-// lane, so within each 32-byte block the eight 4-byte chunks land interleaved -- but by a
-// DIFFERENT map per width, because the lane count differs: vpackssdw at 256 bits has two
-// lanes (chunk k -> (k%2)*4 + k/2), at 512 bits four (chunk k -> (k%4)*2 + k/4). Inverting
-// the two silently corrupts the fc_1/fc_2 weights.
+/// Map an input index to where the paired activation packs put its value, and rearrange the
+/// next layer's weights by that map instead of issuing a lane-restoring permute in the packs
+/// (upstream get_weight_index_scrambled, affine_transform.h). Both narrows work per 128-bit
+/// lane, so within each 32-byte block the eight 4-byte chunks land interleaved -- but by a
+/// DIFFERENT map per width, because the lane count differs: vpackssdw at 256 bits has two
+/// lanes (chunk k -> (k%2)*4 + k/2), at 512 bits four (chunk k -> (k%4)*2 + k/4). Inverting
+/// the two silently corrupts the fc_1/fc_2 weights.
 fn pairScrambledInputIndex(input_index: usize) usize {
     const block = input_index / 32;
     const chunk = (input_index % 32) / 4;
@@ -97,9 +97,9 @@ fn pairScrambledChunk(comptime lanes: usize, chunk: usize) usize {
     return (chunk % lanes) * (8 / lanes) + chunk / lanes;
 }
 
-// Compute get_weight_index_scrambled(i): the SSSE3 affine weight index permutation.
-// `scrambled_input` adds the pair-activation lane interleave to the input index first
-// (upstream's ScrambledInput template flag -- fc_1/fc_2 on the pair tier only).
+/// Compute get_weight_index_scrambled(i): the SSSE3 affine weight index permutation.
+/// `scrambled_input` adds the pair-activation lane interleave to the input index first
+/// (upstream's ScrambledInput template flag -- fc_1/fc_2 on the pair tier only).
 pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize, scrambled_input: bool) usize {
     const input_index = if (scrambled_input) pairScrambledInputIndex(i % padded_input) else i % padded_input;
     return input_index / 4 * output_dims * 4 + i / padded_input * 4 + input_index % 4;
@@ -109,9 +109,9 @@ pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize, s
 
 pub const leb_magic = "COMPRESSED_LEB128";
 
-// Write each region where nnue_dimensions says it lives. The accessors in nnue_ft.zig read
-// it back from the same declarations, so the writer and the reader cannot drift apart --
-// see that module's header for what the two derivations used to risk.
+/// Write each region where nnue_dimensions says it lives. The accessors in nnue_ft.zig read
+/// it back from the same declarations, so the writer and the reader cannot drift apart --
+/// see that module's header for what the two derivations used to risk.
 const half_dimensions = dims.half_dimensions;
 const psq_feature_dimensions = dims.psq_feature_dimensions;
 const threat_dimensions = dims.threat_dimensions;
@@ -137,8 +137,8 @@ fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
     return std.mem.bytesAsSlice(T, bytes);
 }
 
-// Parse one COMPRESSED_LEB128 section ([magic][u32 count][data]) of `out.len`
-// values into `out`; return total section bytes consumed, or null if malformed.
+/// Parse one COMPRESSED_LEB128 section ([magic][u32 count][data]) of `out.len`
+/// values into `out`; return total section bytes consumed, or null if malformed.
 fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
     @setRuntimeSafety(true); // untrusted file, startup-only -- see parseFeatureTransformer
     if (blob.len < leb_magic.len + 4) return null;
@@ -152,9 +152,9 @@ fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
     return leb_magic.len + 4 + count;
 }
 
-// Parse the feature-transformer blob into `dst` (the FeatureTransformer memory
-// layout). No permute -- the transform reads FT weights in natural order on every tier.
-// Return the number of blob bytes consumed, or null on malformed input.
+/// Parse the feature-transformer blob into `dst` (the FeatureTransformer memory
+/// layout). No permute -- the transform reads FT weights in natural order on every tier.
+/// Return the number of blob bytes consumed, or null on malformed input.
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     // Keep runtime safety on here even in ReleaseFast. `blob` is whatever bytes the file
     // named by EvalFile happened to contain, and the shipped build otherwise checks no
@@ -186,8 +186,8 @@ pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     return pos;
 }
 
-// List the three written weight regions (offset, byte length), used to compare a parse
-// against a reference while skipping the alignment padding between them.
+/// List the three written weight regions (offset, byte length), used to compare a parse
+/// against a reference while skipping the alignment padding between them.
 const FtRegion = struct { off: usize, len: usize };
 pub const ft_regions = [_]FtRegion{
     .{ .off = biases_off, .len = biases_count * 2 },
@@ -195,8 +195,8 @@ pub const ft_regions = [_]FtRegion{
     .{ .off = threat_weights_off, .len = threat_weights_count * 1 },
 };
 
-// Parse `blob` into `scratch` and confirm each weight region matches `reference`
-// (a reference FeatureTransformer memory image). Returns true iff bit-identical.
+/// Parse `blob` into `scratch` and confirm each weight region matches `reference`
+/// (a reference FeatureTransformer memory image). Returns true iff bit-identical.
 pub fn verifyFeatureTransformer(blob: []const u8, reference: []const u8, scratch: []u8) bool {
     if (reference.len < ft_total_bytes or scratch.len < ft_total_bytes) return false;
     if (parseFeatureTransformer(blob, scratch) == null) return false;
@@ -209,12 +209,12 @@ pub fn verifyFeatureTransformer(blob: []const u8, reference: []const u8, scratch
 
 // ---- affine layer parse -----------------------------------------------------
 
-// Parse one affine layer's parameters at the start of `blob`: biases
-// (OutputDimensions int32, little-endian, linear) then weights (int8, written
-// through the SSSE3 scramble -- plus the pair-activation input interleave when
-// `scrambled_input` is set). OutputDimensions and PaddedInputDimensions are
-// derived from the destination sizes (biases_dst.len/4 and weights_dst.len /
-// OutputDimensions). Returns the bytes consumed.
+/// Parse one affine layer's parameters at the start of `blob`: biases
+/// (OutputDimensions int32, little-endian, linear) then weights (int8, written
+/// through the SSSE3 scramble -- plus the pair-activation input interleave when
+/// `scrambled_input` is set). OutputDimensions and PaddedInputDimensions are
+/// derived from the destination sizes (biases_dst.len/4 and weights_dst.len /
+/// OutputDimensions). Returns the bytes consumed.
 pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8, scrambled_input: bool) ?usize {
     @setRuntimeSafety(true); // untrusted file, startup-only -- see parseFeatureTransformer
     const output_dims = biases_dst.len / @sizeOf(i32);
@@ -241,7 +241,7 @@ fn constSlice(comptime T: type, src: []const u8, off: usize, count: usize) []con
     return std.mem.bytesAsSlice(T, bytes);
 }
 
-// Append one canonical signed-LEB128 value (write_leb_128, nnue_common.h).
+/// Append one canonical signed-LEB128 value (write_leb_128, nnue_common.h).
 fn encodeLebValue(comptime T: type, v: T, out: *Bytes, a: std.mem.Allocator) !void {
     var value: i64 = v;
     while (true) {
@@ -256,7 +256,7 @@ fn encodeLebValue(comptime T: type, v: T, out: *Bytes, a: std.mem.Allocator) !vo
     }
 }
 
-// Append a COMPRESSED_LEB128 section: magic, u32 byte-count, then the encoded values.
+/// Append a COMPRESSED_LEB128 section: magic, u32 byte-count, then the encoded values.
 fn encodeLebSection(
     comptime T: type,
     values: []const T,
@@ -272,13 +272,13 @@ fn encodeLebSection(
     std.mem.writeInt(u32, out.items[count_pos..][0..4], count, .little);
 }
 
-// Serialize FeatureTransformer::write_parameters preceded by Detail::write_parameters'
-// u32 hash. The live parse never permutes on any tier (see the header), so there is no
-// unpermute. Member
-// write order MUST mirror parseFeatureTransformer (the file / upstream layout):
-// biases (LEB i16), threatWeights (raw i8), ppWeights (raw i8), weights (LEB i16).
-// The threat and pp weight sections are stored contiguously (pp after threat) but
-// framed as separate stream sections.
+/// Serialize FeatureTransformer::write_parameters preceded by Detail::write_parameters'
+/// u32 hash. The live parse never permutes on any tier (see the header), so there is no
+/// unpermute. Member
+/// write order MUST mirror parseFeatureTransformer (the file / upstream layout):
+/// biases (LEB i16), threatWeights (raw i8), ppWeights (raw i8), weights (LEB i16).
+/// The threat and pp weight sections are stored contiguously (pp after threat) but
+/// framed as separate stream sections.
 pub fn serializeFeatureTransformer(
     ft: []const u8,
     hash_value: u32,
@@ -295,10 +295,10 @@ pub fn serializeFeatureTransformer(
     try encodeLebSection(i16, constSlice(i16, ft, weights_off, psq_weights_count), out, a);
 }
 
-// Serialize AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
-// linear order, recovered from the scrambled storage via get_weight_index. Reading back
-// through the SAME index map the parse wrote through inverts it, so `scrambled_input`
-// must match the parse's flag for the layer.
+/// Serialize AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
+/// linear order, recovered from the scrambled storage via get_weight_index. Reading back
+/// through the SAME index map the parse wrote through inverts it, so `scrambled_input`
+/// must match the parse's flag for the layer.
 fn serializeLayerOne(biases: []const u8, weights: []const u8, scrambled_input: bool, out: *Bytes, a: std.mem.Allocator) !void {
     try out.appendSlice(a, biases);
     const output_dims = biases.len / @sizeOf(i32);
@@ -309,10 +309,10 @@ fn serializeLayerOne(biases: []const u8, weights: []const u8, scrambled_input: b
     }
 }
 
-// Serialize NetworkArchitecture::write_parameters preceded by Detail's u32 hash. The
-// activations carry no parameters, so only fc_0/fc_1/fc_2 are written. fc_1/fc_2 read
-// paired-activation output on the pair tier, so their stored weights carry the extra
-// interleave and are exported back through it -- the emitted bytes stay tier-invariant.
+/// Serialize NetworkArchitecture::write_parameters preceded by Detail's u32 hash. The
+/// activations carry no parameters, so only fc_0/fc_1/fc_2 are written. fc_1/fc_2 read
+/// paired-activation output on the pair tier, so their stored weights carry the extra
+/// interleave and are exported back through it -- the emitted bytes stay tier-invariant.
 pub fn serializeLayer(
     hash_value: u32,
     biases: [3][]const u8,

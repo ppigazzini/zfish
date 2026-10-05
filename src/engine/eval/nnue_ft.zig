@@ -11,9 +11,9 @@ const dims = @import("nnue_dimensions");
 
 const nnue_align: usize = dims.cache_line_bytes;
 
-// The threat weight rows hold FullThreats AND PP_3Wide concatenated -- upstream's single
-// threatAndPpWeights array. A pp index is at or past the threat count and addresses the
-// tail of this same region, so the threat weight accessor covers both feature sets.
+/// The threat weight rows hold FullThreats AND PP_3Wide concatenated -- upstream's single
+/// threatAndPpWeights array. A pp index is at or past the threat count and addresses the
+/// tail of this same region, so the threat weight accessor covers both feature sets.
 const feature_transformer_weights_offset = dims.weights_off;
 const feature_transformer_threat_weights_offset = dims.threat_weights_off;
 
@@ -24,12 +24,12 @@ const feature_transformer_threat_weights_offset = dims.threat_weights_off;
 /// accessors below reinterpret it as bytes and hand back typed weight pointers.
 pub const FeatureTransformer = opaque {};
 
-// Carry the blob's 64-byte alignment in the returned pointer types: the arena is
-// nnue_align'd (page_alloc contract) and every region offset above is rounded to
-// nnue_align, so the casts hold. The SIMD kernels need the alignment in the TYPE --
-// with an align(1) weight pointer, non-VEX SSE cannot fold a weight load into the
-// consuming op's m128 operand (folding requires provable 16-byte alignment), which
-// costs one extra movdqu per 16 weight bytes on the sse41 tier.
+/// Carry the blob's 64-byte alignment in the returned pointer types: the arena is
+/// nnue_align'd (page_alloc contract) and every region offset above is rounded to
+/// nnue_align, so the casts hold. The SIMD kernels need the alignment in the TYPE --
+/// with an align(1) weight pointer, non-VEX SSE cannot fold a weight load into the
+/// consuming op's m128 operand (folding requires provable 16-byte alignment), which
+/// costs one extra movdqu per 16 weight bytes on the sse41 tier.
 pub fn featureTransformerPsqWeights(feature_transformer: *const FeatureTransformer) [*]align(nnue_align) const i16 {
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
     return @ptrCast(@alignCast(bytes + feature_transformer_weights_offset));

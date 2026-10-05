@@ -21,24 +21,24 @@ const worker_layout = @import("worker_layout");
 const runtime_hooks = @import("runtime_hooks");
 const ThreadPool = worker_layout.ThreadPool;
 
-// Treat the 64-byte pool footprint as a worker_layout.ThreadPool: the writer here
-// and every reader (worker_layout accessors, the search's captured
-// &stop pointer) go through the same typed struct, so Zig owns the field placement.
+/// Treat the 64-byte pool footprint as a worker_layout.ThreadPool: the writer here
+/// and every reader (worker_layout accessors, the search's captured
+/// &stop pointer) go through the same typed struct, so Zig owns the field placement.
 inline fn poolOf(slot: [*]u8) *ThreadPool {
     return ThreadPool.fromPtr(@ptrCast(slot));
 }
 
-// Per-thread construction hook: given the thread index and the freshly spawned
-// SearchThread (idle loop running, no Worker yet), build + attach the Worker.
-// Bind this in Layer 4 to the large-page Worker alloc + constructFull.
+/// Per-thread construction hook: given the thread index and the freshly spawned
+/// SearchThread (idle loop running, no Worker yet), build + attach the Worker.
+/// Bind this in Layer 4 to the large-page Worker alloc + constructFull.
 pub const ThreadBuilder = struct {
     ctx: ?*anyopaque = null,
     // Pass thread opaque so the worker-builder can write worker@8 directly.
     build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) error{OutOfMemory}!void,
 };
 
-// Represent the thread pool; `slot` points at the 64-byte ThreadPool footprint
-// (the Engine's embedded pool, or a standalone buffer in tests).
+/// Represent the thread pool; `slot` points at the 64-byte ThreadPool footprint
+/// (the Engine's embedded pool, or a standalone buffer in tests).
 pub const Pool = struct {
     allocator: std.mem.Allocator,
     slot: [*]u8,
@@ -47,8 +47,8 @@ pub const Pool = struct {
         return .{ .allocator = allocator, .slot = slot };
     }
 
-    // Build `count` threads (idle loops + Workers via the builder) and lay
-    // them into the footprint.
+    /// Build `count` threads (idle loops + Workers via the builder) and lay
+    /// them into the footprint.
     pub fn set(self: *Pool, count: usize, builder: ThreadBuilder) !void {
         self.clear();
         const tp = poolOf(self.slot);
@@ -90,11 +90,11 @@ pub const Pool = struct {
         tp.threads = vec;
     }
 
-    // Recover the threads buffer straight from the slot's `threads` slice, not a held
-    // field (footprint-based, stateless) -- so a fresh Pool wrapper over the same
-    // slot (reset_for_reconfigure, the destroy hook) tears the pool down correctly.
-    // Require a zeroed-or-valid footprint (a default-constructed ThreadPool has an
-    // empty slice, so len==0 is the no-op case).
+    /// Recover the threads buffer straight from the slot's `threads` slice, not a held
+    /// field (footprint-based, stateless) -- so a fresh Pool wrapper over the same
+    /// slot (reset_for_reconfigure, the destroy hook) tears the pool down correctly.
+    /// Require a zeroed-or-valid footprint (a default-constructed ThreadPool has an
+    /// empty slice, so len==0 is the no-op case).
     pub fn clear(self: *Pool) void {
         const tp = poolOf(self.slot);
         const buf = tp.threads;
@@ -143,8 +143,8 @@ const WorkerBuildCtx = struct {
     total: usize,
 };
 
-// Build `count` threads (idle loops + Workers) into the Engine's embedded
-// ThreadPool footprint `pool`.
+/// Build `count` threads (idle loops + Workers) into the Engine's embedded
+/// ThreadPool footprint `pool`.
 pub fn set(
     pool: *worker_layout.ThreadPool,
     shared_state: *anyopaque,
@@ -158,15 +158,15 @@ pub fn set(
     try p.set(count, .{ .ctx = &bctx, .build = runtime_hooks.worker_build });
 }
 
-// Join + free every thread and null the footprint slice. Serve the
-// reset_for_reconfigure and the engine teardown hook.
+/// Join + free every thread and null the footprint slice. Serve the
+/// reset_for_reconfigure and the engine teardown hook.
 pub fn clear(pool: *worker_layout.ThreadPool) void {
     var p: Pool = .init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }
 
-// Wait for one thread's in-flight job to finish. Read the thread pointer out of
-// the footprint slice by index and call the wait.
+/// Wait for one thread's in-flight job to finish. Read the thread pointer out of
+/// the footprint slice by index and call the wait.
 pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads.len == 0) return;
@@ -174,13 +174,13 @@ pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
     thread.waitForSearchFinished();
 }
 
-// Assign the pool's boundThreadToNumaNode footprint slice (a typed []usize via
-// the allocator interface).
-// Pass `nodes` as the per-thread NUMA-node index list, or null/empty to clear. Free any
-// prior buffer on every reassign, so the lifecycle is leak-clean under a checked
-// allocator (the bound-slice unit test drives exactly this). Keep this here beside set()
-// -- which clears the same footprint slot -- rather than in thread.zig, so all the
-// ThreadPool-footprint writes sit in one module and the writer is directly testable.
+/// Assign the pool's boundThreadToNumaNode footprint slice (a typed []usize via
+/// the allocator interface).
+/// Pass `nodes` as the per-thread NUMA-node index list, or null/empty to clear. Free any
+/// prior buffer on every reassign, so the lifecycle is leak-clean under a checked
+/// allocator (the bound-slice unit test drives exactly this). Keep this here beside set()
+/// -- which clears the same footprint slot -- rather than in thread.zig, so all the
+/// ThreadPool-footprint writes sit in one module and the writer is directly testable.
 pub fn boundNodesAssign(pool: *worker_layout.ThreadPool, allocator: std.mem.Allocator, nodes: ?[]const usize) error{OutOfMemory}!void {
     const tp = pool;
     if (tp.bound.len != 0) allocator.free(tp.bound);
@@ -197,7 +197,7 @@ pub fn boundNodesAssign(pool: *worker_layout.ThreadPool, allocator: std.mem.Allo
 
 const testing = std.testing;
 
-// Mock builder: count Worker attachments, leave worker null (no graph here).
+/// Mock builder: count Worker attachments, leave worker null (no graph here).
 const MockBuild = struct {
     attached: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     fn build(ctx: ?*anyopaque, idx: usize, thread_ptr: *anyopaque) error{OutOfMemory}!void {

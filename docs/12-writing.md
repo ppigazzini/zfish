@@ -155,6 +155,13 @@ to the reader, not a description of the author.
 // Read the POOL's node count, not this worker's.
 ```
 
+**Document a declaration with `///`, a file with `//!`, and keep `//` for a body.** This is the
+language reference's Doc Comment Guidance: a doc comment travels with its declaration into
+autodoc and the editor, while a plain one above it is invisible to both. Zig refuses `///` on a
+function's local declarations. Every rule here applies to doc comments too, and a doc comment
+says *assume* for an invariant the shipped fast build never checks, *assert* for one a safe
+build does.
+
 **Write only the constraint the code cannot show.** Never restate the next line. Never say
 where the code came from, or why your change is right — that is the commit message's job, and
 it is noise the moment the PR merges. If the line reads plainly, say nothing.

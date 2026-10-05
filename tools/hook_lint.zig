@@ -35,11 +35,11 @@ const Io = std.Io;
 
 const baseline: usize = 32;
 
-// List the shipped registration sites. main.zig is the composition root (it may import
-// everything and nothing imports it, which is what lets it hand implementations
-// backwards to the leaves); position.zig self-registers the 2 snapshot hooks it owns.
-// Both run before the engine is constructed (main.zig:67 initRuntime, :68
-// installRuntimeHooks, :79 engineConstructAt).
+/// List the shipped registration sites. main.zig is the composition root (it may import
+/// everything and nothing imports it, which is what lets it hand implementations
+/// backwards to the leaves); position.zig self-registers the 2 snapshot hooks it owns.
+/// Both run before the engine is constructed (main.zig:67 initRuntime, :68
+/// installRuntimeHooks, :79 engineConstructAt).
 const registrars = [_][]const u8{
     "src/shell/main.zig",
     "src/engine/board/position.zig",

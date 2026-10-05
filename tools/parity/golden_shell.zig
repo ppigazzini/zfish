@@ -27,7 +27,7 @@ const BestmoveLine = structured_diff.BestmoveLine;
 const parseInfoLine = structured_diff.parseInfoLine;
 const parseBestmove = structured_diff.parseBestmove;
 
-// output-golden: capture the bench info/bestmove lines with volatile `time`/`nps` stripped.
+/// output-golden: capture the bench info/bestmove lines with volatile `time`/`nps` stripped.
 pub fn buildOutputGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{"bench"}, null);
     defer cap.deinit(gpa);
@@ -48,15 +48,15 @@ pub fn buildOutputGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 
     return out.toOwnedSlice(gpa);
 }
 
-// driver-golden: pin the observable behaviour of the search-manager DRIVER + its emit
-// callbacks (ss_emit_pv / emit_bestmove / emit_no_moves / search_emit_info_full /
-// search_cb_pv_context / search_cb_root_on_iter / search_id_pv / ss_pv_one_and_ponder).
-// Run a single-thread (deterministic) battery that exercises MultiPV (multi-line info +
-// pv_context), UCI_ShowWDL (wdl formatting), a deep endgame (currmove / currmovenumber),
-// a mate score, and a checkmated side-to-move ("bestmove (none)"). Capture every emitted
-// info/bestmove line (volatile `time`/`nps` stripped). Purpose: de-risk relocating
-// those callbacks off main.zig -- a driver refactor that changes ANY emitted line is caught
-// bit-exact, so the moves need not be "trusted", they are gate-proven.
+/// driver-golden: pin the observable behaviour of the search-manager DRIVER + its emit
+/// callbacks (ss_emit_pv / emit_bestmove / emit_no_moves / search_emit_info_full /
+/// search_cb_pv_context / search_cb_root_on_iter / search_id_pv / ss_pv_one_and_ponder).
+/// Run a single-thread (deterministic) battery that exercises MultiPV (multi-line info +
+/// pv_context), UCI_ShowWDL (wdl formatting), a deep endgame (currmove / currmovenumber),
+/// a mate score, and a checkmated side-to-move ("bestmove (none)"). Capture every emitted
+/// info/bestmove line (volatile `time`/`nps` stripped). Purpose: de-risk relocating
+/// those callbacks off main.zig -- a driver refactor that changes ANY emitted line is caught
+/// bit-exact, so the moves need not be "trusted", they are gate-proven.
 const driver_battery =
     "uci\n" ++
     "setoption name Threads value 1\n" ++
@@ -102,7 +102,7 @@ pub fn buildDriverGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 
     return out.toOwnedSlice(gpa);
 }
 
-// search-modes: produce one bestmove per deterministic node/depth-limited mode.
+/// search-modes: produce one bestmove per deterministic node/depth-limited mode.
 pub fn buildSearchModes(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 10";
@@ -126,11 +126,11 @@ pub fn buildSearchModes(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// Run a search to its REAL bestmove (interactive; no early-quit truncation) and return the
-// full `bestmove ...` line (owned). Avoid the old approach that piped `go\nquit`, which stops
-// the search mid-flight -- the resulting move is timing-dependent (a hollow, cross-platform-flaky
-// gate). Rely on these deterministic node/depth-limited single-thread modes, so the completed
-// bestmove is a stable golden on every OS/arch.
+/// Run a search to its REAL bestmove (interactive; no early-quit truncation) and return the
+/// full `bestmove ...` line (owned). Avoid the old approach that piped `go\nquit`, which stops
+/// the search mid-flight -- the resulting move is timing-dependent (a hollow, cross-platform-flaky
+/// gate). Rely on these deterministic node/depth-limited single-thread modes, so the completed
+/// bestmove is a stable golden on every OS/arch.
 fn searchBestmoveLine(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []const u8) ![]u8 {
     var s: Interactive = undefined;
     try s.init(io, gpa, bin);
@@ -149,14 +149,14 @@ fn searchBestmoveLine(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []co
     return owned;
 }
 
-// fen-errors: pin the FEN-validation diagnostics restored in fen_parse.zig (the piece-char,
-// pawn/piece-count, side-to-move, castling, en-passant, king-count, and board-length rules that
-// upstream enforces at position.cpp). Each malformed `position fen` is a CRITICAL command error
-// that ABORTS the engine, so every case runs in its own process and the follow-up `isready`
-// must produce NO `readyok` -- that flag pins the terminate-on-critical-error behaviour. The
-// `Reason: ...` text, its quoted offending token, and the stdout routing all match the upstream
-// oracle byte-for-byte (verified against sf_sse41); regenerate the golden on an upstream sync,
-// exactly like the search/tb goldens.
+/// fen-errors: pin the FEN-validation diagnostics restored in fen_parse.zig (the piece-char,
+/// pawn/piece-count, side-to-move, castling, en-passant, king-count, and board-length rules that
+/// upstream enforces at position.cpp). Each malformed `position fen` is a CRITICAL command error
+/// that ABORTS the engine, so every case runs in its own process and the follow-up `isready`
+/// must produce NO `readyok` -- that flag pins the terminate-on-critical-error behaviour. The
+/// `Reason: ...` text, its quoted offending token, and the stdout routing all match the upstream
+/// oracle byte-for-byte (verified against sf_sse41); regenerate the golden on an upstream sync,
+/// exactly like the search/tb goldens.
 const FenErrorCase = struct { label: []const u8, fen: []const u8 };
 const fen_error_cases = [_]FenErrorCase{
     .{ .label = "invalid-piece   ", .fen = "not_a_fen" },
@@ -192,18 +192,18 @@ pub fn buildFenErrors(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// misc: capture the `d`-command BOARD plus its Fen/Key/Checkers triple (on stdout), per
-// sequence.
-//
-// The board rows are here because nothing else reads them. `d` renders each square through
-// `trace.zig`'s own copy of the piece->character table -- a third copy of the same bijection
-// `fen.zig` writes FENs with and `fen_parse.zig` parses them with. The other two are held:
-// mutating `fen.zig`'s copy reddens `flip-chess960`, because that gate round-trips the
-// writer's output back through the parser. `trace.zig`'s copy had no such reader -- this
-// gate captured Fen/Key/Checkers and filtered the diagram out, so changing its last
-// character to 'x' left every gate in the tree green while the `d` command printed a board
-// with no black king on it. Checked, not assumed: that mutation passed `misc` before this
-// change.
+/// misc: capture the `d`-command BOARD plus its Fen/Key/Checkers triple (on stdout), per
+/// sequence.
+///
+/// The board rows are here because nothing else reads them. `d` renders each square through
+/// `trace.zig`'s own copy of the piece->character table -- a third copy of the same bijection
+/// `fen.zig` writes FENs with and `fen_parse.zig` parses them with. The other two are held:
+/// mutating `fen.zig`'s copy reddens `flip-chess960`, because that gate round-trips the
+/// writer's output back through the parser. `trace.zig`'s copy had no such reader -- this
+/// gate captured Fen/Key/Checkers and filtered the diagram out, so changing its last
+/// character to 'x' left every gate in the tree green while the `d` command printed a board
+/// with no black king on it. Checked, not assumed: that mutation passed `misc` before this
+/// change.
 pub fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
@@ -245,19 +245,19 @@ pub fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// uci-options: capture the `uci` handshake option list -- the compatibility surface a GUI reads.
-// The `uci` handshake is protocol: it MUST reach the GUI on stdout. Read it from stdout
-// and assert stderr carries none of it -- this gate previously read stderr, which is where
-// a std.debug.print bug was putting the whole handshake, so the gate passed while a
-// conforming GUI (which reads stdout) got nothing and hung. Pinning the stream is the
-// contract; a regression to stderr must fail here, not in a GUI.
-//
-// The id name / id author lines and the startup banner carry the git sha + date (misc.zig)
-// and are volatile every commit, so pin ONLY the `option name` lines. Their defaults and
-// min/max are static constants -> machine/OS-invariant (Threads max is a fixed 1024, not the
-// core count; Hash max is fixed), except EvalFile's default which is the net name
-// (regenerate on a net bump, like the other goldens). Complement the option-model unit test
-// (option_model.zig) by covering the command -> rendered-output wiring end to end.
+/// uci-options: capture the `uci` handshake option list -- the compatibility surface a GUI reads.
+/// The `uci` handshake is protocol: it MUST reach the GUI on stdout. Read it from stdout
+/// and assert stderr carries none of it -- this gate previously read stderr, which is where
+/// a std.debug.print bug was putting the whole handshake, so the gate passed while a
+/// conforming GUI (which reads stdout) got nothing and hung. Pinning the stream is the
+/// contract; a regression to stderr must fail here, not in a GUI.
+///
+/// The id name / id author lines and the startup banner carry the git sha + date (misc.zig)
+/// and are volatile every commit, so pin ONLY the `option name` lines. Their defaults and
+/// min/max are static constants -> machine/OS-invariant (Threads max is a fixed 1024, not the
+/// core count; Hash max is fixed), except EvalFile's default which is the net name
+/// (regenerate on a net bump, like the other goldens). Complement the option-model unit test
+/// (option_model.zig) by covering the command -> rendered-output wiring end to end.
 pub fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{}, "uci\nquit\n");
     defer cap.deinit(gpa);
@@ -284,8 +284,8 @@ pub fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// Hash with FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
-// the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
+/// Hash with FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
+/// the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
     var h: u64 = 0xcbf29ce484222325;
     for (data) |b| {
@@ -295,15 +295,15 @@ fn fnv1a64(data: []const u8) u64 {
     return h;
 }
 
-// export-net: fingerprint (length + FNV-1a) the net produced by `export_net`. Require the
-// serializer (nnue_parse.serializeFeatureTransformer/serializeLayer, i.e. Stockfish's
-// write_parameters) to reproduce the canonical .nnue byte-for-byte -- upstream's
-// export round-trips to the input net exactly, so this gate is a differential-vs-upstream
-// check authored against the pristine oracle (see tools/upstream_parity.sh): a matching
-// hash means zfish's export == upstream's export == the distributed net. `export_net` is
-// synchronous (it runs to completion in the command handler, no async search), so the
-// feed-all-then-quit runEngine path is safe here. Write a temp net in cwd (resources/), hash
-// it, and remove it.
+/// export-net: fingerprint (length + FNV-1a) the net produced by `export_net`. Require the
+/// serializer (nnue_parse.serializeFeatureTransformer/serializeLayer, i.e. Stockfish's
+/// write_parameters) to reproduce the canonical .nnue byte-for-byte -- upstream's
+/// export round-trips to the input net exactly, so this gate is a differential-vs-upstream
+/// check authored against the pristine oracle (see tools/upstream_parity.sh): a matching
+/// hash means zfish's export == upstream's export == the distributed net. `export_net` is
+/// synchronous (it runs to completion in the command handler, no async search), so the
+/// feed-all-then-quit runEngine path is safe here. Write a temp net in cwd (resources/), hash
+/// it, and remove it.
 pub fn buildExportNet(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const tmp = "parity_export.tmp.nnue";
     var cap = try runEngine(gpa, io, bin, &.{}, "export_net " ++ tmp ++ "\nquit\n");

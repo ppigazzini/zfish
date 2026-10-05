@@ -2,8 +2,8 @@ const builtin = @import("builtin");
 const build_options = @import("build_options");
 const std = @import("std");
 const memory = @import("memory");
-// Keep the dbg_* debug statistics counters in their own std-only leaf now.
-// Re-export them so the existing misc.dbg* API (misc.dbgPrint from uci.zig) is unchanged.
+/// Keep the dbg_* debug statistics counters in their own std-only leaf now.
+/// Re-export them so the existing misc.dbg* API (misc.dbgPrint from uci.zig) is unchanged.
 const debug_counters = @import("debug_counters.zig");
 pub const dbgHitOn = debug_counters.dbgHitOn;
 pub const dbgMeanOf = debug_counters.dbgMeanOf;

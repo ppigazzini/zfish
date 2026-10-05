@@ -13,13 +13,13 @@ const state_list = @import("state_list");
 const PendingStateStorage = state_list.PendingStateStorage;
 const numa = @import("numa");
 
-// Import the Zig-owned thread job runner; verified by its own concurrency tests.
+/// Import the Zig-owned thread job runner; verified by its own concurrency tests.
 pub const thread_runtime = @import("thread_runtime");
-// Provide the thread runtime: the threads + the thread pool driving the idle-loop vehicle.
+/// Provide the thread runtime: the threads + the thread pool driving the idle-loop vehicle.
 const search_thread = @import("search_thread");
 const thread_pool = @import("thread_pool.zig");
-// Keep the root-move builder + Syzygy root-ranking cluster in its own leaf.
-// Reference these from startThinking (and the RootSetupInput it fills) by their old names.
+/// Keep the root-move builder + Syzygy root-ranking cluster in its own leaf.
+/// Reference these from startThinking (and the RootSetupInput it fills) by their old names.
 const root_move_build = @import("root_move_build");
 const TbConfig = root_move_build.TbConfig;
 const buildRootMoves = root_move_build.buildRootMoves;
@@ -27,12 +27,12 @@ const buildRootFen = root_move_build.buildRootFen;
 const loadPositionSnapshot = root_move_build.loadPositionSnapshot;
 const rootMovesDestroy = root_move_build.rootMovesDestroy;
 
-// Reinterpret a pool thread slot (SearchThread*) for the sync handshake.
+/// Reinterpret a pool thread slot (SearchThread*) for the sync handshake.
 inline fn nt(thread: *worker_layout.Thread) *search_thread.SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
-// Forward the thread sync handshake -> the runtime.
+/// Forward the thread sync handshake -> the runtime.
 inline fn threadWaitFinished(thread: *worker_layout.Thread) void {
     nt(thread).waitForSearchFinished();
 }
@@ -45,9 +45,9 @@ inline fn threadClearWorker(thread: *worker_layout.Thread) void {
 inline fn threadRunJob(thread: *worker_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
-// Read searchmoves[index] as a Zig-owned SearchMoveText record: `searchmoves` is a plain
-// `[]SearchMoveText` slice (typed indexing, no hand-built vector header), and the length +
-// inline chars are read through typed struct fields. Gate-verified by search-modes.
+/// Read searchmoves[index] as a Zig-owned SearchMoveText record: `searchmoves` is a plain
+/// `[]SearchMoveText` slice (typed indexing, no hand-built vector header), and the length +
+/// inline chars are read through typed struct fields. Gate-verified by search-modes.
 inline fn limitsSearchmoveText(limits: *const worker_layout.LimitsType, index: usize) ByteView {
     const rec: *const worker_layout.SearchMoveText = &limits.searchmoves[index];
     return .{ .ptr = &rec.text, .len = rec.len };
@@ -89,10 +89,10 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
-// Copy the LimitsType POD fields (everything but the leading searchmoves slice) into
-// the worker's limits member. LimitsType is a struct now, so copy by field rather
-// than a byte range; searchmoves is deliberately left as the worker's own (the search
-// reads the worker's, always empty on the gated single-node path).
+/// Copy the LimitsType POD fields (everything but the leading searchmoves slice) into
+/// the worker's limits member. LimitsType is a struct now, so copy by field rather
+/// than a byte range; searchmoves is deliberately left as the worker's own (the search
+/// reads the worker's, always empty on the gated single-node path).
 fn workerSetLimits(thread: *worker_layout.Thread, src_limits: *const worker_layout.LimitsType) void {
     const worker = thread.worker.?;
     const dst = &worker.limits;
@@ -111,10 +111,10 @@ fn workerSetLimits(thread: *worker_layout.Thread, src_limits: *const worker_layo
     dst.ponder_mode = src.ponder_mode;
 }
 
-// Copy the ranked source RootMoves into the worker's own []RootMove (the DST
-// is a typed slice now, unblocked by the proof the WorkerLayout layout is free).
-// Reuse the buffer when the count is unchanged (the common re-search case), else free
-// and reallocate -- the slice equivalent of a grow-and-copy.
+/// Copy the ranked source RootMoves into the worker's own []RootMove (the DST
+/// is a typed slice now, unblocked by the proof the WorkerLayout layout is free).
+/// Reuse the buffer when the count is unchanged (the common re-search case), else free
+/// and reallocate -- the slice equivalent of a grow-and-copy.
 fn workerSetRootMoves(thread: *worker_layout.Thread, src: []const search_types.RootMove) void {
     const worker = thread.worker.?;
     if (src.len == 0) {
@@ -133,7 +133,7 @@ fn workerSetRootMoves(thread: *worker_layout.Thread, src: []const search_types.R
     for (worker.root_moves, src) |*dst, *s| dst.copyFrom(s);
 }
 
-// Release a worker's root-move list, PV buffers included.
+/// Release a worker's root-move list, PV buffers included.
 fn freeWorkerRootMoves(worker: *worker_layout.WorkerLayout) void {
     if (worker.root_moves.len == 0) {
         worker.root_moves = &[_]search_types.RootMove{};
@@ -285,8 +285,8 @@ pub fn reconfigure(
     runtime_hooks.verify_thread_graph(pool, requested, if (do_bind) requested else 0);
 }
 
-// Provide the search-driver entry search_thread invokes as each thread's search job. Set
-// as a function pointer so search_thread need not import position.
+/// Provide the search-driver entry search_thread invokes as each thread's search job. Set
+/// as a function pointer so search_thread need not import position.
 fn workerSearchEntry(ctx: ?*anyopaque) void {
     search_driver.workerStartSearching(ctx);
 }
@@ -435,19 +435,19 @@ pub fn startSearching(pool: *worker_layout.ThreadPool) void {
     }
 }
 
-// Wait until one thread's worker finishes its current search (thread pool op).
+/// Wait until one thread's worker finishes its current search (thread pool op).
 pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
     thread_pool.waitThread(pool, thread_id);
 }
 
-// Submit a job to one pool thread's idle loop and return immediately (thread pool op);
-// pair with waitThread. Serve thread_ops.runThread for the parallel TT clear.
+/// Submit a job to one pool thread's idle loop and return immediately (thread pool op);
+/// pair with waitThread. Serve thread_ops.runThread for the parallel TT clear.
 pub fn runThreadJob(pool: *worker_layout.ThreadPool, thread_id: usize, job: ThreadCallback, ctx: ?*anyopaque) void {
     threadRunJob(pool.threadTyped(thread_id), job, ctx);
 }
 
-// Join+free the threads and null the pool's threads slice (engine teardown).
-// Wrap thread_pool for main.zig, which doesn't import it directly.
+/// Join+free the threads and null the pool's threads slice (engine teardown).
+/// Wrap thread_pool for main.zig, which doesn't import it directly.
 pub fn threadPoolClear(pool: *worker_layout.ThreadPool) void {
     thread_pool.clear(pool);
 }

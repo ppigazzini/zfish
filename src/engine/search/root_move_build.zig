@@ -56,8 +56,8 @@ const wdl_to_value = [_]i32{
     value_mate - max_ply - 1,
 };
 
-// Re-export TbConfig from its std-only leaf: the Worker embeds one, this module
-// produces it, and neither should own the definition the other reads.
+/// Re-export TbConfig from its std-only leaf: the Worker embeds one, this module
+/// produces it, and neither should own the definition the other reads.
 pub const TbConfig = tb_config_types.TbConfig;
 
 const TablebaseProbe = tb_source.ProbeResult;
@@ -69,15 +69,15 @@ pub const RankedRootMove = struct {
     tb_score: i32,
 };
 
-// Build/destroy the RootMoves array: a plain `count`-element []RootMove, each
-// element zeroed then initialised to the RootMove default (scores at -VALUE_INFINITE)
-// with the ranked tb fields and the single-move PV. The worker copies it into its own
-// slice-header buffer (workerSetRootMoves reads src.ptr/src.len).
-//
-// Each element OWNS its two PV buffers, so this is the allocation site for them too, and
-// rootMovesDestroy below is the one release. Reserve `1 + pv_capacity`: that is the longest PV
-// `rootUpdate` can assemble -- its own move plus a full PVMoves from the child -- so the search
-// path never allocates. Only the tablebase walk, which runs at emit time, can ask for more.
+/// Build/destroy the RootMoves array: a plain `count`-element []RootMove, each
+/// element zeroed then initialised to the RootMove default (scores at -VALUE_INFINITE)
+/// with the ranked tb fields and the single-move PV. The worker copies it into its own
+/// slice-header buffer (workerSetRootMoves reads src.ptr/src.len).
+///
+/// Each element OWNS its two PV buffers, so this is the allocation site for them too, and
+/// rootMovesDestroy below is the one release. Reserve `1 + pv_capacity`: that is the longest PV
+/// `rootUpdate` can assemble -- its own move plus a full PVMoves from the child -- so the search
+/// path never allocates. Only the tablebase walk, which runs at emit time, can ask for more.
 fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]search_types.RootMove {
     if (count == 0) return &[_]search_types.RootMove{};
     const elems = std.heap.c_allocator.alloc(search_types.RootMove, count) catch return null;
@@ -213,9 +213,9 @@ const DtzRankResult = enum {
     fallback_to_wdl,
 };
 
-// Mirror SF Position::dtz_is_dtm: pawnless && (3-men || 4-men-minors-only). When true the DTZ tables rank
-// exactly like DTM, so the root ranking uses the exact DTZ (rankDTZ); otherwise all winning moves
-// tie at MAX_DTZ and the tie-break is the (movegen) order.
+/// Mirror SF Position::dtz_is_dtm: pawnless && (3-men || 4-men-minors-only). When true the DTZ tables rank
+/// exactly like DTM, so the root ranking uses the exact DTZ (rankDTZ); otherwise all winning moves
+/// tie at MAX_DTZ and the tie-break is the (movegen) order.
 fn dtzIsDtm(pos: *const position_port.Position) bool {
     var pieces: [square_count]u8 = undefined;
     position_port.accumulatorSnapshot(pos, &pieces);
@@ -382,12 +382,12 @@ pub fn stableSortRankedMovesByTbRank(ranked_moves: []RankedRootMove) void {
     }
 }
 
-// Rank `ranked_moves` at `pos` -- upstream Tablebases::rank_root_moves (tbprobe.cpp:1780). Serve
-// any position, not just the root, so the PV extender ranks each step of its walk.
-//
-// Own the sort and the failure cleanup. Zeroing every tbRank on a failed probe is required, not
-// tidiness: a DTZ pass that bails to WDL has already written ranks for the moves it reached, and
-// a WDL pass that then fails leaves those ranks describing a probe that did not succeed.
+/// Rank `ranked_moves` at `pos` -- upstream Tablebases::rank_root_moves (tbprobe.cpp:1780). Serve
+/// any position, not just the root, so the PV extender ranks each step of its walk.
+///
+/// Own the sort and the failure cleanup. Zeroing every tbRank on a failed probe is required, not
+/// tidiness: a DTZ pass that bails to WDL has already written ranks for the moves it reached, and
+/// a WDL pass that then fails leaves those ranks describing a probe that did not succeed.
 pub fn rankMovesAt(
     pos: *const position_port.Position,
     pos_fen: []const u8,

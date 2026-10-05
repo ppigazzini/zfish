@@ -55,10 +55,10 @@ pub inline fn moveIsOk(m: u16) bool {
 /// so it occupies no register and the wrapper scalarises completely.
 pub const HistLimit = struct { v: i32 };
 
-// One constant per table, mirroring upstream's per-instantiation `Stats<i16, D, ...>`
-// (history.h). The two pairs that share a value keep separate names deliberately: they
-// are separate upstream tunables that coincide today, and one shared name would make a
-// sync moving either one move both.
+/// One constant per table, mirroring upstream's per-instantiation `Stats<i16, D, ...>`
+/// (history.h). The two pairs that share a value keep separate names deliberately: they
+/// are separate upstream tunables that coincide today, and one shared name would make a
+/// sync moving either one move both.
 pub const main_history_limit: HistLimit = .{ .v = 7183 }; // ButterflyHistory
 pub const low_ply_history_limit: HistLimit = .{ .v = 7183 }; // LowPlyHistory
 pub const pawn_history_limit: HistLimit = .{ .v = 8192 }; // PawnHistory

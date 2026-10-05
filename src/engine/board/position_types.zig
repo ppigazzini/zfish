@@ -16,8 +16,8 @@
 
 const std = @import("std");
 
-// Hold the per-move dirty state the NNUE incremental update consumes (Position.scratch_dp).
-// extern so it stays legal as a Position field once Position itself is extern (below).
+/// Hold the per-move dirty state the NNUE incremental update consumes (Position.scratch_dp).
+/// extern so it stays legal as a Position field once Position itself is extern (below).
 pub const DirtyPiece = extern struct {
     pc: u8,
     from: u8,
@@ -28,17 +28,17 @@ pub const DirtyPiece = extern struct {
     add_pc: u8,
 };
 
-// Hold the per-move threat deltas the NNUE update consumes (Position.scratch_dts):
-// a bounded 96-slot DirtyThreat list plus the from/to king-square bookkeeping, plus the
-// pawn-pair diff (before/after pawn bitboards per color) the PP_3Wide feature set consumes.
-// Byte-layout-identical to nnue_acc_layout.ThreatDiffView -- do_move writes through this
-// alias of the accumulator slot's diff bytes; keep the field order in sync with it.
-// extern (C declaration-order layout) so this stays byte-identical to
-// nnue_acc_layout.ThreatDiffView regardless of Zig's field-reordering heuristics -- the two
-// alias the same accumulator-slot bytes (do_move writes here, applyCombined reads there). A
-// plain struct reorders the align-4 list_values differently from ThreatDiffView's nested
-// align-8 list once the align-8 pp fields are present, silently corrupting the incremental
-// path; extern pins both to declaration order. A cross-struct comptime assert re-checks it.
+/// Hold the per-move threat deltas the NNUE update consumes (Position.scratch_dts):
+/// a bounded 96-slot DirtyThreat list plus the from/to king-square bookkeeping, plus the
+/// pawn-pair diff (before/after pawn bitboards per color) the PP_3Wide feature set consumes.
+/// Byte-layout-identical to nnue_acc_layout.ThreatDiffView -- do_move writes through this
+/// alias of the accumulator slot's diff bytes; keep the field order in sync with it.
+/// extern (C declaration-order layout) so this stays byte-identical to
+/// nnue_acc_layout.ThreatDiffView regardless of Zig's field-reordering heuristics -- the two
+/// alias the same accumulator-slot bytes (do_move writes here, applyCombined reads there). A
+/// plain struct reorders the align-4 list_values differently from ThreatDiffView's nested
+/// align-8 list once the align-8 pp fields are present, silently corrupting the incremental
+/// path; extern pins both to declaration order. A cross-struct comptime assert re-checks it.
 pub const DirtyThreats = extern struct {
     list_values: [96]u32, // the DirtyThreat values (bounded 96)
     list_size: usize, // the DirtyThreat list length
@@ -49,8 +49,8 @@ pub const DirtyThreats = extern struct {
     ksq: u8,
 };
 
-// Hold the per-ply position state do_move pushes and undo_move pops. The leading block
-// is copied on each move; the trailing block is recomputed, not copied.
+/// Hold the per-ply position state do_move pushes and undo_move pops. The leading block
+/// is copied on each move; the trailing block is recomputed, not copied.
 pub const StateInfo = struct {
     material_key: u64,
     pawn_key: u64,
@@ -71,17 +71,17 @@ pub const StateInfo = struct {
     repetition: i32,
 };
 
-// Define the full Position object: the leading data members plus the trailing NNUE
-// scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
-// members the struct is the whole 1064-byte object, so the graph owns and
-// allocates a Position outright.
-//
-// extern (declaration-order layout): `board` is Piece[64], exactly one cache line, and
-// upstream declares it first so piece_on() -- read by movepick scoring, SEE, gives_check,
-// legality and every make/unmake -- touches a single line. A plain struct lets Zig sort
-// fields by descending alignment instead, which pushed board to offset 972, straddling
-// two lines. Declaration order already sums to the contractual 1064 bytes with board
-// first (verified by the size assert below), so pinning it costs nothing.
+/// Define the full Position object: the leading data members plus the trailing NNUE
+/// scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
+/// members the struct is the whole 1064-byte object, so the graph owns and
+/// allocates a Position outright.
+///
+/// extern (declaration-order layout): `board` is Piece[64], exactly one cache line, and
+/// upstream declares it first so piece_on() -- read by movepick scoring, SEE, gives_check,
+/// legality and every make/unmake -- touches a single line. A plain struct lets Zig sort
+/// fields by descending alignment instead, which pushed board to offset 972, straddling
+/// two lines. Declaration order already sums to the contractual 1064 bytes with board
+/// first (verified by the size assert below), so pinning it costs nothing.
 pub const Position = extern struct {
     board: [64]u8,
     by_type_bb: [8]u64,

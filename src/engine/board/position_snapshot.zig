@@ -21,19 +21,19 @@ pub const PositionSnapshot = struct {
     is_chess960: u8,
 };
 
-// hook-class: service — a leaf answering a query it must not import the answer for.
-// Own and self-register these 2 hooks in position.zig; every other hook in the tree is
-// registered by the composition root (main.zig).
-//
-// Break the import cycle: position.zig can't be imported by movegen/movepick/
-// nnue/uci_move (they are imported *by* position), so it registers these here — the
-// shared leaf they all already import — instead of the old C-ABI exports.
-// Install them via position.initRuntime() before any search runs.
-//
-// Make each NON-OPTIONAL, defaulting to a named panic stub (matching the
-// runtime_hooks registry idiom), so fill()/moveIsLegal() invoke them directly with no
-// `.?` null-unwrap. An unregistered hook fails fast with its own name instead of an
-// opaque null-optional panic.
+/// hook-class: service — a leaf answering a query it must not import the answer for.
+/// Own and self-register these 2 hooks in position.zig; every other hook in the tree is
+/// registered by the composition root (main.zig).
+///
+/// Break the import cycle: position.zig can't be imported by movegen/movepick/
+/// nnue/uci_move (they are imported *by* position), so it registers these here — the
+/// shared leaf they all already import — instead of the old C-ABI exports.
+/// Install them via position.initRuntime() before any search runs.
+///
+/// Make each NON-OPTIONAL, defaulting to a named panic stub (matching the
+/// runtime_hooks registry idiom), so fill()/moveIsLegal() invoke them directly with no
+/// `.?` null-unwrap. An unregistered hook fails fast with its own name instead of an
+/// opaque null-optional panic.
 fn hookPanic(comptime name: []const u8) noreturn {
     @panic(name ++ ": position snapshot hook not registered (initRuntime not run?)");
 }

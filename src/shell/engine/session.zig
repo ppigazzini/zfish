@@ -30,10 +30,10 @@ const engine_object = @import("engine_object");
 const network_port = @import("network");
 const shared_state_mod = @import("shared_state");
 
-// Import the `shell/engine/` leaves the driver calls into (the face re-exports the same leaves
-// for external callers; a module is a singleton, so importing it here too is free).
-// Reach shared_histories/pending/info/control as path-leaves of the engine module (same dir);
-// util/nnue/options/trace are named modules with their own build.zig dep sets.
+/// Import the `shell/engine/` leaves the driver calls into (the face re-exports the same leaves
+/// for external callers; a module is a singleton, so importing it here too is free).
+/// Reach shared_histories/pending/info/control as path-leaves of the engine module (same dir);
+/// util/nnue/options/trace are named modules with their own build.zig dep sets.
 const engine_shared_histories = @import("shared_histories.zig");
 const engine_pending = @import("pending.zig");
 const engine_info = @import("info.zig");
@@ -65,15 +65,15 @@ const addSpinOption = engine_options.addSpinOption;
 const addButtonOption = engine_options.addButtonOption;
 const fen = engine_trace.fen;
 
-// Instantiate the ONE concrete SharedState bundle. The driver is a graph
-// root that sees all referent types (nothing imports the shell facade, so this can't
-// be in a cycle); shared_state.zig stays a pure std leaf via the injected comptime
-// types. Give the bundle's typed pointers a fixed layout the worker-build reinterpret
-// relies on (asserted by the @sizeOf check below).
-// Bind the TT as worker_layout.TranspositionTable -- the type the storage is actually
-// constructed as (main.zig). tt.TranspositionTable declares the same three fields in a
-// different order, and both are auto-layout, so `table` and `cluster_count` swap places
-// between them: reading one through the other returns the pointer as the count.
+/// Instantiate the ONE concrete SharedState bundle. The driver is a graph
+/// root that sees all referent types (nothing imports the shell facade, so this can't
+/// be in a cycle); shared_state.zig stays a pure std leaf via the injected comptime
+/// types. Give the bundle's typed pointers a fixed layout the worker-build reinterpret
+/// relies on (asserted by the @sizeOf check below).
+/// Bind the TT as worker_layout.TranspositionTable -- the type the storage is actually
+/// constructed as (main.zig). tt.TranspositionTable declares the same three fields in a
+/// different order, and both are auto-layout, so `table` and `cluster_count` swap places
+/// between them: reading one through the other returns the pointer as the count.
 pub const SharedState = shared_state_mod.SharedStateOf(
     worker_layout.ThreadPool,
     worker_layout.TranspositionTable,
@@ -84,9 +84,9 @@ comptime {
     std.debug.assert(@sizeOf(SharedState) == 24);
 }
 
-// Run one engine, one search at a time (sequential go commands; workers only READ the
-// bundle during a search), so a single static provides its lifetime without an
-// allocator. Rebuild it per search, never alias it.
+/// Run one engine, one search at a time (sequential go commands; workers only READ the
+/// bundle during a search), so a single static provides its lifetime without an
+/// allocator. Rebuild it per search, never alias it.
 var live_shared_state: SharedState = undefined;
 
 /// Build the live SharedState from the five referent handles and return its address.
@@ -114,8 +114,8 @@ const option_callback_clear_hash: u8 = 5;
 const option_callback_syzygy_path: u8 = 6;
 const option_callback_eval_file: u8 = 7;
 
-// Single-source from network.zig via the "network" module (build.zig wires the
-// engine->network edge). Avoid the net-name-drift bug of two copies.
+/// Single-source from network.zig via the "network" module (build.zig wires the
+/// engine->network edge). Avoid the net-name-drift bug of two copies.
 const default_eval_file_name = network_port.default_eval_file_name;
 const default_skill_lowest_elo: i32 = 1320;
 const default_skill_highest_elo: i32 = 3190;
@@ -263,11 +263,11 @@ pub fn setPositionEngine(
     return setPositionEngineAs(engine_ptr, @intFromBool(option_port.uciChess960()), fen_ptr, fen_len, moves_ptr, move_count);
 }
 
-// Set the position under an explicit chess960 flag. `position` takes the flag from the live
-// UCI_Chess960 option; `flip` takes it from the board it is re-setting, because upstream ends
-// Position::flip with `set(f, is_chess960(), st)` (position.cpp:1626) -- the variant is the
-// board's own property, and a toggle of the option between `position` and `flip` must not
-// reinterpret castling rights that were parsed under the other variant.
+/// Set the position under an explicit chess960 flag. `position` takes the flag from the live
+/// UCI_Chess960 option; `flip` takes it from the board it is re-setting, because upstream ends
+/// Position::flip with `set(f, is_chess960(), st)` (position.cpp:1626) -- the variant is the
+/// board's own property, and a toggle of the option between `position` and `flip` must not
+/// reinterpret castling rights that were parsed under the other variant.
 pub fn setPositionEngineAs(
     engine_ptr: *engine_object.EngineObject,
     chess960: u8,
@@ -290,31 +290,31 @@ pub fn setPositionEngineAs(
     );
 }
 
-// Apply setoption: end an UNBOUNDED search first, wait for the search, set into the
-// OptionsModel, and run the on-change callback (relaying string/spin/check values).
-//
-// Waiting without stopping is a deadlock rather than a wait whenever the running search is one
-// that never ends on its own. The main worker spins on `!stop and (ponder or infinite)`
-// (search_id.ssShouldBusywait) and the only thread that can set `stop` is the UCI reader --
-// which is the thread blocked inside this wait. Neither `stop` nor `quit` is read again: a
-// `setoption` arriving during `go infinite` or a ponder wedged the engine permanently, with no
-// bestmove and no way out but a kill. Upstream has the same shape at uci.cpp's `setoption` and
-// it is live there.
-//
-// Stop ONLY the unbounded case, which is narrower than upstream's fix and is the difference
-// between closing the wedge and inventing a truncation. A depth-, node- or time-limited search
-// ends by itself, so waiting for it is a real wait -- and `go` is asynchronous here, so a piped
-// session reaches the next `setoption` while the previous bounded search is still running.
-// Stopping unconditionally cuts that search short: driver-golden caught exactly that, its
-// kiwipete search collapsing to `nodes 0` because a later `setoption name MultiPV value 1` had
-// killed it. What a script means by a mid-stream setoption is "after this search", and what a
-// GUI means by one during a ponder is "instead of this search"; the busy-wait predicate is what
-// tells the two apart.
-//
-// For the ponder case that leaves a behaviour choice, and both spellings are visible to a GUI.
-// Stop first, because a GUI that pushes an option mid-ponder then gets the option applied AND a
-// bestmove, where refusing gives it neither and no way to tell which happened. The cost, stated
-// rather than discovered: an option arriving during a ponder ends that ponder.
+/// Apply setoption: end an UNBOUNDED search first, wait for the search, set into the
+/// OptionsModel, and run the on-change callback (relaying string/spin/check values).
+///
+/// Waiting without stopping is a deadlock rather than a wait whenever the running search is one
+/// that never ends on its own. The main worker spins on `!stop and (ponder or infinite)`
+/// (search_id.ssShouldBusywait) and the only thread that can set `stop` is the UCI reader --
+/// which is the thread blocked inside this wait. Neither `stop` nor `quit` is read again: a
+/// `setoption` arriving during `go infinite` or a ponder wedged the engine permanently, with no
+/// bestmove and no way out but a kill. Upstream has the same shape at uci.cpp's `setoption` and
+/// it is live there.
+///
+/// Stop ONLY the unbounded case, which is narrower than upstream's fix and is the difference
+/// between closing the wedge and inventing a truncation. A depth-, node- or time-limited search
+/// ends by itself, so waiting for it is a real wait -- and `go` is asynchronous here, so a piped
+/// session reaches the next `setoption` while the previous bounded search is still running.
+/// Stopping unconditionally cuts that search short: driver-golden caught exactly that, its
+/// kiwipete search collapsing to `nodes 0` because a later `setoption name MultiPV value 1` had
+/// killed it. What a script means by a mid-stream setoption is "after this search", and what a
+/// GUI means by one during a ponder is "instead of this search"; the busy-wait predicate is what
+/// tells the two apart.
+///
+/// For the ponder case that leaves a behaviour choice, and both spellings are visible to a GUI.
+/// Stop first, because a GUI that pushes an option mid-ponder then gets the option applied AND a
+/// bestmove, where refusing gives it neither and no way to tell which happened. The cost, stated
+/// rather than discovered: an option arriving during a ponder ends that ponder.
 pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
     if (searchIsUnbounded(engine_ptr)) stopEngine(engine_ptr);
     waitForSearchFinishedEngine(engine_ptr);
@@ -361,11 +361,11 @@ pub fn goEngine(engine_ptr: *engine_object.EngineObject, limits_ptr: *const work
     ) catch @panic("OOM: search setup failed");
 }
 
-// Install the topology the NumaPolicy option names; report whether it was usable. Mirror
-// upstream's `bool Engine::set_numa_config_from_option` (engine.cpp:219): a custom string
-// that will not parse is REFUSED -- return false WITHOUT touching the config and WITHOUT
-// resizing the threads, so the previous topology stays live. This returned void and
-// resized unconditionally, so an unparseable policy silently became a binding policy.
+/// Install the topology the NumaPolicy option names; report whether it was usable. Mirror
+/// upstream's `bool Engine::set_numa_config_from_option` (engine.cpp:219): a custom string
+/// that will not parse is REFUSED -- return false WITHOUT touching the config and WITHOUT
+/// resizing the threads, so the previous topology stays live. This returned void and
+/// resized unconditionally, so an unparseable policy silently became a binding policy.
 pub fn setNumaConfigFromOptionEngine(engine_ptr: *engine_object.EngineObject, option_text: []const u8) bool {
     const numa_context = engine_ptr.numaContextPtr();
 
@@ -429,8 +429,8 @@ pub fn resizeThreadsEngine(engine_ptr: *engine_object.EngineObject) void {
     ) catch |err| reportThreadPoolFailure(err);
 }
 
-// Report a thread-pool build that could not complete, in upstream's report-and-exit shape
-// (thread.cpp's "Failed to create search thread" + EXIT_FAILURE) rather than as an abort.
+/// Report a thread-pool build that could not complete, in upstream's report-and-exit shape
+/// (thread.cpp's "Failed to create search thread" + EXIT_FAILURE) rather than as an abort.
 fn reportThreadPoolFailure(err: anyerror) noreturn {
     if (err == error.ThreadSpawnFailed) {
         std.debug.print("Failed to create search thread\n", .{});
@@ -440,8 +440,8 @@ fn reportThreadPoolFailure(err: anyerror) noreturn {
     std.process.exit(1);
 }
 
-// Provide TT lifecycle + engine setup helpers, reached through the typed
-// TranspositionTable view + the tt/state_list modules this module already imports.
+/// Provide TT lifecycle + engine setup helpers, reached through the typed
+/// TranspositionTable view + the tt/state_list modules this module already imports.
 fn statesSlotReset(slot: *?*state_list.StateList) void {
     if (slot.*) |list| {
         state_list.destroyStateList(std.heap.c_allocator, list);
@@ -455,13 +455,13 @@ fn setStartPosition(engine_ptr: *engine_object.EngineObject) void {
         @panic("set start position failed");
 }
 
-// Run the flip command: read the live FEN, flip it, re-set the position. Keep it all
-// engine-local (engine fen + position flipFen + setPosition).
-// Return the position error rather than swallowing it, mirroring upstream's
-// `std::optional<PositionSetError> Engine::flip()` (engine.cpp:339). The error was
-// obtained from setPositionEngine and then FREED AND DISCARDED, so a flip that produced
-// an unusable position reported nothing and left the engine on the old board. The caller
-// terminates on it, as upstream's uci.cpp:147 does.
+/// Run the flip command: read the live FEN, flip it, re-set the position. Keep it all
+/// engine-local (engine fen + position flipFen + setPosition).
+/// Return the position error rather than swallowing it, mirroring upstream's
+/// `std::optional<PositionSetError> Engine::flip()` (engine.cpp:339). The error was
+/// obtained from setPositionEngine and then FREED AND DISCARDED, so a flip that produced
+/// an unusable position reported nothing and left the engine on the old board. The caller
+/// terminates on it, as upstream's uci.cpp:147 does.
 pub fn flipEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {
     const fen_text = fen(engine_ptr.positionPtr()) orelse return null;
     defer std.heap.c_allocator.free(fen_text);

@@ -21,7 +21,7 @@ const builtin = @import("builtin");
 
 const Atomic = std.atomic.Value(u32);
 
-// Block while *ptr == expect. Return on wake, on a value mismatch, or spuriously.
+/// Block while *ptr == expect. Return on wake, on a value mismatch, or spuriously.
 fn futexWait(ptr: *const Atomic, expect: u32) void {
     switch (builtin.target.os.tag) {
         .linux => {
@@ -69,7 +69,7 @@ fn futexWakeAll(ptr: *const Atomic) void {
     }
 }
 
-// Implement a three-state futex mutex (0 = unlocked, 1 = locked, 2 = locked with waiters).
+/// Implement a three-state futex mutex (0 = unlocked, 1 = locked, 2 = locked with waiters).
 pub const Mutex = struct {
     state: Atomic = Atomic.init(0),
 
@@ -95,8 +95,8 @@ pub const Mutex = struct {
     }
 };
 
-// Implement a sequence-counter condition variable. Callers use predicate loops, so
-// spurious wakeups are harmless.
+/// Implement a sequence-counter condition variable. Callers use predicate loops, so
+/// spurious wakeups are harmless.
 pub const Condition = struct {
     seq: Atomic = Atomic.init(0),
 
@@ -190,11 +190,11 @@ pub const ThreadRuntime = struct {
     }
 };
 
-// Pool Zig-owned worker threads. Provide the job-dispatch surface
-// (run_on_thread / wait_on_thread / per-thread start + wait), plus the shared
-// `stop` flag the search polls. Treat thread 0 as the main thread. Own the
-// ThreadRuntime array; the caller attaches the per-thread search payload
-// through the job context.
+/// Pool Zig-owned worker threads. Provide the job-dispatch surface
+/// (run_on_thread / wait_on_thread / per-thread start + wait), plus the shared
+/// `stop` flag the search polls. Treat thread 0 as the main thread. Own the
+/// ThreadRuntime array; the caller attaches the per-thread search payload
+/// through the job context.
 pub const ThreadPool = struct {
     threads: []ThreadRuntime = &.{},
     allocator: std.mem.Allocator,

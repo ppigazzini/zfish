@@ -21,11 +21,11 @@ const board_core = @import("board_core");
 const PairsData = probe.PairsData;
 const EntryInfo = probe.EntryInfo;
 
-// SF PieceType encodings (via board_core): W pawn=1..king=6, B pawn=9..king=14.
+/// SF PieceType encodings (via board_core): W pawn=1..king=6, B pawn=9..king=14.
 const pawn_pt = board_core.pawn_pt;
 const king_pt = board_core.king_pt;
 
-// The file half (table_load.zig) reads these: it opens the files this registry named.
+/// The file half (table_load.zig) reads these: it opens the files this registry named.
 pub const wdl_magic = [4]u8{ 0x71, 0xE8, 0x23, 0x5D };
 pub const dtz_magic = [4]u8{ 0xD7, 0x66, 0x0C, 0xA5 };
 pub const sep_char: u8 = if (builtin.target.os.tag == .windows) ';' else ':';
@@ -64,9 +64,9 @@ pub const TBTable = struct {
         };
     }
 
-    // Port SF entry->get(stm, f): WDL uses items[stm % sides][f], DTZ is one-sided (items[0][f]).
-    // Take the file as a TbFile so it cannot arrive transposed with `stm`, which sat beside it
-    // as a second bare usize; a pawnless table has one sub-table, so fold every file onto it.
+    /// Port SF entry->get(stm, f): WDL uses items[stm % sides][f], DTZ is one-sided (items[0][f]).
+    /// Take the file as a TbFile so it cannot arrive transposed with `stm`, which sat beside it
+    /// as a second bare usize; a pawnless table has one sub-table, so fold every file onto it.
     pub fn get(self: *TBTable, comptime dtz: bool, stm: usize, f: encode.TbFile) *PairsData {
         const file = if (self.has_pawns) f.index() else 0;
         if (dtz) return &self.dtz_items[0][file];
@@ -178,7 +178,7 @@ pub fn register(pieces: []const u8) void {
     if (key2 != key) hashInsert(key2, t);
 }
 
-// Build the canonical stem: PieceToChar per piece, insert 'v' before the second 'K'.
+/// Build the canonical stem: PieceToChar per piece, insert 'v' before the second 'K'.
 fn buildStem(pieces: []const u8, t: *TBTable) void {
     const piece_char = " PNBRQK";
     var n: usize = 0;

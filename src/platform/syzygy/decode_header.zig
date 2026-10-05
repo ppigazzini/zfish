@@ -21,9 +21,9 @@ const rdU32 = decode.rdU32;
 const rdSym = decode.rdSym;
 const flag_single_value = decode.flag_single_value;
 
-// Port SF `set_sizes`: parse the header for one PairsData starting at `buf[pos]`, allocate base64[]
-// and symlen[], set the file pointers, and advance `pos` past the btree. group_len/group_idx must
-// already be filled (setGroups). Return an error only on OOM.
+/// Port SF `set_sizes`: parse the header for one PairsData starting at `buf[pos]`, allocate
+/// base64[] and symlen[], set the file pointers, and advance `pos` past the btree.
+/// group_len/group_idx must already be filled (setGroups). Return an error only on OOM.
 pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *usize) !void {
     // Keep runtime safety on over this header parse even in ReleaseFast. Every byte read here is
     // at a file-derived offset, the file is untrusted, and this runs once per table at load --
@@ -189,38 +189,38 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
     pos.* = p;
 }
 
-// Fill the tables the decode loop reads per symbol, and prove the alphabet the table declares.
-//
-// Three of the values the loop computed per symbol depend only on the symbol's LENGTH, of which
-// a table has at most 63: the right-pad shift, the lowest symbol of that length folded with the
-// base subtraction, and the real bit length the consumed word is shifted by. One entry each
-// turns five arithmetic operations and an unaligned read out of the mapping into three loads.
-//
-// The fold is an IDENTITY, not an approximation, and it holds on every input rather than only on
-// a well-formed one. base64[len] is right-padded by exactly `shift`, so its low `shift` bits are
-// zero, and the scan only stops where buf64 >= base64[len] -- so
-//
-//     (buf64 - base64[len]) >> shift  ==  (buf64 >> shift) - (base64[len] >> shift)
-//
-// with no borrow to lose. Truncating that difference to 16 bits and adding lowest_sym is the same
-// modular sum whichever order the terms are taken in, so the decoder's arithmetic is unchanged.
-//
-// `len_tab` answers the length SCAN, which is the single most expensive thing in the reader --
-// measured at 13.6% of a whole probing search on this tree, a data-dependent loop no predictor
-// learns. A code no longer than the index width owns a whole number of buckets of the word's top
-// bits, because base64[] is right-padded to 64 bits: the span runs from its own base to one below
-// the smallest base ahead of it, and both ends land on a bucket boundary while the length fits the
-// index. So a byte per bucket answers exactly what the scan searched for. A bucket no such length
-// covers holds only words longer than the index width, so it names the first index such a word can
-// occupy and the scan resumes there. The entry is never above the true length either way, which is
-// what lets the scan below it stand unchanged -- no sentinel, no branch.
-//
-// The alphabet proof replaces a bound the decoder used to carry per symbol. For each length the
-// scan can reach, the widest word reaching it is one below the smallest base ahead of it, and that
-// pins the largest symbol the length can name. A table naming one outside symlen[]'s domain is
-// refused here, once per table opened, rather than tested once per symbol decoded. It is computed
-// in u64 WITHOUT truncation, so it bounds a corrupt table too -- which is the whole point of
-// moving it off the probe path.
+/// Fill the tables the decode loop reads per symbol, and prove the alphabet the table declares.
+///
+/// Three of the values the loop computed per symbol depend only on the symbol's LENGTH, of which
+/// a table has at most 63: the right-pad shift, the lowest symbol of that length folded with the
+/// base subtraction, and the real bit length the consumed word is shifted by. One entry each
+/// turns five arithmetic operations and an unaligned read out of the mapping into three loads.
+///
+/// The fold is an IDENTITY, not an approximation, and it holds on every input rather than only on
+/// a well-formed one. base64[len] is right-padded by exactly `shift`, so its low `shift` bits are
+/// zero, and the scan only stops where buf64 >= base64[len] -- so
+///
+///     (buf64 - base64[len]) >> shift  ==  (buf64 >> shift) - (base64[len] >> shift)
+///
+/// with no borrow to lose. Truncating that difference to 16 bits and adding lowest_sym is the same
+/// modular sum whichever order the terms are taken in, so the decoder's arithmetic is unchanged.
+///
+/// `len_tab` answers the length SCAN, which is the single most expensive thing in the reader --
+/// measured at 13.6% of a whole probing search on this tree, a data-dependent loop no predictor
+/// learns. A code no longer than the index width owns a whole number of buckets of the word's top
+/// bits, because base64[] is right-padded to 64 bits: the span runs from its own base to one below
+/// the smallest base ahead of it, and both ends land on a bucket boundary while the length fits the
+/// index. So a byte per bucket answers exactly what the scan searched for. A bucket no such length
+/// covers holds only words longer than the index width, so it names the first index such a word can
+/// occupy and the scan resumes there. The entry is never above the true length either way, which is
+/// what lets the scan below it stand unchanged -- no sentinel, no branch.
+///
+/// The alphabet proof replaces a bound the decoder used to carry per symbol. For each length the
+/// scan can reach, the widest word reaching it is one below the smallest base ahead of it, and that
+/// pins the largest symbol the length can name. A table naming one outside symlen[]'s domain is
+/// refused here, once per table opened, rather than tested once per symbol decoded. It is computed
+/// in u64 WITHOUT truncation, so it bounds a corrupt table too -- which is the whole point of
+/// moving it off the probe path.
 fn buildDecodeTables(gpa: std.mem.Allocator, d: *PairsData, base64_size: usize, symlen_size: usize) !void {
     @setRuntimeSafety(true);
 
@@ -281,9 +281,9 @@ fn buildDecodeTables(gpa: std.mem.Allocator, d: *PairsData, base64_size: usize, 
     d.len_tab_shift = tab_shift;
 }
 
-// Carve `n` bytes out of `buf` at `pos.*`, advancing it, or null if the file is too short.
-// Every file-backed region the decoder later walks goes through here, so a truncated or
-// over-promising table is refused at load instead of read past the end at probe time.
+/// Carve `n` bytes out of `buf` at `pos.*`, advancing it, or null if the file is too short.
+/// Every file-backed region the decoder later walks goes through here, so a truncated or
+/// over-promising table is refused at load instead of read past the end at probe time.
 fn take(buf: []const u8, pos: *usize, n: usize) ?[]const u8 {
     if (pos.* > buf.len or buf.len - pos.* < n) return null;
     const out = buf[pos.*..][0..n];

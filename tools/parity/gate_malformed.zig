@@ -42,11 +42,11 @@ const runSearch = session.runSearch;
 const wellFormedMove = session.wellFormedMove;
 const fail = run.fail;
 
-// Name the working directory the fixtures are written into, relative to the harness cwd
-// (resources/). Kept out of syzygy/ so a mutated table can never be mistaken for a fetched one.
+/// Name the working directory the fixtures are written into, relative to the harness cwd
+/// (resources/). Kept out of syzygy/ so a mutated table can never be mistaken for a fetched one.
 const fixture_dir = "malformed-fixtures";
 
-// Probe one 3-man position per stem, so the mutated table is the one the search actually reads.
+/// Probe one 3-man position per stem, so the mutated table is the one the search actually reads.
 const Stem = struct {
     name: []const u8,
     fen: []const u8,
@@ -57,12 +57,12 @@ const stems = [_]Stem{
     .{ .name = "KRvK", .fen = "4k3/8/8/8/8/8/8/3RK3 w - - 0 1" },
 };
 
-// One fixture: a stem, a name, and the byte edits to apply to a copy of its .rtbw.
-//
-// Offsets are into the REAL table, so they land on whatever field lives there -- which is the
-// point. Naming a field would make this a claim about the format that the next format change
-// falsifies silently; naming an offset makes it a claim about the engine, which is what is
-// being gated. The `why` text records what the edit was AIMED at when it was written.
+/// One fixture: a stem, a name, and the byte edits to apply to a copy of its .rtbw.
+///
+/// Offsets are into the REAL table, so they land on whatever field lives there -- which is the
+/// point. Naming a field would make this a claim about the format that the next format change
+/// falsifies silently; naming an offset makes it a claim about the engine, which is what is
+/// being gated. The `why` text records what the edit was AIMED at when it was written.
 const Fixture = struct {
     name: []const u8,
     stem: []const u8,
@@ -70,21 +70,21 @@ const Fixture = struct {
     why: []const u8,
 };
 
-// Both 3-man stems are pawnless split WDL tables and share one header layout, DERIVED by
-// walking table_load.set() rather than assumed -- the first version of this file guessed and
-// negative_control.sh caught every header fixture landing on the piece list instead, green:
-//
-//   0..3   magic 71 E8 23 5D          4      flags: Split=1, HasPawns=0
-//   5      order nibbles              6..8   the three piece nibbles
-//   9      -> 10 after `pos += pos & 1`
-//   10     side 0 PairsData flags = 0x80, SINGLE VALUE -- two bytes and done
-//   12     side 1 PairsData flags = 0    13   sizeof_block log    14  span log
-//   15     padding                       16..19  blocks_num (u32)
-//   20     max_sym_len                   21   min_sym_len
-//
-// So the compressed PairsData -- the one with every bound worth gating -- is side 1, at 12.
-// Re-derive these if the corpus or the format changes; the `why` text says what each aims at,
-// and negative_control.sh's `parity-malformed` row is what proves they still land.
+/// Both 3-man stems are pawnless split WDL tables and share one header layout, DERIVED by
+/// walking table_load.set() rather than assumed -- the first version of this file guessed and
+/// negative_control.sh caught every header fixture landing on the piece list instead, green:
+///
+///   0..3   magic 71 E8 23 5D          4      flags: Split=1, HasPawns=0
+///   5      order nibbles              6..8   the three piece nibbles
+///   9      -> 10 after `pos += pos & 1`
+///   10     side 0 PairsData flags = 0x80, SINGLE VALUE -- two bytes and done
+///   12     side 1 PairsData flags = 0    13   sizeof_block log    14  span log
+///   15     padding                       16..19  blocks_num (u32)
+///   20     max_sym_len                   21   min_sym_len
+///
+/// So the compressed PairsData -- the one with every bound worth gating -- is side 1, at 12.
+/// Re-derive these if the corpus or the format changes; the `why` text says what each aims at,
+/// and negative_control.sh's `parity-malformed` row is what proves they still land.
 const fixtures = [_]Fixture{
     .{
         .name = "block-shift",
@@ -151,8 +151,8 @@ const fixtures = [_]Fixture{
     },
 };
 
-// Copy `stem`.rtbw out of syzygy/, apply the edits, and write it into the fixture directory.
-// Return false when the source table is absent, which is a SKIP rather than a pass.
+/// Copy `stem`.rtbw out of syzygy/, apply the edits, and write it into the fixture directory.
+/// Return false when the source table is absent, which is a SKIP rather than a pass.
 fn writeFixture(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, f: Fixture) !bool {
     var src_buf: [64]u8 = undefined;
     const src = try std.mem.print(&src_buf, "syzygy/{s}.rtbw", .{f.stem});
@@ -174,12 +174,12 @@ fn writeFixture(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, f: Fixture) !bool {
     return true;
 }
 
-// Drive one fixture: point SyzygyPath at the fixture directory, probe the matching position at a
-// shallow depth, and require a well-formed bestmove and a clean exit.
-//
-// Single-threaded and depth-limited on purpose. This gate exists to prove a PARSER stays inside
-// its arrays; giving it threads or a deep search would trade that signal for wall clock and for
-// memory this box has no reason to spend.
+/// Drive one fixture: point SyzygyPath at the fixture directory, probe the matching position at a
+/// shallow depth, and require a well-formed bestmove and a clean exit.
+///
+/// Single-threaded and depth-limited on purpose. This gate exists to prove a PARSER stays inside
+/// its arrays; giving it threads or a deep search would trade that signal for wall clock and for
+/// memory this box has no reason to spend.
 fn driveFixture(gpa: std.mem.Allocator, io: Io, bin: []const u8, f: Fixture, fen: []const u8) !void {
     const script = try gpa.print(
         \\setoption name Threads value 1

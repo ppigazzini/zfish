@@ -2,34 +2,34 @@ const std = @import("std");
 const builtin = @import("builtin");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
-// Type the dirty-piece / dirty-threats slots that stackPush hands to doMove as the
-// board's typed records (position_types); the accumulator's local HalfDiff /
-// ThreatDiffView are layout-identical views of the same bytes.
+/// Type the dirty-piece / dirty-threats slots that stackPush hands to doMove as the
+/// board's typed records (position_types); the accumulator's local HalfDiff /
+/// ThreatDiffView are layout-identical views of the same bytes.
 const DirtyPiece = position_types.DirtyPiece;
 const DirtyThreats = position_types.DirtyThreats;
-// Thread `pos` through the accumulator path as the board's typed record: every use
-// either hands it onward or feeds position_snapshot.fill(),
-// whose registration boundary is the sole remaining erasure. The concrete
-// *const Position coerces to the hook's *const anyopaque at that one call.
+/// Thread `pos` through the accumulator path as the board's typed record: every use
+/// either hands it onward or feeds position_snapshot.fill(),
+/// whose registration boundary is the sole remaining erasure. The concrete
+/// *const Position coerces to the hook's *const anyopaque at that one call.
 const Position = position_types.Position;
-// Call the pure-Zig feature-index helpers directly rather than across a C-ABI
-// boundary. Passing a small `extern struct` BY VALUE
-// across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
-// HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
-// the psq feature indices off-x86 (the bench diverged from the anchor). A direct
-// Zig call has no C-ABI marshaling, so it is correct on every target and bit-
-// identical on x86.
+/// Call the pure-Zig feature-index helpers directly rather than across a C-ABI
+/// boundary. Passing a small `extern struct` BY VALUE
+/// across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
+/// HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
+/// the psq feature indices off-x86 (the bench diverged from the anchor). A direct
+/// Zig call has no C-ABI marshaling, so it is correct on every target and bit-
+/// identical on x86.
 const nnue_feature = @import("nnue_feature");
 
-// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
-// so the refresh/incremental core stays unqualified.
+/// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
+/// so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
 const applyAccumulatorDeltaI8 = nnue_acc_rowops.applyAccumulatorDeltaI8;
 
-// Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
-// for the refresh/apply-delta core.
+/// Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
+/// for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
 /// Re-export the opaque FT handle so callers (network.zig) can type the pointer they
 /// hand in without importing nnue_ft directly.
@@ -37,8 +37,8 @@ pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 
-// Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
-// refresh path; re-export clearRefreshCache (external).
+/// Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
+/// refresh path; re-export clearRefreshCache (external).
 const nnue_refresh_cache = @import("nnue_refresh_cache");
 /// Re-export the opaque cache handle so callers can type it.
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
@@ -49,9 +49,9 @@ const cacheEntryAccumulationConst = nnue_refresh_cache.cacheEntryAccumulationCon
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 
-// Alias back the accumulator-stack layout + accessors, which live in the
-// nnue_acc_layout leaf now, so the facade + update call sites are unqualified
-// (AccumulatorStack re-exported pub for external callers).
+/// Alias back the accumulator-stack layout + accessors, which live in the
+/// nnue_acc_layout leaf now, so the facade + update call sites are unqualified
+/// (AccumulatorStack re-exported pub for external callers).
 const layout = @import("nnue_acc_layout.zig");
 const psq_feature = layout.psq_feature;
 const threat_feature = layout.threat_feature;
@@ -96,8 +96,8 @@ const roundUp = layout.roundUp;
 const stackBytes = layout.stackBytes;
 const stackBytesMut = layout.stackBytesMut;
 const stackSize = layout.stackSize;
-// Expose the arena size-field writer: the Worker constructor seeds the embedded stack
-// with one live slot through it, so the field placement stays nnue_acc_layout's alone.
+/// Expose the arena size-field writer: the Worker constructor seeds the embedded stack
+/// with one live slot through it, so the field placement stays nnue_acc_layout's alone.
 pub const setStackSize = layout.setStackSize;
 const stateComputed = layout.stateComputed;
 const clearComputed = layout.clearComputed;
@@ -116,12 +116,12 @@ const psqRequiresRefresh = layout.psqRequiresRefresh;
 const threatRequiresRefresh = layout.threatRequiresRefresh;
 const kingPiece = layout.kingPiece;
 
-// Alias the refresh/incremental update algorithm from the nnue_acc_update leaf; the
-// facade's evaluate delegates straight to its evaluate, which owns the choice between
-// the shared both-perspectives walk and a pass per side.
+/// Alias the refresh/incremental update algorithm from the nnue_acc_update leaf; the
+/// facade's evaluate delegates straight to its evaluate, which owns the choice between
+/// the shared both-perspectives walk and a pass per side.
 const nnue_acc_update = @import("nnue_acc_update.zig");
-// Re-export the update-route counters so a search-zone test can assert each route was
-// TAKEN, not merely that they agree (see nnue_acc_update.PathCounts).
+/// Re-export the update-route counters so a search-zone test can assert each route was
+/// TAKEN, not merely that they agree (see nnue_acc_update.PathCounts).
 pub const PathCounts = nnue_acc_update.PathCounts;
 pub const path_counts = &nnue_acc_update.path_counts;
 pub const resetPathCounts = nnue_acc_update.resetPathCounts;
@@ -151,9 +151,9 @@ pub fn stackLatestThreat(stack: *const AccumulatorStack) [*]const u8 {
     return stateBytesConst(threat_feature, stackSize(stack) - 1, stack);
 }
 
-// Alias the transform's non-zero-chunk record from the nnue_nnz leaf (this function is its
-// only writer). Re-export the shapes and the tier gate: the affine consumer and the
-// scalar-reference test reach them through this facade, not through the leaf.
+/// Alias the transform's non-zero-chunk record from the nnue_nnz leaf (this function is its
+/// only writer). Re-export the shapes and the tier gate: the affine consumer and the
+/// scalar-reference test reach them through this facade, not through the leaf.
 const nnue_nnz = @import("nnue_nnz.zig");
 pub const nnz_word_count = nnue_nnz.nnz_word_count;
 pub const NnzBitset = nnue_nnz.NnzBitset;
@@ -164,9 +164,9 @@ pub const use_nnz_index_list = nnue_nnz.use_nnz_index_list;
 const nnzRecord = nnue_nnz.nnzRecord;
 const nnzReset = nnue_nnz.nnzReset;
 
-// Alias the transform's packus clip-multiply-narrow kernels and their comptime gates
-// from the nnue_transform_packus leaf (this function is their only consumer; the
-// scalar-reference unit tests pinning the packus trick live beside them there).
+/// Alias the transform's packus clip-multiply-narrow kernels and their comptime gates
+/// from the nnue_transform_packus leaf (this function is their only consumer; the
+/// scalar-reference unit tests pinning the packus trick live beside them there).
 const packus = @import("nnue_transform_packus.zig");
 const use_packus_avx512 = packus.use_packus_avx512;
 const use_packus_avx2 = packus.use_packus_avx2;
@@ -176,11 +176,11 @@ const packusTransform32 = packus.packusTransform32;
 const nnzFold4 = packus.nnzFold4;
 const packusTransform16 = packus.packusTransform16;
 
-// Port FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h) to Zig. After
-// the (Zig) accumulator evaluate, read the latest combined accumulator state and produce
-// the int8 transformed output. BiasType is int16, so the accumulation sum wraps in int16
-// before the [0,255] clamp; the pairwise product is /512. Since SFNNv17 the transformer
-// has no psqt output, so nothing here depends on the layer-stack bucket.
+/// Port FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h) to Zig. After
+/// the (Zig) accumulator evaluate, read the latest combined accumulator state and produce
+/// the int8 transformed output. BiasType is int16, so the accumulation sum wraps in int16
+/// before the [0,255] clamp; the pairwise product is /512. Since SFNNv17 the transformer
+/// has no psqt output, so nothing here depends on the layer-stack bucket.
 pub fn transform(
     stack: *AccumulatorStack,
     pos: *const Position,
@@ -214,17 +214,17 @@ pub fn transform(
     transformPerspective(@alignCast(comb_acc + p1 * half_dimensions), output, 1, nnz);
 }
 
-// Transform ONE perspective's accumulator half into its slice of the layer-0 input, and record
-// the non-zero chunk mask for it -- upstream's transform_perspective. The caller resolves
-// perspectives[p] and hands over that half, so nothing here needs to know which side is to move:
-// `perspective` is a position in the OUTPUT, the index space the offset is derived from, and
-// never a colour.
-//
-// Per element: sum psq+threat accumulators (i16 wrap), ClippedReLU to [0,255], multiply the two
-// halves and divide by 512 -> u8. Stays in 16-bit via SF's mulhi identity
-// (c0*c1) >> 9  ==  ((c0<<7) * c1) >> 16  ==  pmulhuw(c0<<7, c1), which avoids the i32 widening
-// so each vector register holds twice the lanes. The scaled product 128*c0*c1 is exact and >>16
-// is floor, so this is bit-identical to the i32 clamp*mul>>9 path (integer, no rounding).
+/// Transform ONE perspective's accumulator half into its slice of the layer-0 input, and record
+/// the non-zero chunk mask for it -- upstream's transform_perspective. The caller resolves
+/// perspectives[p] and hands over that half, so nothing here needs to know which side is to move:
+/// `perspective` is a position in the OUTPUT, the index space the offset is derived from, and
+/// never a colour.
+///
+/// Per element: sum psq+threat accumulators (i16 wrap), ClippedReLU to [0,255], multiply the two
+/// halves and divide by 512 -> u8. Stays in 16-bit via SF's mulhi identity
+/// (c0*c1) >> 9  ==  ((c0<<7) * c1) >> 16  ==  pmulhuw(c0<<7, c1), which avoids the i32 widening
+/// so each vector register holds twice the lanes. The scaled product 128*c0*c1 is exact and >>16
+/// is floor, so this is bit-identical to the i32 clamp*mul>>9 path (integer, no rounding).
 fn transformPerspective(
     accumulation: [*]align(nnue_align) const i16,
     output: [*]u8,

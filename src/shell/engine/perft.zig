@@ -43,10 +43,10 @@ fn perftSubtree(pos_ptr: *position_port.Position, depth: i32) u64 {
     return perftCount(pos_ptr, capped, &states, 0);
 }
 
-// Report the position error alongside the node count, mirroring upstream's
-// `std::variant<u64, PositionSetError> Engine::perft(...)` (engine.h:63). The error from
-// setPosition was freed and discarded here, and perft then ran over a Position that had
-// not been populated. Callers terminate on `err`, as upstream's uci.cpp:478 does.
+/// Report the position error alongside the node count, mirroring upstream's
+/// `std::variant<u64, PositionSetError> Engine::perft(...)` (engine.h:63). The error from
+/// setPosition was freed and discarded here, and perft then ran over a Position that had
+/// not been populated. Callers terminate on `err`, as upstream's uci.cpp:478 does.
 pub const PerftResult = struct {
     nodes: u64 = 0,
     err: ?[]u8 = null,

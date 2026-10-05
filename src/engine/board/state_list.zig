@@ -92,10 +92,10 @@ pub const StateList = struct {
     }
 };
 
-// Own a StateList and support the MOVE semantics the setupStates adopt relies on:
-// moveOut() hands the StateList to the pool and NULLS the wrapper, so a later
-// destroy() frees nothing. The position-setup flow (engine.zig) builds the chain
-// here via reset()/push(); at search start the pool adopts it (moveOut) or the slot's list.
+/// Own a StateList and support the MOVE semantics the setupStates adopt relies on:
+/// moveOut() hands the StateList to the pool and NULLS the wrapper, so a later
+/// destroy() frees nothing. The position-setup flow (engine.zig) builds the chain
+/// here via reset()/push(); at search start the pool adopts it (moveOut) or the slot's list.
 pub const PendingStateStorage = struct {
     allocator: std.mem.Allocator,
     list: ?*StateList,
@@ -155,19 +155,19 @@ pub fn destroyStateList(allocator: std.mem.Allocator, list: *StateList) void {
     allocator.destroy(list);
 }
 
-// Provide typed wrappers over PendingStateStorage for the engine/thread setup paths: the
-// handle is `*PendingStateStorage` end-to-end now -- the engine side-table and the thread
-// scratch both hold the concrete type, and only the runtime_hooks adopt boundary coerces it
-// to *anyopaque (implicitly). No cast survives here.
+/// Provide typed wrappers over PendingStateStorage for the engine/thread setup paths: the
+/// handle is `*PendingStateStorage` end-to-end now -- the engine side-table and the thread
+/// scratch both hold the concrete type, and only the runtime_hooks adopt boundary coerces it
+/// to *anyopaque (implicitly). No cast survives here.
 pub fn storageCreate() ?*PendingStateStorage {
     return PendingStateStorage.create(std.heap.c_allocator) catch null;
 }
 pub fn storageDestroy(storage: ?*PendingStateStorage) void {
     if (storage) |s| s.destroy();
 }
-// Propagate OOM here as an error rather than panicking, since the StateList is legitimately
-// growable (bounded by UCI game-move input, not max_ply) -- the callers are on error-capable
-// paths (buildRootMoves is !void; traceEvalEngine returns optional).
+/// Propagate OOM here as an error rather than panicking, since the StateList is legitimately
+/// growable (bounded by UCI game-move input, not max_ply) -- the callers are on error-capable
+/// paths (buildRootMoves is !void; traceEvalEngine returns optional).
 pub fn storageReset(storage: *PendingStateStorage) error{OutOfMemory}!*StateInfo {
     return storage.reset();
 }

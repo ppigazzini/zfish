@@ -1,7 +1,7 @@
 const std = @import("std");
 
-// Alias back the pure bitboard-math helpers, which live in a std-only leaf now
-// (Zig top-level decls are order-independent, so callers above are unaffected).
+/// Alias back the pure bitboard-math helpers, which live in a std-only leaf now
+/// (Zig top-level decls are order-independent, so callers above are unaffected).
 const nnue_feature_bb = @import("nnue_feature_bb.zig");
 const makePiece = nnue_feature_bb.makePiece;
 const shift = nnue_feature_bb.shift;
@@ -252,9 +252,9 @@ pub fn fullRequiresRefresh(diff: FullDiff, perspective: u8) bool {
     return perspective == diff.us and (((@as(i8, @bitCast(diff.ksq)) & 0b100) != (@as(i8, @bitCast(diff.prev_ksq)) & 0b100)));
 }
 
-// Emit one colour's pawn threats in ONE direction. Only the two diagonal attacks exist now: the
-// pusher (pawn-in-front) input was removed with SFNNv16 -- pawn-pawn relationships live in the
-// PP_3Wide feature set.
+/// Emit one colour's pawn threats in ONE direction. Only the two diagonal attacks exist now: the
+/// pusher (pawn-in-front) input was removed with SFNNv16 -- pawn-pawn relationships live in the
+/// PP_3Wide feature set.
 fn appendActivePawnThreats(
     result: *FullAppendResult,
     pieces: []const u8,
@@ -311,15 +311,15 @@ fn appendFullActiveIndex(
     }
 }
 
-// Re-export the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKAv2_hm
-// index write (nnue_feature_write_avx512.zig), so nnue_acc_update.zig -- which
-// already imports this module by name -- reaches it without a second relative import
-// of the same file: nnue_feature_write_avx512.zig also relative-imports
-// nnue_feature_luts.zig below, and Zig requires every relative-imported file belong
-// to exactly one module, so nnue_acc_update.zig (a different module, "nnue_accumulator")
-// cannot import it directly without that file ending up claimed by two modules at once.
-// Re-export the PP_3Wide (pawn-pair) feature set, which lives in its own leaf now
-// (nnue_feature_pp.zig). Callers reach it through this module exactly as before.
+/// Re-export the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKAv2_hm
+/// index write (nnue_feature_write_avx512.zig), so nnue_acc_update.zig -- which
+/// already imports this module by name -- reaches it without a second relative import
+/// of the same file: nnue_feature_write_avx512.zig also relative-imports
+/// nnue_feature_luts.zig below, and Zig requires every relative-imported file belong
+/// to exactly one module, so nnue_acc_update.zig (a different module, "nnue_accumulator")
+/// cannot import it directly without that file ending up claimed by two modules at once.
+/// Re-export the PP_3Wide (pawn-pair) feature set, which lives in its own leaf now
+/// (nnue_feature_pp.zig). Callers reach it through this module exactly as before.
 const nnue_feature_pp = @import("nnue_feature_pp.zig");
 pub const ppMakeIndex = nnue_feature_pp.ppMakeIndex;
 pub const ppAppendActive = nnue_feature_pp.ppAppendActive;
@@ -330,7 +330,7 @@ const nnue_feature_write_avx512 = @import("nnue_feature_write_avx512.zig");
 pub const use_avx512_nnue_feature = nnue_feature_write_avx512.use_avx512_nnue_feature;
 pub const writeIndicesAvx512 = nnue_feature_write_avx512.writeIndices;
 
-// Re-import the split-out LUT tables and shared constants (nnue_feature_luts.zig).
+/// Re-import the split-out LUT tables and shared constants (nnue_feature_luts.zig).
 const luts = @import("nnue_feature_luts.zig");
 const piece_square_index = luts.piece_square_index;
 const king_buckets = luts.king_buckets;

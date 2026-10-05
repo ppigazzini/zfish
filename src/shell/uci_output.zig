@@ -16,26 +16,26 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Share one blocking std.Io handle across every write. Concurrent blocking writes through one
-// shared handle are safe (each is just a write syscall); the mutex below is what keeps
-// whole lines intact. Prove it under an 8-thread stress in the test at the bottom.
+/// Share one blocking std.Io handle across every write. Concurrent blocking writes through one
+/// shared handle are safe (each is just a write syscall); the mutex below is what keeps
+/// whole lines intact. Prove it under an 8-thread stress in the test at the bottom.
 var io_threaded = std.Io.Threaded.init_single_threaded;
 fn io() std.Io {
     return io_threaded.io();
 }
 
-// Hold the stdout sink. Treat `null` as the process stdout, resolved lazily on first use: on
-// Windows `std.Io.File.stdout()` is a runtime PEB query (not comptime-evaluable), so it
-// must NOT be a container-level comptime initializer -- an eager `= std.Io.File.stdout()`
-// compiles on Linux/macOS (fd 1 is comptime) but breaks the Windows build. Keep a module-level
-// var so the concurrency test can redirect it to a capture file. When a log file is open,
-// printLine tees each line to it as well.
+/// Hold the stdout sink. Treat `null` as the process stdout, resolved lazily on first use: on
+/// Windows `std.Io.File.stdout()` is a runtime PEB query (not comptime-evaluable), so it
+/// must NOT be a container-level comptime initializer -- an eager `= std.Io.File.stdout()`
+/// compiles on Linux/macOS (fd 1 is comptime) but breaks the Windows build. Keep a module-level
+/// var so the concurrency test can redirect it to a capture file. When a log file is open,
+/// printLine tees each line to it as well.
 var out_file: ?std.Io.File = null;
 var log_file: ?std.Io.File = null;
 var write_mutex: std.Io.Mutex = .init;
 
-// Resolve the stdout sink, caching the process stdout on first use. Only ever called
-// while holding write_mutex, so the lazy set is race-free.
+/// Resolve the stdout sink, caching the process stdout on first use. Only ever called
+/// while holding write_mutex, so the lazy set is race-free.
 fn resolveOut() std.Io.File {
     if (out_file) |f| return f;
     const f = std.Io.File.stdout();
@@ -43,9 +43,9 @@ fn resolveOut() std.Io.File {
     return f;
 }
 
-// Hold the latest whole-search node count, published by the search-driver info emit and read
-// by the uci layer's `nodes` accessor. Keep a shared leaf home so both sides reach it
-// without a cycle.
+/// Hold the latest whole-search node count, published by the search-driver info emit and read
+/// by the uci layer's `nodes` accessor. Keep a shared leaf home so both sides reach it
+/// without a cycle.
 var last_nodes_searched: std.atomic.Value(u64) = .init(0);
 pub fn setLastNodesSearched(nodes: u64) void {
     last_nodes_searched.store(nodes, .monotonic);
@@ -57,8 +57,8 @@ pub fn resetLastNodesSearched() void {
     last_nodes_searched.store(0, .monotonic);
 }
 
-// Track quiet mode (bench/speedtest): the search-driver emit functions are no-ops. Set it
-// from the uci listener-mode command, read it from the emit path.
+/// Track quiet mode (bench/speedtest): the search-driver emit functions are no-ops. Set it
+/// from the uci listener-mode command, read it from the emit path.
 var quiet_mode: bool = false;
 pub fn setQuietMode(quiet: bool) void {
     quiet_mode = quiet;
@@ -67,9 +67,9 @@ pub fn isQuiet() bool {
     return quiet_mode;
 }
 
-// Track the `bench` command's go loop: upstream's bench calls engine.go() directly, bypassing
-// the interactive `go` handler's numa/thread `info string` emission (uci.cpp:261-284 vs 131-132),
-// so those lines must NOT be re-emitted per bench position. Set around benchRuntime's loop.
+/// Track the `bench` command's go loop: upstream's bench calls engine.go() directly, bypassing
+/// the interactive `go` handler's numa/thread `info string` emission (uci.cpp:261-284 vs 131-132),
+/// so those lines must NOT be re-emitted per bench position. Set around benchRuntime's loop.
 var bench_go_active: bool = false;
 pub fn setBenchGoActive(active: bool) void {
     bench_go_active = active;
@@ -78,17 +78,17 @@ pub fn benchGoActive() bool {
     return bench_go_active;
 }
 
-// Write `line` then a newline to `file`. Both writes happen while the caller holds
-// write_mutex, so no other printLine can interleave between them -- the line stays
-// whole even though it is two syscalls. writeStreamingAll issues the write(2) directly
-// (no userspace buffer), so each line reaches the GUI immediately, as the old per-line
-// fflush did. Ignore a write error (e.g. closed stdout), matching the old code.
+/// Write `line` then a newline to `file`. Both writes happen while the caller holds
+/// write_mutex, so no other printLine can interleave between them -- the line stays
+/// whole even though it is two syscalls. writeStreamingAll issues the write(2) directly
+/// (no userspace buffer), so each line reaches the GUI immediately, as the old per-line
+/// fflush did. Ignore a write error (e.g. closed stdout), matching the old code.
 fn writeLineLocked(the_io: std.Io, file: std.Io.File, line: []const u8) void {
     file.writeStreamingAll(the_io, line) catch {};
     file.writeStreamingAll(the_io, "\n") catch {};
 }
 
-// Write one line to stdout (and, if open, tee it to the log file).
+/// Write one line to stdout (and, if open, tee it to the log file).
 pub fn printLine(line: []const u8) void {
     const the_io = io();
     write_mutex.lockUncancelable(the_io);
@@ -97,9 +97,9 @@ pub fn printLine(line: []const u8) void {
     if (log_file) |f| writeLineLocked(the_io, f, line);
 }
 
-// Open/close the log destination (printLine tees output to it). Close any current log
-// on an empty name; (re)open for writing on a non-empty name. Guard with the
-// same mutex as printLine so a concurrent emit never sees a half-swapped log_file.
+/// Open/close the log destination (printLine tees output to it). Close any current log
+/// on an empty name; (re)open for writing on a non-empty name. Guard with the
+/// same mutex as printLine so a concurrent emit never sees a half-swapped log_file.
 pub fn startLogger(name: []const u8) void {
     const the_io = io();
     write_mutex.lockUncancelable(the_io);

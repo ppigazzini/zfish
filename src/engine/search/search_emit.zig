@@ -27,7 +27,7 @@ const isChess960 = position_query.isChess960;
 const hasCheckers = position_query.hasCheckers;
 const wdlMaterial = position_query.wdlMaterial;
 
-// Provide trivial accessors; both are one-line reads of the Worker graph.
+/// Provide trivial accessors; both are one-line reads of the Worker graph.
 fn optInt(name: []const u8) i32 {
     return option_port.intByName(name);
 }
@@ -45,7 +45,7 @@ fn workerRootDepthOf(wl: *const worker_layout.WorkerLayout) i32 {
     return wl.root_depth;
 }
 
-// Format the score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
+/// Format the score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
 fn scoreTextAlloc(v: i32, material: i32) ?[:0]u8 {
     const sc = score_port.classify(v, 31507, 31753, 32000);
     return switch (sc.kind) {
@@ -55,11 +55,11 @@ fn scoreTextAlloc(v: i32, material: i32) ?[:0]u8 {
     };
 }
 
-// Build + print one "info depth ... pv ..." line.
-// Publish the whole-search node count to the shared leaf; no-op in quiet mode.
-// Report `previous_pv` for a root move carrying a previous-iteration score, and `pv` otherwise:
-// upstream's `usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv` (search.cpp:2262).
-// A move not yet searched this iteration holds a `pv` the iteration never verified.
+/// Build + print one "info depth ... pv ..." line.
+/// Publish the whole-search node count to the shared leaf; no-op in quiet mode.
+/// Report `previous_pv` for a root move carrying a previous-iteration score, and `pv` otherwise:
+/// upstream's `usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv` (search.cpp:2262).
+/// A move not yet searched this iteration holds a `pv` the iteration never verified.
 fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, move_index: usize, use_prev: bool, depth: i32, sel_depth: i32, multipv: usize, v: i32, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: i32, time_ms: u64) void {
     _ = manager;
     uci_output.setLastNodesSearched(nodes);
@@ -113,7 +113,7 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
     uci_output.printLine(line_c);
 }
 
-// Emit for a checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
+/// Emit for a checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
 pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
     // A checkmate/stalemate root still ends a search, so close its interval too.
     search_timing.markBestmove(time_source.now());
@@ -134,7 +134,7 @@ pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
     uci_output.printLine(bm);
 }
 
-// Emit "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
+/// Emit "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
 pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layout.WorkerLayout) void {
     // Close the speedtest interval BEFORE the quiet-mode return: speedtest is exactly the
     // caller that silences output, so stamping after it would never run.
@@ -164,7 +164,7 @@ pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layou
     uci_output.printLine(line[0..n]);
 }
 
-// Emit "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
+/// Emit "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
 pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: i32, move: u16, move_count: i32) void {
     if (wl.thread_idx != 0) return;
     if (uci_output.isQuiet()) return;
@@ -178,10 +178,10 @@ pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: i32, mov
     uci_output.printLine(line_c);
 }
 
-// Mirror SF is_mate_or_mated: |v| >= VALUE_MATE_IN_MAX_PLY (a real mate, not a TB win). Use it to decide
-// whether the root-TB tbScore override applies (it does NOT override a genuine mate score).
-// Mirror search_values.isDecisive. search_values.zig belongs to the search_driver module, so this
-// file cannot path-import it; isMateOrMated is local for the same reason.
+/// Mirror SF is_mate_or_mated: |v| >= VALUE_MATE_IN_MAX_PLY (a real mate, not a TB win). Use it to decide
+/// whether the root-TB tbScore override applies (it does NOT override a genuine mate score).
+/// Mirror search_values.isDecisive. search_values.zig belongs to the search_driver module, so this
+/// file cannot path-import it; isMateOrMated is local for the same reason.
 fn isDecisive(v: i32) bool {
     const value_tb_win: i32 = 31507; // VALUE_TB_WIN_IN_MAX_PLY
     return v >= value_tb_win or v <= -value_tb_win;
@@ -206,8 +206,8 @@ const PvContext = struct {
     hashfull: i32,
     elapsed_ms: u64,
 };
-// Build the per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
-// TT hashfull and elapsed ms. worker_layout + option + the pool aggregates.
+/// Build the per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
+/// TT hashfull and elapsed ms. worker_layout + option + the pool aggregates.
 fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, threads: *worker_layout.ThreadPool, tt_ptr: *worker_layout.TranspositionTable, out: *PvContext) void {
     const wl = worker.?;
     const rm_count = wl.root_moves.len;
@@ -237,7 +237,7 @@ fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_la
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 
-// Extend root move `index` through the tablebase seam and return the corrected score.
+/// Extend root move `index` through the tablebase seam and return the corrected score.
 fn extendPvSyzygy(ctx: *const PvContext, index: usize, v: i32) i32 {
     const wl = ctx.worker orelse return v;
     const rmv = worker_layout.RootMove.fromAddr(workerRootMoveAt(wl, index));
@@ -309,8 +309,8 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
     }
 }
 
-// Wrap emit_pv / search_id_pv as thin graph-only wrappers: resolve the worker's
-// manager/threads/tt reference slots and drive the MultiPV emitter (searchPv).
+/// Wrap emit_pv / search_id_pv as thin graph-only wrappers: resolve the worker's
+/// manager/threads/tt reference slots and drive the MultiPV emitter (searchPv).
 pub fn ssEmitPv(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layout.WorkerLayout) void {
     const wl = worker.?;
     searchPv(

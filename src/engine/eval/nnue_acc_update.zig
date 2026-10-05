@@ -11,22 +11,22 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 const nnue_feature = @import("nnue_feature");
 
-// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
-// so the refresh/incremental core stays unqualified.
+/// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
+/// so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyRefreshFusedI16 = nnue_acc_rowops.applyRefreshFusedI16;
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
 const applyHybridDelta = nnue_acc_rowops.applyHybridDelta;
 
-// Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
-// for the refresh/apply-delta core.
+/// Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
+/// for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
 pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 
-// Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
-// refresh path; re-export clearRefreshCache (external).
+/// Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
+/// refresh path; re-export clearRefreshCache (external).
 const nnue_refresh_cache = @import("nnue_refresh_cache");
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
 pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
@@ -36,9 +36,9 @@ const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const cacheEntryPieceBb = nnue_refresh_cache.cacheEntryPieceBb;
 const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 
-// Alias back the accumulator-stack layout + accessors, which live in the
-// nnue_acc_layout leaf now, so the facade + update call sites are unqualified
-// (AccumulatorStack re-exported pub for external callers).
+/// Alias back the accumulator-stack layout + accessors, which live in the
+/// nnue_acc_layout leaf now, so the facade + update call sites are unqualified
+/// (AccumulatorStack re-exported pub for external callers).
 const nnue_acc_both = @import("nnue_acc_both.zig");
 const applyCombinedBoth = nnue_acc_both.applyCombinedBoth;
 
@@ -145,7 +145,7 @@ pub fn evaluate(
     evaluateSide(black, stack, pos, feature_transformer, cache, last_black);
 }
 
-// Catch the lagging perspective up on its own, then walk the shared suffix once.
+/// Catch the lagging perspective up on its own, then walk the shared suffix once.
 fn forwardUpdateBoth(
     stack: *AccumulatorStack,
     pos: *const Position,
@@ -233,12 +233,12 @@ pub fn evaluateSide(
     }
 }
 
-// Perform the fused refresh -- upstream's update_accumulator_refresh_cache: compute the
-// HalfKA changed rows against the finny cache entry and the active Threat rows, then
-// apply everything in ONE tiled pass. The cache entry receives the psq-only
-// accumulation (in place, for next time) and the stack state receives psq + threats
-// (the combined accumulator), with no second pass over the 2 KB row and no
-// cache-to-state @memcpy.
+/// Perform the fused refresh -- upstream's update_accumulator_refresh_cache: compute the
+/// HalfKA changed rows against the finny cache entry and the active Threat rows, then
+/// apply everything in ONE tiled pass. The cache entry receives the psq-only
+/// accumulation (in place, for next time) and the stack state receives psq + threats
+/// (the combined accumulator), with no second pass over the 2 KB row and no
+/// cache-to-state @memcpy.
 fn refreshCombined(
     perspective: u8,
     king_square: u8,
@@ -293,10 +293,10 @@ fn refreshCombined(
     stateBytesMut(psq_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }
 
-// Take one fused incremental step onto the combined accumulator -- a port of upstream's
-// update_accumulator_incremental + apply_combined. Computes the PSQ (HalfKA) and
-// Threat changed-feature index lists for this ply, then applies both to the single
-// combined accumulation (psq_feature slot) in one load/store per tile.
+/// Take one fused incremental step onto the combined accumulator -- a port of upstream's
+/// update_accumulator_incremental + apply_combined. Computes the PSQ (HalfKA) and
+/// Threat changed-feature index lists for this ply, then applies both to the single
+/// combined accumulation (psq_feature slot) in one load/store per tile.
 fn applyCombined(
     stack: *AccumulatorStack,
     perspective: u8,

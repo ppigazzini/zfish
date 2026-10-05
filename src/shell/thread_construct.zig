@@ -25,9 +25,9 @@ fn fail(comptime msg: []const u8) noreturn {
     @panic("ThreadPool/Thread construction model mismatch");
 }
 
-// Verify a freshly constructed ThreadPool against the Zig model. Pass `requested`
-// as the Thread count the pool was asked to build; pass `bound` as the expected
-// boundThreadToNumaNode size (0 when threads are not NUMA-bound, else == requested).
+/// Verify a freshly constructed ThreadPool against the Zig model. Pass `requested`
+/// as the Thread count the pool was asked to build; pass `bound` as the expected
+/// boundThreadToNumaNode size (0 when threads are not NUMA-bound, else == requested).
 pub fn verifyThreadGraph(pool: *const worker_layout.ThreadPool, requested: usize, bound: usize) void {
     const tp = pool;
 

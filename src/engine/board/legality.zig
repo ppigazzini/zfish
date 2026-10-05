@@ -18,7 +18,7 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
 
-// Alias the board_core primitives so the moved bodies stay verbatim.
+/// Alias the board_core primitives so the moved bodies stay verbatim.
 const pawn_pt = board_core.pawn_pt;
 const knight_pt = board_core.knight_pt;
 const bishop_pt = board_core.bishop_pt;

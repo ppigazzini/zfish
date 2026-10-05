@@ -17,12 +17,12 @@
 
 const std = @import("std");
 
-// Provide a deterministic monotonic counter -- the headless fallback. Reading a real OS clock
-// is a platform service (a syscall), so the engine cannot do it and stay portable;
-// with no platform attached (unit tests, fuzzing) a per-call counter is a valid
-// monotonic clock and keeps the run deterministic. The shipped engine injects the
-// platform's real millisecond clock over this, so production timing is the
-// platform's. Fall back single-threaded (the headless builds are single-threaded).
+/// Provide a deterministic monotonic counter -- the headless fallback. Reading a real OS clock
+/// is a platform service (a syscall), so the engine cannot do it and stay portable;
+/// with no platform attached (unit tests, fuzzing) a per-call counter is a valid
+/// monotonic clock and keeps the run deterministic. The shipped engine injects the
+/// platform's real millisecond clock over this, so production timing is the
+/// platform's. Fall back single-threaded (the headless builds are single-threaded).
 var headless_ticks: i64 = 0;
 fn defaultNow() i64 {
     headless_ticks += 1;

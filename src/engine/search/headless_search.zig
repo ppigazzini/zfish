@@ -34,9 +34,9 @@ pub const Result = struct {
     nodes: u64,
 };
 
-// Hold the process-static search context (one search at a time). The ~4.5 MB Worker block is a
-// BSS static; the small scaffolding structs sit beside it. All are referenced by the
-// Worker via pointers, so they must outlive the search -- statics guarantee that.
+/// Hold the process-static search context (one search at a time). The ~4.5 MB Worker block is a
+/// BSS static; the small scaffolding structs sit beside it. All are referenced by the
+/// Worker via pointers, so they must outlive the search -- statics guarantee that.
 var g_worker: [worker_layout.worker_size]u8 align(worker_layout.worker_align) = undefined;
 var g_pool: worker_layout.ThreadPool = .{};
 var g_thread: worker_layout.Thread = undefined;
@@ -46,17 +46,17 @@ var g_tt: worker_layout.TranspositionTable = .{};
 var g_shared: search_driver.SharedHistories = undefined;
 var g_ready = false;
 
-// Provide a deterministic option source: Skill Level 20 turns skill mode OFF
-// (skill_enabled = level < 20), MultiPV 1 keeps a single principal variation. Every
-// other option reads 0, which is the correct headless default for a depth-only search.
+/// Provide a deterministic option source: Skill Level 20 turns skill mode OFF
+/// (skill_enabled = level < 20), MultiPV 1 keeps a single principal variation. Every
+/// other option reads 0, which is the correct headless default for a depth-only search.
 fn deterministicIntByName(name: []const u8) i32 {
     if (std.mem.eql(u8, name, "Skill Level")) return 20;
     if (std.mem.eql(u8, name, "MultiPV")) return 1;
     return 0;
 }
 
-// Build the process-static context once. Return false when the net is not loaded or a
-// TT / shared-histories allocation fails; the caller then treats the search as skipped.
+/// Build the process-static context once. Return false when the net is not loaded or a
+/// TT / shared-histories allocation fails; the caller then treats the search as skipped.
 fn ensureReady() bool {
     if (g_ready) return true;
     if (network.ftPtr() == null) return false;

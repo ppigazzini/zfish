@@ -42,10 +42,10 @@ const stateAccumulationMut = layout.stateAccumulationMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
-// Diff a refresh-cache entry against a board and write the HalfKA removed/added index
-// lists -- the first half of upstream's update_accumulator_refresh_cache, split out
-// because update_accumulator_hybrid needs the SAME diff twice, against two different
-// (entry, board) pairs, and neither of them is `pos` for the old bucket.
+/// Diff a refresh-cache entry against a board and write the HalfKA removed/added index
+/// lists -- the first half of upstream's update_accumulator_refresh_cache, split out
+/// because update_accumulator_hybrid needs the SAME diff twice, against two different
+/// (entry, board) pairs, and neither of them is `pos` for the old bucket.
 pub fn entryDiffIndices(
     entry_pieces: []const u8,
     entry_piece_bb: u64,
@@ -132,15 +132,15 @@ pub fn entryDiffIndices(
     return .{ .removed_len = removed_len, .added_len = added_len };
 }
 
-// State upstream's five conditions for the hybrid step in one predicate
-// (nnue_accumulator.cpp, evaluate_side). Each one is load-bearing:
-//   * the moved piece is THIS perspective's king -- otherwise nothing rebuckets;
-//   * the slot below is computed for this perspective -- the step reads it as `computed`;
-//   * at least MIN_PC_COUNT_HYBRID pieces -- below that, summing the threat/pair features
-//     from scratch is cheaper than reconstructing the source bucket;
-//   * the king stayed on its half, i.e. bit 2 of from and to agree -- crossing the centre
-//     file re-orients every threat and pair index, which is what the step keeps;
-//   * no add_sq, which excludes castling, because that relocates a rook as well.
+/// State upstream's five conditions for the hybrid step in one predicate
+/// (nnue_accumulator.cpp, evaluate_side). Each one is load-bearing:
+///   * the moved piece is THIS perspective's king -- otherwise nothing rebuckets;
+///   * the slot below is computed for this perspective -- the step reads it as `computed`;
+///   * at least MIN_PC_COUNT_HYBRID pieces -- below that, summing the threat/pair features
+///     from scratch is cheaper than reconstructing the source bucket;
+///   * the king stayed on its half, i.e. bit 2 of from and to agree -- crossing the centre
+///     file re-orients every threat and pair index, which is what the step keeps;
+///   * no add_sq, which excludes castling, because that relocates a rook as well.
 pub fn hybridApplicable(stack: *const AccumulatorStack, pos: *const Position, perspective: u8, latest_index: usize) bool {
     const min_pc_count_hybrid: u32 = 15;
     const diff = psqDiff(stateBytesConst(psq_feature, latest_index, stack));
@@ -152,15 +152,15 @@ pub fn hybridApplicable(stack: *const AccumulatorStack, pos: *const Position, pe
     return true;
 }
 
-// Take a same-half king move incrementally -- upstream's update_accumulator_hybrid.
-//
-//   target = computed - <old-bucket HalfKA> + <new-bucket HalfKA> + <this ply's thr/pp delta>
-//
-// Both HalfKA buckets come from the refresh cache. The OLD bucket's board is the position
-// BEFORE the move, which does not exist anywhere: reconstruct it by undoing the king move
-// on a copy of the piece array. That copy is the only board this file builds rather than
-// reads, and it is why the step is bounded by a piece count -- on a sparse board, summing
-// the threat/pair features outright beats reconstructing the source bucket.
+/// Take a same-half king move incrementally -- upstream's update_accumulator_hybrid.
+///
+///   target = computed - <old-bucket HalfKA> + <new-bucket HalfKA> + <this ply's thr/pp delta>
+///
+/// Both HalfKA buckets come from the refresh cache. The OLD bucket's board is the position
+/// BEFORE the move, which does not exist anywhere: reconstruct it by undoing the king move
+/// on a copy of the piece array. That copy is the only board this file builds rather than
+/// reads, and it is why the step is bounded by a piece count -- on a sparse board, summing
+/// the threat/pair features outright beats reconstructing the source bucket.
 pub fn updateHybrid(
     perspective: u8,
     king_square: u8,

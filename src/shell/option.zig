@@ -1,8 +1,8 @@
 const std = @import("std");
 
-// Hold the process-global Zig OptionsModel: the live option store. Own every option's
-// metadata (type/min/max/default) and current value, keyed by the option's
-// registration index, and serve both name- and index-keyed reads.
+/// Hold the process-global Zig OptionsModel: the live option store. Own every option's
+/// metadata (type/min/max/default) and current value, keyed by the option's
+/// registration index, and serve both name- and index-keyed reads.
 var global_model: ?OptionsModel = null;
 
 fn ensureModel() *OptionsModel {
@@ -68,10 +68,10 @@ pub const ModelSetResult = struct {
     idx: usize,
 };
 
-// Apply a setoption assignment to the model: validate, normalize, and store.
-// Report whether the option exists, whether the value was accepted/changed,
-// the change-callback kind, the option kind, and the index, so the caller can
-// fire the on_change callback for the changed option.
+/// Apply a setoption assignment to the model: validate, normalize, and store.
+/// Report whether the option exists, whether the value was accepted/changed,
+/// the change-callback kind, the option kind, and the index, so the caller can
+/// fire the on_change callback for the changed option.
 pub fn setByName(name: []const u8, value: []const u8, out: *ModelSetResult) void {
     out.* = .{ .found = 0, .accepted = 0, .changed = 0, .callback_kind = 0, .kind = 0, .idx = 0 };
     const model = ensureModel();
@@ -91,14 +91,14 @@ pub fn setByName(name: []const u8, value: []const u8, out: *ModelSetResult) void
     };
 }
 
-// Render the UCI option listing from the Zig model as an owned slice the caller frees.
+/// Render the UCI option listing from the Zig model as an owned slice the caller frees.
 pub fn renderOptions() ?[]u8 {
     return ensureModel().renderAlloc() catch null;
 }
 
-// Keep UCI option-string parsing in the option_parse leaf now; re-export the
-// public entry points + result types and alias back the helpers the model and
-// facade below reuse, so every call site stays unqualified.
+/// Keep UCI option-string parsing in the option_parse leaf now; re-export the
+/// public entry points + result types and alias back the helpers the model and
+/// facade below reuse, so every call site stays unqualified.
 const option_parse = @import("option_parse.zig");
 pub const ParsedSetOption = option_parse.ParsedSetOption;
 pub const AssignmentResult = option_parse.AssignmentResult;
@@ -122,9 +122,9 @@ const nameEquals = option_parse.nameEquals;
 // file and is reused here. Verify via the tests at the bottom.
 // ---------------------------------------------------------------------------
 
-// Keep the option data model (types + OptionsModel store + standard-option fixture)
-// in the option_model leaf now; re-export its public surface and alias
-// back what this facade calls so external + call sites stay unqualified.
+/// Keep the option data model (types + OptionsModel store + standard-option fixture)
+/// in the option_model leaf now; re-export its public surface and alias
+/// back what this facade calls so external + call sites stay unqualified.
 const option_model = @import("option_model.zig");
 pub const OptionKind = option_model.OptionKind;
 pub const optionKindName = option_model.optionKindName;

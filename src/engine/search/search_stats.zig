@@ -13,8 +13,8 @@
 
 const std = @import("std");
 
-// Compute the post-search bonus formulas (ttMoveHistory updates and the prior-countermove
-// fail-low bonus).
+/// Compute the post-search bonus formulas (ttMoveHistory updates and the prior-countermove
+/// fail-low bonus).
 pub fn ttMoveHistoryDepthBonus(depth: i32) i32 {
     return -421 - 110 * depth;
 }
@@ -37,13 +37,13 @@ pub fn priorScaledBonusBase(depth: i32) i32 {
     return @min(150 * depth - 85, 1337);
 }
 
-// Scale the prior-countermove fail-low bonus (search() POST_BONUS block): fan the
-// scaledBonus out into the continuation, main, and pawn history
-// tables with distinct tuned divisors, each truncated toward zero.
-// Shift, do not divide, in all three: `scaled_bonus` is `priorScaledBonusBase(depth) *
-// priorBonusScale(...)`, and the base is at least 65 at the depth >= 1 the move loop runs
-// at while the scale ends in `@max(s, 0)` -- so the dividend is never negative and
-// `@divTrunc` buys only a round-toward-zero fixup (lea/test/cmov/sar) nothing can reach.
+/// Scale the prior-countermove fail-low bonus (search() POST_BONUS block): fan the
+/// scaledBonus out into the continuation, main, and pawn history
+/// tables with distinct tuned divisors, each truncated toward zero.
+/// Shift, do not divide, in all three: `scaled_bonus` is `priorScaledBonusBase(depth) *
+/// priorBonusScale(...)`, and the base is at least 65 at the depth >= 1 the move loop runs
+/// at while the scale ends in `@max(s, 0)` -- so the dividend is never negative and
+/// `@divTrunc` buys only a round-toward-zero fixup (lea/test/cmov/sar) nothing can reach.
 pub fn priorConthistScale(scaled_bonus: i32) i32 {
     return scaled_bonus * 263 >> 14;
 }
@@ -56,10 +56,10 @@ pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
     return scaled_bonus * 324 >> 13;
 }
 
-// Assemble the Step 18 LMR stat-score (search()). The caller reads the relevant
-// history-table entries and passes their values; this owns the tuned weighting.
-// Capture: 873*pieceValue/128 plus capture history. Quiet: a weighted sum of main and the
-// two continuation-history entries, scaled by 1024.
+/// Assemble the Step 18 LMR stat-score (search()). The caller reads the relevant
+/// history-table entries and passes their values; this owns the tuned weighting.
+/// Capture: 873*pieceValue/128 plus capture history. Quiet: a weighted sum of main and the
+/// two continuation-history entries, scaled by 1024.
 pub fn captureStatScore(piece_value: i32, capture_hist: i32) i32 {
     // `piece_value` indexes search_values.piece_value, which has no negative entry, so the
     // product cannot be negative and the divide is a shift.
@@ -70,18 +70,18 @@ pub fn quietStatScore(main_hist: i32, cont0: i32, cont1: i32) i32 {
     return @divTrunc(2252 * main_hist + 1126 * cont0 + 1093 * cont1, 1024);
 }
 
-// Bound every correction-history entry (upstream's CORRECTION_HISTORY_LIMIT). It lives
-// here, in the std-only formula leaf, because both the writers in history.zig and the
-// bonus clamps below have to agree on it: every bonus is clamped to a QUARTER of it, and
-// a limit retuned in one place while the clamps kept a hardcoded 256 would silently stop
-// being a quarter of anything.
+/// Bound every correction-history entry (upstream's CORRECTION_HISTORY_LIMIT). It lives
+/// here, in the std-only formula leaf, because both the writers in history.zig and the
+/// bonus clamps below have to agree on it: every bonus is clamped to a QUARTER of it, and
+/// a limit retuned in one place while the clamps kept a hardcoded 256 would silently stop
+/// being a quarter of anything.
 pub const correction_history_limit: i32 = 1024;
 const correction_bonus_clamp: i32 = @divTrunc(correction_history_limit, 4);
 
-// Compute the end-of-search correction-history bonus (search()): scale the static-eval
-// error by depth and a best-move-dependent weight (12 with a best move, 18
-// without), clamp into +/- CORRECTION_HISTORY_LIMIT/4, then apply the
-// final 1061/1024 scale passed to update_correction_history.
+/// Compute the end-of-search correction-history bonus (search()): scale the static-eval
+/// error by depth and a best-move-dependent weight (12 with a best move, 18
+/// without), clamp into +/- CORRECTION_HISTORY_LIMIT/4, then apply the
+/// final 1061/1024 scale passed to update_correction_history.
 pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) i32 {
     const w: i32 = if (has_best_move) 12 else 18;
     const raw = @divTrunc(eval_delta * depth * w, 128);
@@ -89,19 +89,19 @@ pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) 
     return @divTrunc(1061 * clamped, 1024);
 }
 
-// Compute the multi-cut correction-history bonus (Step 16): when the singular
-// probe itself fails high above beta it has proven the static eval too low, so
-// nudge the correction tables by the scaled error. Clamp into
-// +/- CORRECTION_HISTORY_LIMIT/4 like every other correction bonus. The probe's
-// depth no longer scales it: a flat 664/1024 replaced `singularDepth * 177`
-// (upstream 49ea5ded).
+/// Compute the multi-cut correction-history bonus (Step 16): when the singular
+/// probe itself fails high above beta it has proven the static eval too low, so
+/// nudge the correction tables by the scaled error. Clamp into
+/// +/- CORRECTION_HISTORY_LIMIT/4 like every other correction bonus. The probe's
+/// depth no longer scales it: a flat 664/1024 replaced `singularDepth * 177`
+/// (upstream 49ea5ded).
 pub fn multiCutCorrectionBonus(eval_delta: i32) i32 {
     const raw = @divTrunc(eval_delta * 664, 1024);
     return @max(-correction_bonus_clamp, @min(correction_bonus_clamp, raw));
 }
 
-// Scale the quiet-history bonus (update_quiet_histories). Each is bonus*N/1024
-// with toward-zero division; the pawn-history scale picks its weight by whether bonus > -4.
+/// Scale the quiet-history bonus (update_quiet_histories). Each is bonus*N/1024
+/// with toward-zero division; the pawn-history scale picks its weight by whether bonus > -4.
 pub fn quietLowPlyScale(bonus: i32) i32 {
     return @divTrunc(bonus * 712, 1024);
 }
@@ -115,31 +115,31 @@ pub fn quietPawnScale(bonus: i32) i32 {
     return @divTrunc(bonus * weight, 1024);
 }
 
-// Index the continuation-history positive-consistency multipliers by the
-// running positiveCount in update_continuation_histories.
+/// Index the continuation-history positive-consistency multipliers by the
+/// running positiveCount in update_continuation_histories.
 const cmhc_multipliers = [_]i32{ 94, 103, 110, 106, 119, 126, 121 };
 
-// Ply offsets and per-step weights of update_continuation_histories' six steps -- the
-// source of truth a tuner edits. history.zig walks them.
+/// Ply offsets and per-step weights of update_continuation_histories' six steps -- the
+/// source of truth a tuner edits. history.zig walks them.
 pub const conthist_steps = [6]u8{ 1, 2, 3, 4, 5, 6 };
 const conthist_weights = [6]i32{ 520, 390, 145, 251, 66, 209 };
 
-// The step's WEIGHT and the consistency MULTIPLIER are ONE table, folded here at
-// comptime. The weight is a constant of the step and the multiplier a runtime index, so
-// their product never depends on the bonus -- the loop was buying it with an `imul` on
-// every step it took (refish 56c6bfdd).
-//
-// Regrouping `(bonus * weight) * multiplier` as `bonus * (weight * multiplier)` is
-// bit-identical, and the reason has to be stated because upstream computes the whole
-// product in `int`: halving both the weights and the divisor (upstream 47be34c5) bought
-// the headroom back, but nothing BOUNDS the bonus, so a wrap stays representable.
-// Multiplication wraps associatively mod 2^32, so both groupings land on the same bits
-// whether or not it happens -- which is why `*%` below is load-bearing, not decoration.
-// The folded factor itself is at most 520 * 126 = 65520 and cannot wrap.
-// Store the folded factor as u16, not i32. It is at most 520 * 126 = 65520 (asserted
-// below), and SAYING so is what lets the caller's clamp fold: with `multiplier < 65536`
-// and a bounded bonus, `bonus * multiplier / 65536` provably cannot leave the history
-// limit, so `statsUpdateValue`'s @max/@min collapse in the hot arm.
+/// The step's WEIGHT and the consistency MULTIPLIER are ONE table, folded here at
+/// comptime. The weight is a constant of the step and the multiplier a runtime index, so
+/// their product never depends on the bonus -- the loop was buying it with an `imul` on
+/// every step it took (refish 56c6bfdd).
+///
+/// Regrouping `(bonus * weight) * multiplier` as `bonus * (weight * multiplier)` is
+/// bit-identical, and the reason has to be stated because upstream computes the whole
+/// product in `int`: halving both the weights and the divisor (upstream 47be34c5) bought
+/// the headroom back, but nothing BOUNDS the bonus, so a wrap stays representable.
+/// Multiplication wraps associatively mod 2^32, so both groupings land on the same bits
+/// whether or not it happens -- which is why `*%` below is load-bearing, not decoration.
+/// The folded factor itself is at most 520 * 126 = 65520 and cannot wrap.
+/// Store the folded factor as u16, not i32. It is at most 520 * 126 = 65520 (asserted
+/// below), and SAYING so is what lets the caller's clamp fold: with `multiplier < 65536`
+/// and a bounded bonus, `bonus * multiplier / 65536` provably cannot leave the history
+/// limit, so `statsUpdateValue`'s @max/@min collapse in the hot arm.
 const conthist_scale: [6][cmhc_multipliers.len]u16 = blk: {
     var table: [6][cmhc_multipliers.len]u16 = undefined;
     for (conthist_weights, 0..) |weight, step| {
@@ -152,8 +152,8 @@ const conthist_scale: [6][cmhc_multipliers.len]u16 = blk: {
     break :blk table;
 };
 
-// Compute the per-entry continuation-history update delta: own the folded weight table
-// and the bonus*scale/65536 formula. `step` indexes conthist_steps.
+/// Compute the per-entry continuation-history update delta: own the folded weight table
+/// and the bonus*scale/65536 formula. `step` indexes conthist_steps.
 pub fn conthistDelta(bonus: i32, step: usize, positive_count: i32, i: i32) i32 {
     const multiplier: i32 = conthist_scale[step][@intCast(positive_count)];
     // Upstream (search.cpp: `bonus * weight * multiplier / 65536`) computes this in `int`,
@@ -165,9 +165,9 @@ pub fn conthistDelta(bonus: i32, step: usize, positive_count: i32, i: i32) i32 {
         73 * @as(i32, @intFromBool(i < 2));
 }
 
-// Blend the weighted correction history (correction_value). Inputs are the raw
-// correction entries; only the magic weights live here. All terms stay well
-// within i32 (entries clamped to +/-1024).
+/// Blend the weighted correction history (correction_value). Inputs are the raw
+/// correction entries; only the magic weights live here. All terms stay well
+/// within i32 (entries clamped to +/-1024).
 pub fn correctionValue(
     pcv: i32,
     micv: i32,
@@ -182,8 +182,8 @@ pub fn correctionValue(
     return 13806 * pcv + 9512 * micv + 11615 * (wnpcv + bnpcv) + cntcv;
 }
 
-// Compute the base stat bonus/malus formulas applied at the end of search() when a
-// bestMove is found (update_all_stats).
+/// Compute the base stat bonus/malus formulas applied at the end of search() when a
+/// bestMove is found (update_all_stats).
 pub fn statBonus(depth: i32, is_tt_move: bool, prev_stat_score: i32) i32 {
     return @min(133 * depth - 81, 1487) +
         364 * @as(i32, @intFromBool(is_tt_move)) +

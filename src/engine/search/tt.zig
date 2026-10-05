@@ -9,18 +9,18 @@ const bound_shift: u8 = generation_bits;
 const bound_mask: u8 = 0b11 << bound_shift;
 const pv_shift: u8 = bound_shift + 2;
 const pv_mask: u8 = 1 << pv_shift;
-// Define the is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
+/// Define the is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
 const value_tb_win_in_max_ply: i32 = 31507;
-// Define VALUE_INFINITE; secondary aging excludes |value| == VALUE_INFINITE.
+/// Define VALUE_INFINITE; secondary aging excludes |value| == VALUE_INFINITE.
 const value_infinite: i32 = 32001;
 
-// Subtract from a stored depth, saturating at 0 -- upstream's
-// `std::max(int(depth8) - n, 0)` with the comment "guard against racy underflows, default
-// to unoccupied" (tt.cpp:121, tt.cpp:146). Zig's `-%=` WRAPS, so a shallow entry
-// penalized past zero became depth ~253: the DEEPEST possible entry instead of the
-// shallowest, and `depth8 != 0` (the occupancy test at entryRelativeAge's caller) then
-// read a cleared slot as occupied. The clamp is not a C++ nicety; its absence inverted
-// the value.
+/// Subtract from a stored depth, saturating at 0 -- upstream's
+/// `std::max(int(depth8) - n, 0)` with the comment "guard against racy underflows, default
+/// to unoccupied" (tt.cpp:121, tt.cpp:146). Zig's `-%=` WRAPS, so a shallow entry
+/// penalized past zero became depth ~253: the DEEPEST possible entry instead of the
+/// shallowest, and `depth8 != 0` (the occupancy test at entryRelativeAge's caller) then
+/// read a cleared slot as occupied. The clamp is not a C++ nicety; its absence inverted
+/// the value.
 fn depthSaturatingSub(depth8: u8, n: u8) u8 {
     return depth8 -| n;
 }
@@ -37,10 +37,10 @@ pub const TtReadOutput = struct {
     is_pv: u8,
 };
 
-// Carry the probe result the way upstream's `std::tuple<bool, TTData, TTWriter>` does: the
-// writer is the ENTRY POINTER the walk already held, not an index into the cluster. An index
-// makes the caller re-derive `base + i * 10` (two `lea`s the walk had already computed), and
-// LLVM cannot fold that back through the struct return.
+/// Carry the probe result the way upstream's `std::tuple<bool, TTData, TTWriter>` does: the
+/// writer is the ENTRY POINTER the walk already held, not an index into the cluster. An index
+/// makes the caller re-derive `base + i * 10` (two `lea`s the walk had already computed), and
+/// LLVM cannot fold that back through the struct return.
 pub const TtProbeOutput = struct {
     found: u8,
     writer_ptr: *TtEntry,
@@ -54,9 +54,9 @@ fn reportAllocFailure(mb: usize) noreturn {
     std.debug.print("Failed to allocate {d}MB for transposition table.\n", .{mb});
     std.process.exit(1);
 }
-// Zero a [start_cluster, start_cluster+cluster_len) span of the TT -- one thread's share
-// of the parallel clear (single-node: upstream's NUMA-sorted dispatch order is a no-op
-// here, so the spans go out in plain thread order).
+/// Zero a [start_cluster, start_cluster+cluster_len) span of the TT -- one thread's share
+/// of the parallel clear (single-node: upstream's NUMA-sorted dispatch order is a no-op
+/// here, so the spans go out in plain thread order).
 fn zeroTtSlice(table_ptr: ?[*]TtCluster, start_cluster: usize, cluster_len: usize) void {
     if (cluster_len == 0) return;
     const table = table_ptr orelse return;
@@ -87,8 +87,8 @@ pub fn resizeState(
     clearState(table, cluster_count, generation_ptr, threads);
 }
 
-// Carry one thread's clear span to its zeroing job; the array outlives the dispatch
-// because clearState waits on every thread before returning.
+/// Carry one thread's clear span to its zeroing job; the array outlives the dispatch
+/// because clearState waits on every thread before returning.
 const ClearSliceCtx = struct {
     table: ?[*]TtCluster,
     start: usize,
@@ -188,16 +188,16 @@ pub fn entrySave(
     }
 }
 
-// upstream 319d61eff: decrement a stored entry's depth as a penalty. Saturate at 0
-// (tt.cpp:146) -- a wrapping subtract turned a penalised shallow entry into the deepest
-// entry in the table.
+/// upstream 319d61eff: decrement a stored entry's depth as a penalty. Saturate at 0
+/// (tt.cpp:146) -- a wrapping subtract turned a penalised shallow entry into the deepest
+/// entry in the table.
 pub fn entryPenalize(entry: *TtEntry, penalty: u8) void {
     setRlx(u8, &entry.depth8, depthSaturatingSub(rlx(u8, &entry.depth8), penalty));
 }
 
-// Take `depth8` from the caller rather than loading it again: probe has already read that byte
-// to decide whether the entry is occupied, and a relaxed atomic load is one the compiler is not
-// allowed to fold away, so asking twice costs a second load of the same byte on every TT hit.
+/// Take `depth8` from the caller rather than loading it again: probe has already read that byte
+/// to decide whether the entry is occupied, and a relaxed atomic load is one the compiler is not
+/// allowed to fold away, so asking twice costs a second load of the same byte on every TT hit.
 pub fn entryRead(entry: *const TtEntry, depth_none: i32, depth8: u8) TtReadOutput {
     // Take one load of gen_bound8 for both the bound and the pv flag: they are two fields of the
     // same byte, so a single read keeps them mutually consistent and spares a second atomic load
@@ -213,11 +213,11 @@ pub fn entryRead(entry: *const TtEntry, depth_none: i32, depth8: u8) TtReadOutpu
     };
 }
 
-// Read and write every TT field as a RELAXED atomic, mirroring upstream's RelaxedAtomic<T>
-// accessors (misc.h:351-370). tt.h states that racy concurrent updates between threads are
-// intended; relaxed is what makes that race defined rather than undefined, forbidding the
-// compiler to tear a field or rematerialise a load after the key comparison it was checked
-// against. It is NOT ordering: no field is ordered against any other, exactly as upstream.
+/// Read and write every TT field as a RELAXED atomic, mirroring upstream's RelaxedAtomic<T>
+/// accessors (misc.h:351-370). tt.h states that racy concurrent updates between threads are
+/// intended; relaxed is what makes that race defined rather than undefined, forbidding the
+/// compiler to tear a field or rematerialise a load after the key comparison it was checked
+/// against. It is NOT ordering: no field is ordered against any other, exactly as upstream.
 inline fn rlx(comptime T: type, p: *const T) T {
     return @atomicLoad(T, p, .monotonic);
 }
@@ -225,10 +225,10 @@ inline fn setRlx(comptime T: type, p: *T, v: T) void {
     @atomicStore(T, p, v, .monotonic);
 }
 
-// Return the entry's age. Count generations the way a clock counts hours: `0 - 1` must be
-// 31, so the subtract WRAPS and the mask then discards the pv/bound bits the borrow ran
-// through. A saturating or checked subtract here would read every entry written just
-// before a wrap as the freshest in the table.
+/// Return the entry's age. Count generations the way a clock counts hours: `0 - 1` must be
+/// 31, so the subtract WRAPS and the mask then discards the pv/bound bits the borrow ran
+/// through. A saturating or checked subtract here would read every entry written just
+/// before a wrap as the freshest in the table.
 pub fn entryRelativeAge(entry: *const TtEntry, curr_generation: u8) u8 {
     return (curr_generation -% rlx(u8, &entry.gen_bound8)) & generation_mask;
 }
@@ -265,13 +265,13 @@ pub fn firstEntryIndex(key: u64, cluster_count: usize) usize {
     return @intCast((@as(u128, key) * @as(u128, cluster_count)) >> 64);
 }
 
-// Preload the cluster KEY maps onto, a non-blocking read hint issued a few instructions
-// ahead of the matching probeTable so the line is arriving by the time the probe reads it
-// (upstream tt.cpp first_entry, called from the search do_move). The hint changes no
-// value, only when the line lands. Uses the SAME mul_hi64 index the probe uses. Read
-// hint (rw=.read), highest temporal locality (locality=3): the cluster is about to be
-// probed and re-read on a hit. Take the table non-null, per probeTable's contract:
-// the guard branches ran once per do_move against a table the search cannot lack.
+/// Preload the cluster KEY maps onto, a non-blocking read hint issued a few instructions
+/// ahead of the matching probeTable so the line is arriving by the time the probe reads it
+/// (upstream tt.cpp first_entry, called from the search do_move). The hint changes no
+/// value, only when the line lands. Uses the SAME mul_hi64 index the probe uses. Read
+/// hint (rw=.read), highest temporal locality (locality=3): the cluster is about to be
+/// probed and re-read on a hit. Take the table non-null, per probeTable's contract:
+/// the guard branches ran once per do_move against a table the search cannot lack.
 pub inline fn prefetch(clusters: [*]TtCluster, cluster_count: usize, key: u64) void {
     @prefetch(&clusters[firstEntryIndex(key, cluster_count)], .{ .rw = .read, .locality = 3, .cache = .data });
 }
@@ -321,11 +321,11 @@ pub fn probe(
     };
 }
 
-// Probe the sized table. Contract: the table exists and cluster_count > 0 -- every
-// caller runs inside a search, and a search cannot run on an unsized table (the very
-// first entrySave would write through the writer pointer). The old per-probe null/zero
-// guard paid two loads and two branches per node for a case that could only crash
-// later anyway; the QCtx now carries the non-optional pointer.
+/// Probe the sized table. Contract: the table exists and cluster_count > 0 -- every
+/// caller runs inside a search, and a search cannot run on an unsized table (the very
+/// first entrySave would write through the writer pointer). The old per-probe null/zero
+/// guard paid two loads and two branches per node for a case that could only crash
+/// later anyway; the QCtx now carries the non-optional pointer.
 pub fn probeTable(
     clusters: [*]TtCluster,
     cluster_count: usize,
@@ -336,9 +336,9 @@ pub fn probeTable(
     return probe(&clusters[firstEntryIndex(key, cluster_count)], key, generation, depth_none);
 }
 
-// Hold the TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
-// cluster count and the 8-bit generation. The heavy logic lives in the functions above;
-// serve as the owning object the Engine graph holds, delegating to them.
+/// Hold the TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
+/// cluster count and the 8-bit generation. The heavy logic lives in the functions above;
+/// serve as the owning object the Engine graph holds, delegating to them.
 pub const TranspositionTable = struct {
     table: ?[*]TtCluster = null,
     cluster_count: usize = 0,

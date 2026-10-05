@@ -48,8 +48,8 @@ pub inline fn h2(key: u64) usize {
     return @intCast((key >> 16) & 0x1fff);
 }
 
-// Build the Zobrist + cuckoo tables (upstream Position::init, xorshift64* seeded
-// with 1070372). Idempotent: overwrites the tables from scratch each call.
+/// Build the Zobrist + cuckoo tables (upstream Position::init, xorshift64* seeded
+/// with 1070372). Idempotent: overwrites the tables from scratch each call.
 pub fn init() void {
     var rng = Prng{ .s = 1070372 };
     @memset(&zob_psq, 0);

@@ -37,9 +37,9 @@ pub const InfoIteration = struct {
     currmovenumber: usize,
 };
 
-// UpdateContext: hold four callbacks plus the opaque sink they write through (the
-// UCIEngine output side). Each is a plain Zig function pointer over slices; dispatch
-// stays vtable-free.
+/// UpdateContext: hold four callbacks plus the opaque sink they write through (the
+/// UCIEngine output side). Each is a plain Zig function pointer over slices; dispatch
+/// stays vtable-free.
 pub const UpdateContext = struct {
     pub const NoMovesFn = *const fn (ctx: ?*anyopaque, info: *const InfoShort) void;
     pub const FullFn = *const fn (ctx: ?*anyopaque, info: *const InfoFull) void;

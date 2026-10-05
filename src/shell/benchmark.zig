@@ -1,12 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("libc");
-// Import the bench/benchmark position tables from their own pure-data leaf now.
+/// Import the bench/benchmark position tables from their own pure-data leaf now.
 const bench_positions = @import("bench_positions.zig");
 const Defaults = bench_positions.Defaults;
 const BenchmarkPositions = bench_positions.BenchmarkPositions;
 
-// Define the benchmark data.
+/// Define the benchmark data.
 pub const BenchmarkSetupOutput = struct {
     tt_size: i32,
     threads: i32,
@@ -19,39 +19,39 @@ pub const BenchmarkSetupOutput = struct {
     clamp_notice_ptr: ?[]u8 = null,
 };
 
-// Bound every `speedtest` argument by the range the thing it feeds will actually take.
-//
-// Two multiplications below are done on a number a user typed, and both used to be done in i32,
-// where an overflow is illegal behaviour in Zig: silent garbage in the shipped ReleaseFast build
-// and a hard panic in ReleaseSafe. Both were reachable from one command line:
-//
-//   speedtest 4 128 2147484   ->  desired_time_s * 1000 overflows; timeScaleFactor goes
-//                                 negative and every emitted `go movetime` gets a negative
-//                                 argument
-//   speedtest 100000000       ->  128 * threads overflows; tt_size goes negative, is emitted
-//                                 as `setoption name Hash value -N`, and the option layer's
-//                                 range check rejects it -- leaving the run measuring whatever
-//                                 Hash happened to be set
-//
-// max_seconds is what the arithmetic holds rather than a policy: it is the largest value whose
-// `* 1000` still fits i32.
-//
-// THE THREAD CEILING IS THIS MACHINE, NOT THE `Threads` OPTION RANGE, and the difference is the
-// whole safety of this clamp. `Threads` accepts up to `max(1024, 4*hw)` (session.zig initBody),
-// and a Worker costs about 15.5 MB -- so clamping a mistyped `speedtest 100000000` UP TO the
-// option maximum would turn an argument error into a 16 GB allocation, and the derived
-// `128 * threads` Hash into a six-figure MB request beside it. That is a worse outcome than the
-// overflow this commit removes, not a fix for it.
-//
-// hardwareConcurrency is also the RIGHT bound on its own terms: speedtest measures this box, its
-// own no-argument default is the core count, and more threads than cores does not measure
-// anything faster. So a number larger than the machine means "use the machine".
-//
-// max_hash_mb mirrors the Hash spin range registered in session.zig's initBody, because this
-// file DERIVES a Hash value and emits it as a setoption line -- a producer that does not know
-// the consumer's range is exactly what let the two disagree in silence. It is a ceiling on a
-// number the user typed, never a value this file will reach on its own: the derived default is
-// `128 * threads`, and threads is bounded by the core count first.
+/// Bound every `speedtest` argument by the range the thing it feeds will actually take.
+///
+/// Two multiplications below are done on a number a user typed, and both used to be done in i32,
+/// where an overflow is illegal behaviour in Zig: silent garbage in the shipped ReleaseFast build
+/// and a hard panic in ReleaseSafe. Both were reachable from one command line:
+///
+///   speedtest 4 128 2147484   ->  desired_time_s * 1000 overflows; timeScaleFactor goes
+///                                 negative and every emitted `go movetime` gets a negative
+///                                 argument
+///   speedtest 100000000       ->  128 * threads overflows; tt_size goes negative, is emitted
+///                                 as `setoption name Hash value -N`, and the option layer's
+///                                 range check rejects it -- leaving the run measuring whatever
+///                                 Hash happened to be set
+///
+/// max_seconds is what the arithmetic holds rather than a policy: it is the largest value whose
+/// `* 1000` still fits i32.
+///
+/// THE THREAD CEILING IS THIS MACHINE, NOT THE `Threads` OPTION RANGE, and the difference is the
+/// whole safety of this clamp. `Threads` accepts up to `max(1024, 4*hw)` (session.zig initBody),
+/// and a Worker costs about 15.5 MB -- so clamping a mistyped `speedtest 100000000` UP TO the
+/// option maximum would turn an argument error into a 16 GB allocation, and the derived
+/// `128 * threads` Hash into a six-figure MB request beside it. That is a worse outcome than the
+/// overflow this commit removes, not a fix for it.
+///
+/// hardwareConcurrency is also the RIGHT bound on its own terms: speedtest measures this box, its
+/// own no-argument default is the core count, and more threads than cores does not measure
+/// anything faster. So a number larger than the machine means "use the machine".
+///
+/// max_hash_mb mirrors the Hash spin range registered in session.zig's initBody, because this
+/// file DERIVES a Hash value and emits it as a setoption line -- a producer that does not know
+/// the consumer's range is exactly what let the two disagree in silence. It is a ceiling on a
+/// number the user typed, never a value this file will reach on its own: the derived default is
+/// `128 * threads`, and threads is bounded by the core count first.
 const max_seconds: i32 = std.math.maxInt(i32) / 1000;
 const min_seconds: i32 = 1;
 
@@ -61,9 +61,9 @@ fn maxThreadsFor(hardware_concurrency: i32) i32 {
 
 const max_hash_mb: i32 = if (@sizeOf(usize) >= 8) 33554432 else 2048;
 
-// Clamp `value` into [lo, hi], appending a report line when it moved. A silently corrected
-// number is the same failure wearing a nicer hat: the run still does not do what was asked, and
-// nothing says so.
+/// Clamp `value` into [lo, hi], appending a report line when it moved. A silently corrected
+/// number is the same failure wearing a nicer hat: the run still does not do what was asked, and
+/// nothing says so.
 fn clampReported(
     notice: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
@@ -337,7 +337,7 @@ fn getCorrectedTime(ply: i32) f64 {
     return 50000.0 / (@as(f64, @floatFromInt(ply)) + 15.0);
 }
 
-// Free everything setupBenchmark handed back, so a test can call it without leaking.
+/// Free everything setupBenchmark handed back, so a test can call it without leaking.
 fn freeSetup(out: BenchmarkSetupOutput) void {
     const a = std.heap.c_allocator;
     if (out.commands_ptr) |p| a.free(p);

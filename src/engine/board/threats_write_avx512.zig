@@ -32,28 +32,28 @@ pub const use_avx512_threats = builtin.target.cpu.arch == .x86_64 and
 
 const V64u8 = @Vector(64, u8);
 const V64mask = @Vector(64, bool);
-// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
-// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
-// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
-// argument type") and the AVX-512 tiers stop building.
+/// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
+/// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
+/// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
+/// argument type") and the AVX-512 tiers stop building.
 const V64bits = @Vector(64, u1);
 const V16i32 = @Vector(16, i32);
 
-// LLVM intrinsic names/argument orders verified empirically: compiled each upstream
-// intrinsic call with
-//   clang -O2 -mavx512f -mavx512bw -mavx512vbmi -mavx512vbmi2 -S -emit-llvm
-// and read the resulting `declare`/`call` lines. Two results were not what the C
-// intrinsic names suggest: `_mm512_cvtepi8_epi32(_mm512_castsi512_si128(a))` lowers to
-// a plain `shufflevector` (low 16 bytes) + `sext`, no intrinsic call at all; and
-// `_mm512_maskz_permutexvar_epi8(k, idx, a)` lowers to an UNMASKED
-// `llvm.x86.avx512.permvar.qi.512(a, idx)` (data first, index second) followed by a
-// separate `select` against the mask -- the masking is not part of the permute
-// intrinsic itself.
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// LLVM intrinsic names/argument orders verified empirically: compiled each upstream
+/// intrinsic call with
+///   clang -O2 -mavx512f -mavx512bw -mavx512vbmi -mavx512vbmi2 -S -emit-llvm
+/// and read the resulting `declare`/`call` lines. Two results were not what the C
+/// intrinsic names suggest: `_mm512_cvtepi8_epi32(_mm512_castsi512_si128(a))` lowers to
+/// a plain `shufflevector` (low 16 bytes) + `sext`, no intrinsic call at all; and
+/// `_mm512_maskz_permutexvar_epi8(k, idx, a)` lowers to an UNMASKED
+/// `llvm.x86.avx512.permvar.qi.512(a, idx)` (data first, index second) followed by a
+/// separate `select` against the mask -- the masking is not part of the permute
+/// intrinsic itself.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 extern fn @"llvm.x86.avx512.mask.compress.v64i8"(a: V64u8, src: V64u8, mask: V64bits) callconv(.{ .x86_64_sysv = .{} }) V64u8;
 extern fn @"llvm.x86.avx512.permvar.qi.512"(a: V64u8, idx: V64u8) callconv(.{ .x86_64_sysv = .{} }) V64u8;
 extern fn @"llvm.x86.avx512.pternlog.d.512"(a: V16i32, b: V16i32, c: V16i32, imm: i32) callconv(.{ .x86_64_sysv = .{} }) V16i32;
@@ -64,10 +64,10 @@ const all_squares: V64u8 = blk: {
     break :blk arr;
 };
 
-// Bit i set iff i % 4 == 0: the byte-level mask that keeps only the low byte of each
-// 4-byte (i32) lane after the byte-granularity permute -- the lane's square index,
-// zero-extended by cvtepi8_epi32 into the upper 3 bytes, is discarded there so the
-// piece lookup below occupies the same low-byte position.
+/// Bit i set iff i % 4 == 0: the byte-level mask that keeps only the low byte of each
+/// 4-byte (i32) lane after the byte-granularity permute -- the lane's square index,
+/// zero-extended by cvtepi8_epi32 into the upper 3 bytes, is discarded there so the
+/// piece lookup below occupies the same low-byte position.
 const permute_byte_mask: V64mask = @bitCast(@as(u64, 0x1111111111111111));
 
 pub fn writeMultipleDirties(
@@ -118,9 +118,9 @@ pub fn writeMultipleDirties(
 
 const testing = std.testing;
 
-// A pure-scalar reference over the same {mask, template_word, sq_shift, pc_shift}
-// contract, independent of writeMultipleDirties, so the test cannot pass by both
-// sides sharing a bug.
+/// A pure-scalar reference over the same {mask, template_word, sq_shift, pc_shift}
+/// contract, independent of writeMultipleDirties, so the test cannot pass by both
+/// sides sharing a bug.
 fn referenceWrite(pos: *const Position, mask_in: u64, template_word: u32, sq_shift: u5, pc_shift: u5, dts: *DirtyThreats) void {
     var mask = mask_in;
     while (mask != 0) {

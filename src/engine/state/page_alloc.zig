@@ -27,12 +27,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Reserve one 64-byte unit before the payload: keep the payload 64-aligned (page
-// memory is already 4096-aligned) and hold the block length for free().
+/// Reserve one 64-byte unit before the payload: keep the payload 64-aligned (page
+/// memory is already 4096-aligned) and hold the block length for free().
 const payload_offset = 64;
 
-// Mirror src/platform/memory.zig's poison predicate. Restate it rather than import it: engine/
-// imports nothing outside engine/, and this default allocator must stay usable headless.
+/// Mirror src/platform/memory.zig's poison predicate. Restate it rather than import it: engine/
+/// imports nothing outside engine/, and this default allocator must stay usable headless.
 const poison_uninitialized = builtin.mode == .debug or builtin.mode == .safe;
 
 fn defaultAlloc(size: usize) ?*anyopaque {

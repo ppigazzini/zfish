@@ -33,13 +33,13 @@ const PairsData = probe.PairsData;
 
 const ProbeResult = @import("tb_source").ProbeResult;
 
-// SF PieceType encodings (via board_core): W pawn=1..king=6.
+/// SF PieceType encodings (via board_core): W pawn=1..king=6.
 const pawn_pt = board_core.pawn_pt;
 
 // ---- probe_table + probe_wdl (search) + probe_dtz ---------------------------
 
-// Alias the ProbeState and WDLScore constants from the index encoder, which owns them: it is
-// the lower file, so a definition here would make the two import each other.
+/// Alias the ProbeState and WDLScore constants from the index encoder, which owns them: it is
+/// the lower file, so a definition here would make the two import each other.
 const probe_fail = probe_index.probe_fail;
 const probe_ok = probe_index.probe_ok;
 const probe_zeroing = probe_index.probe_zeroing;
@@ -52,7 +52,7 @@ const wdl_loss = probe_index.wdl_loss;
 
 const Probe = struct { value: i32, state: i32 };
 
-// Port SF probe_table, generic over WDL/DTZ: KvK short-circuit, registry lookup, lazy map, do_probe.
+/// Port SF probe_table, generic over WDL/DTZ: KvK short-circuit, registry lookup, lazy map, do_probe.
 fn probeTable(pos: *const Position, comptime dtz: bool, wdl_score: i32, out_state: *i32) i32 {
     if (@popCount(pos.by_type_bb[0]) == 2) return 0; // KvK draw
     const t = registry.hashGet(pos.st.material_key) orelse {
@@ -81,7 +81,7 @@ fn signOf(x: i32) i32 {
     return @as(i32, @intFromBool(x > 0)) - @intFromBool(x < 0);
 }
 
-// Port SF dtz_before_zeroing: recover the DTZ of the move before a zeroing (capture/pawn) move.
+/// Port SF dtz_before_zeroing: recover the DTZ of the move before a zeroing (capture/pawn) move.
 fn dtzBeforeZeroing(wdl: i32) i32 {
     return switch (wdl) {
         wdl_win => 1,
@@ -92,10 +92,10 @@ fn dtzBeforeZeroing(wdl: i32) i32 {
     };
 }
 
-// Port SF search<CheckZeroingMoves>: the "best of the position and its winning/drawing zeroing moves"
-// recursion. A capture (and, when check_zeroing, a pawn move) zeroes the rule50 counter, so its
-// result must be probed and compared to the position's own stored value. Children recurse with
-// check_zeroing=false. `storage` supplies one StateInfo per recursion frame (reused across sibs).
+/// Port SF search<CheckZeroingMoves>: the "best of the position and its winning/drawing zeroing moves"
+/// recursion. A capture (and, when check_zeroing, a pawn move) zeroes the rule50 counter, so its
+/// result must be probed and compared to the position's own stored value. Children recurse with
+/// check_zeroing=false. `storage` supplies one StateInfo per recursion frame (reused across sibs).
 fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime check_zeroing: bool) Probe {
     var best: i32 = wdl_loss;
     var move_count: usize = 0;
@@ -139,9 +139,9 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime 
     return .{ .value = value, .state = probe_ok };
 }
 
-// Port SF probe_dtz: DTZ from the side-to-move's view. Use search<true> to fold in zeroing pawn moves,
-// then probe_table<DTZ>; the CHANGE_STM branch does a 1-ply search that minimizes DTZ (the DTZ
-// table stored the other side, so we step one move and read the resulting DTZ).
+/// Port SF probe_dtz: DTZ from the side-to-move's view. Use search<true> to fold in zeroing pawn moves,
+/// then probe_table<DTZ>; the CHANGE_STM branch does a 1-ply search that minimizes DTZ (the DTZ
+/// table stored the other side, so we step one move and read the resulting DTZ).
 fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state: *i32) i32 {
     out_state.* = probe_ok;
     const w = searchWdl(pos, storage, true);
@@ -235,15 +235,15 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
     };
 }
 
-// Probe WDL in-search: the search's Step 7 calls this on the LIVE search Position rather
-// than round-tripping a FEN. searchWdl does do/undo on `pos` for its capture recursion and restores
-// it exactly (undoMove), and doMoveState touches only the board + StateInfo (never the NNUE
-// accumulator stack), so the search's position/eval state is intact on return. A persistent probe
-// storage (reset per call) supplies the recursion's StateInfo nodes. Same WDL as the FEN path.
-// Keep the recursion's StateInfo storage per thread. Upstream's `search()` holds `StateInfo st`
-// as a stack local (tbprobe.cpp:1333), so every probing thread owns its nodes. One shared storage
-// lets a reset on one thread destroy blocks another is writing through in doMoveState, and lets
-// two threads mutate the block list at once.
+/// Probe WDL in-search: the search's Step 7 calls this on the LIVE search Position rather than
+/// round-tripping a FEN. searchWdl does do/undo on `pos` for its capture recursion and restores it
+/// exactly (undoMove), and doMoveState touches only the board + StateInfo (never the NNUE
+/// accumulator stack), so the search's position/eval state is intact on return. A persistent probe
+/// storage (reset per call) supplies the recursion's StateInfo nodes. Same WDL as the FEN path.
+/// Keep the recursion's StateInfo storage per thread. Upstream's `search()` holds `StateInfo st` as
+/// a stack local (tbprobe.cpp:1333), so every probing thread owns its nodes. One shared storage
+/// lets a reset on one thread destroy blocks another is writing through in doMoveState, and lets
+/// two threads mutate the block list at once.
 threadlocal var probe_pos_storage: ?*state_list.PendingStateStorage = null;
 
 pub fn probeWdlPos(pos: *Position) ProbeResult {

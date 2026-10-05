@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-// Number squares like SF: A1=0 .. H8=63; rank = sq>>3, file = sq&7.
+/// Number squares like SF: A1=0 .. H8=63; rank = sq>>3, file = sq&7.
 inline fn rankOf(sq: usize) usize {
     return sq >> 3;
 }
@@ -23,7 +23,7 @@ inline fn flipFile(sq: usize) usize {
 pub inline fn flipRank(sq: usize) usize {
     return sq ^ 56;
 }
-// Compute off_A1H8(sq) = rank - file: <0 below the a1-h8 diagonal, 0 on it, >0 above.
+/// Compute off_A1H8(sq) = rank - file: <0 below the a1-h8 diagonal, 0 on it, >0 above.
 pub inline fn offA1H8(sq: usize) i32 {
     return @as(i32, @intCast(rankOf(sq))) - @as(i32, @intCast(fileOf(sq)));
 }
@@ -62,7 +62,7 @@ pub const TbFile = enum(u2) {
     /// so the loaders walk `all[0..1]` or `all[0..]` and never compare a bare index.
     pub const all = [4]TbFile{ .ah, .bg, .cf, .de };
 };
-// Detect a king "touch": s2 == s1 or s2 is a king move from s1 (Chebyshev distance <= 1).
+/// Detect a king "touch": s2 == s1 or s2 is a king move from s1 (Chebyshev distance <= 1).
 inline fn kingTouch(s1: usize, s2: usize) bool {
     const df = @abs(@as(i32, @intCast(fileOf(s1))) - @as(i32, @intCast(fileOf(s2))));
     const dr = @abs(@as(i32, @intCast(rankOf(s1))) - @as(i32, @intCast(rankOf(s2))));

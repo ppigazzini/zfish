@@ -18,24 +18,24 @@ pub const use_avx512_movegen = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vbmi2);
 
 const V64u8 = @Vector(64, u8);
-// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
-// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
-// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
-// argument type") and the AVX-512 tiers stop building.
+/// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
+/// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
+/// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
+/// argument type") and the AVX-512 tiers stop building.
 const V64mask = @Vector(64, u1);
 
-// Verified via clang -O2 -mavx512f -mavx512bw -mavx512vbmi -mavx512vbmi2 -msse4.1
-// -S -emit-llvm (same protocol as threats_write_avx512.zig): compress is the one op
-// here that needs a raw intrinsic. `_mm_cvtepi8_epi16`/`_mm512_cvtepi8_epi16` lower to
-// a plain shufflevector+sext (no intrinsic), `_mm_subs_epi16` lowers to the PORTABLE
-// `llvm.ssub.sat.v8i16` (not x86-specific) which Zig's `-|` operator already emits
-// directly on an integer vector, and `_mm_slli_epi16`/`_mm_or_si128` are plain
-// shl/or -- all four are ordinary Zig vector operators below, not extern calls.
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// Verified via clang -O2 -mavx512f -mavx512bw -mavx512vbmi -mavx512vbmi2 -msse4.1
+/// -S -emit-llvm (same protocol as threats_write_avx512.zig): compress is the one op
+/// here that needs a raw intrinsic. `_mm_cvtepi8_epi16`/`_mm512_cvtepi8_epi16` lower to
+/// a plain shufflevector+sext (no intrinsic), `_mm_subs_epi16` lowers to the PORTABLE
+/// `llvm.ssub.sat.v8i16` (not x86-specific) which Zig's `-|` operator already emits
+/// directly on an integer vector, and `_mm_slli_epi16`/`_mm_or_si128` are plain
+/// shl/or -- all four are ordinary Zig vector operators below, not extern calls.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 extern fn @"llvm.x86.avx512.mask.compress.v64i8"(a: V64u8, src: V64u8, mask: V64mask) callconv(.{ .x86_64_sysv = .{} }) V64u8;
 
 const all_squares: V64u8 = blk: {
@@ -49,13 +49,13 @@ fn compressSquares(mask: u64) V64u8 {
     return @"llvm.x86.avx512.mask.compress.v64i8"(all_squares, @splat(0), mask_v);
 }
 
-// Write up to 8 pawn-push moves (from = to - offset for every set bit of to_bb) to
-// moves_ptr[0..8), UNMASKED -- callers must have at least 8 slots of headroom past
-// their current write position (movegen.zig's MoveWriter always does: true legal-move
-// max is 218, the shared scratch buffer is 256). Returns the true count
-// (popCount(to_bb) <= 8, upstream's own asserted bound for pawn pushes); only that
-// many of the 8 written words are meaningful, matching upstream's own unmasked
-// 128-bit store (movegen.cpp:44).
+/// Write up to 8 pawn-push moves (from = to - offset for every set bit of to_bb) to
+/// moves_ptr[0..8), UNMASKED -- callers must have at least 8 slots of headroom past
+/// their current write position (movegen.zig's MoveWriter always does: true legal-move
+/// max is 218, the shared scratch buffer is 256). Returns the true count
+/// (popCount(to_bb) <= 8, upstream's own asserted bound for pawn pushes); only that
+/// many of the 8 written words are meaningful, matching upstream's own unmasked
+/// 128-bit store (movegen.cpp:44).
 pub fn splatPawnMoves(comptime offset: i8, moves_ptr: [*]u16, to_bb: u64) usize {
     const count: usize = @popCount(to_bb);
     const compressed = compressSquares(to_bb);
@@ -69,11 +69,11 @@ pub fn splatPawnMoves(comptime offset: i8, moves_ptr: [*]u16, to_bb: u64) usize 
     return count;
 }
 
-// Write up to 32 moves (from is fixed, to varies over to_bb) to moves_ptr[0..32),
-// UNMASKED -- same headroom contract as splatPawnMoves. Returns the true count
-// (popCount(to_bb) <= 32, upstream's own asserted bound -- a queen can reach at most
-// 27 squares); only that many of the 32 written words are meaningful, matching
-// upstream's own unmasked 512-bit store (movegen.cpp:63).
+/// Write up to 32 moves (from is fixed, to varies over to_bb) to moves_ptr[0..32),
+/// UNMASKED -- same headroom contract as splatPawnMoves. Returns the true count
+/// (popCount(to_bb) <= 32, upstream's own asserted bound -- a queen can reach at most
+/// 27 squares); only that many of the 32 written words are meaningful, matching
+/// upstream's own unmasked 512-bit store (movegen.cpp:63).
 pub fn splatMoves(from: u8, moves_ptr: [*]u16, to_bb: u64) usize {
     const count: usize = @popCount(to_bb);
     const compressed = compressSquares(to_bb);

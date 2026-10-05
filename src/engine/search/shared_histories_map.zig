@@ -75,7 +75,7 @@ pub fn SharedHistoriesMapOf(comptime Entry: type) type {
 
 const testing = std.testing;
 
-// Define the mock entry: a tagged value + a global live-count so free() is observable.
+/// Define the mock entry: a tagged value + a global live-count so free() is observable.
 const MockEntry = struct { thread_count: usize, freed: bool = false };
 var live_entries: usize = 0;
 
@@ -119,12 +119,12 @@ test "deinit frees outstanding entries (no leak of element arrays)" {
     try testing.expectEqual(@as(usize, 0), live_entries);
 }
 
-// Roll back on construct failure. try_emplace inserts the map slot (getOrPut) BEFORE
-// building the value, so if construct fails it must remove that slot again -- otherwise
-// a later at()/clear() would touch an uninitialized Entry (and clear would call free on
-// garbage). A checkAllAllocationFailures gate can't reach this branch (mockConstruct
-// doesn't allocate, so the failing allocator never trips it), so drive it directly with
-// a construct hook that fails.
+/// Roll back on construct failure. try_emplace inserts the map slot (getOrPut) BEFORE
+/// building the value, so if construct fails it must remove that slot again -- otherwise
+/// a later at()/clear() would touch an uninitialized Entry (and clear would call free on
+/// garbage). A checkAllAllocationFailures gate can't reach this branch (mockConstruct
+/// doesn't allocate, so the failing allocator never trips it), so drive it directly with
+/// a construct hook that fails.
 fn mockConstructFail(thread_count: usize) error{OutOfMemory}!MockEntry {
     _ = thread_count;
     return error.OutOfMemory;

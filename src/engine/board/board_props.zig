@@ -46,8 +46,8 @@ fn perftFen(fen: []const u8, chess960: u8, depth: i32) u64 {
 }
 
 const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-// Use Peter Ellis Jones' "Kiwipete" -- a dense tactical node, catching castling / ep /
-// promotion / pin bugs the start position misses.
+/// Use Peter Ellis Jones' "Kiwipete" -- a dense tactical node, catching castling / ep /
+/// promotion / pin bugs the start position misses.
 const kiwipete_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
 
 test "perft: start position matches reference node counts" {
@@ -65,11 +65,11 @@ test "perft: Kiwipete matches reference node counts" {
     try std.testing.expectEqual(@as(u64, 97862), perftFen(kiwipete_fen, 0, 3));
 }
 
-// Add the remaining Chess Programming Wiki perft reference positions. Position 3 is an
-// endgame rich in en-passant + rook checks; positions 4/5 are promotion-heavy
-// (P/p on the 7th/2nd rank) and 5 is asymmetric; these hit make/unmake edge cases
-// (ep capture-square, promotion material-key, castling-rights masking) that the
-// start position and Kiwipete under-cover.
+/// Add the remaining Chess Programming Wiki perft reference positions. Position 3 is an
+/// endgame rich in en-passant + rook checks; positions 4/5 are promotion-heavy
+/// (P/p on the 7th/2nd rank) and 5 is asymmetric; these hit make/unmake edge cases
+/// (ep capture-square, promotion material-key, castling-rights masking) that the
+/// start position and Kiwipete under-cover.
 const cpw3_fen = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
 const cpw4_fen = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
 const cpw5_fen = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
@@ -90,11 +90,11 @@ test "perft: CPW reference positions 3-5 match reference node counts" {
     try std.testing.expectEqual(@as(u64, 62379), perftFen(cpw5_fen, 0, 3));
 }
 
-// Do then immediately undo every legal move, and assert the Position is
-// byte-for-byte the pre-move state -- key, bitboards, board, and piece counts.
-// Perft only checks node COUNTS; this catches state corruption that leaves the
-// count right but the derived state (e.g. an un-restored zobrist key, a stale
-// bitboard, a leaked castling right) subtly wrong.
+/// Do then immediately undo every legal move, and assert the Position is
+/// byte-for-byte the pre-move state -- key, bitboards, board, and piece counts.
+/// Perft only checks node COUNTS; this catches state corruption that leaves the
+/// count right but the derived state (e.g. an un-restored zobrist key, a stale
+/// bitboard, a leaked castling right) subtly wrong.
 fn checkRoundTrip(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -133,10 +133,10 @@ test "make/unmake restores the position byte-exact" {
     try checkRoundTrip(kiwipete_fen); // castling / en passant / promotion / pins
 }
 
-// Parse a FEN into a Position, then format the Position back out, and assert the
-// result equals the input FEN. Exercises the setPosition (fen_parse) -> Position
-// -> formatFen (fen) round-trip on a real parsed position (fen.zig's own test uses
-// a synthetic board), catching any drift between the parse and format sides.
+/// Parse a FEN into a Position, then format the Position back out, and assert the
+/// result equals the input FEN. Exercises the setPosition (fen_parse) -> Position
+/// -> formatFen (fen) round-trip on a real parsed position (fen.zig's own test uses
+/// a synthetic board), catching any drift between the parse and format sides.
 fn checkFenRoundTrip(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -168,11 +168,11 @@ test "FEN parse -> format round-trips" {
     try checkFenRoundTrip(kiwipete_fen);
 }
 
-// Cross-check the movegen and legality leaves against each other: every move the
-// generator emits as legal must also be accepted by the standalone legal() and
-// pseudoLegal() predicates. A disagreement means the extracted legality leaf
-// drifted from the generator's own legality filter (or vice versa) -- a class of
-// bug perft can hide when two errors cancel in the count.
+/// Cross-check the movegen and legality leaves against each other: every move the
+/// generator emits as legal must also be accepted by the standalone legal() and
+/// pseudoLegal() predicates. A disagreement means the extracted legality leaf
+/// drifted from the generator's own legality filter (or vice versa) -- a class of
+/// bug perft can hide when two errors cancel in the count.
 fn checkMoveGenLegalityAgree(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -199,11 +199,11 @@ test "generated legal moves satisfy legal() and pseudoLegal()" {
     try checkMoveGenLegalityAgree(cpw5_fen);
 }
 
-// Predict, without playing the move, whether m delivers check (givesCheck(m)).
-// Validate it against ground truth: play m, ask hasCheckers (is the now-to-move
-// side in check), undo. They must agree for every legal move -- this cross-checks
-// the givesCheck fast path (direct + discovered + castling/ep/promotion check
-// detection) in the legality leaf against the actual post-move state.
+/// Predict, without playing the move, whether m delivers check (givesCheck(m)).
+/// Validate it against ground truth: play m, ask hasCheckers (is the now-to-move
+/// side in check), undo. They must agree for every legal move -- this cross-checks
+/// the givesCheck fast path (direct + discovered + castling/ep/promotion check
+/// detection) in the legality leaf against the actual post-move state.
 fn checkGivesCheck(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -233,10 +233,10 @@ test "givesCheck agrees with the post-move check state" {
     try checkGivesCheck(cpw5_fen);
 }
 
-// Flip the side to move (and clear any en-passant square + rehash the side key)
-// without moving a piece -- a null move; undoing it must restore the position
-// exactly. In between, the side and key must have actually changed. Exercises the
-// move_do null-move path the search's null-move pruning relies on.
+/// Flip the side to move (and clear any en-passant square + rehash the side key)
+/// without moving a piece -- a null move; undoing it must restore the position
+/// exactly. In between, the side and key must have actually changed. Exercises the
+/// move_do null-move path the search's null-move pruning relies on.
 fn checkNullMoveRoundTrip(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -300,8 +300,8 @@ test "repetition detection flags a returned-to position" {
     try std.testing.expect(position.hasRepeated(&p));
 }
 
-// Require the parser to REJECT malformed input with an error message, not crash or
-// silently accept it. Each of these violates a documented FEN invariant.
+/// Require the parser to REJECT malformed input with an error message, not crash or
+/// silently accept it. Each of these violates a documented FEN invariant.
 fn expectRejected(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -326,8 +326,8 @@ test "malformed FENs are rejected, not accepted or crashed" {
     try expectRejected("4k3/8/8/8/8/8/8/4K3 w - z9 0 1"); // bad en-passant square
 }
 
-// Collect FEN characters + separators + a few out-of-band bytes, so random strings drawn
-// from this alphabet hit both the parser's happy path and its reject branches.
+/// Collect FEN characters + separators + a few out-of-band bytes, so random strings drawn
+/// from this alphabet hit both the parser's happy path and its reject branches.
 const fen_alphabet = "PNBRQKpnbrqk12345678/ wb-KQkqabcdefgh36xz0";
 
 // Assert (fuzz) setPosition never crashes / OOBs on arbitrary input -- it

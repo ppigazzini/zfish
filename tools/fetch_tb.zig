@@ -9,7 +9,7 @@ const std = @import("std");
 const Io = std.Io;
 
 const names = [_][]const u8{ "KPvK", "KNvK", "KBvK", "KRvK", "KQvK" };
-// Match the first 4 bytes of a valid file (SF `Magics`): index [type == WDL] -> [0]=DTZ, [1]=WDL.
+/// Match the first 4 bytes of a valid file (SF `Magics`): index [type == WDL] -> [0]=DTZ, [1]=WDL.
 const wdl_magic = [4]u8{ 0x71, 0xE8, 0x23, 0x5D };
 const dtz_magic = [4]u8{ 0xD7, 0x66, 0x0C, 0xA5 };
 const base = "https://tablebase.lichess.ovh/tables/standard";

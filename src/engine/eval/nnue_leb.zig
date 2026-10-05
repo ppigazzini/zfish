@@ -8,13 +8,13 @@
 
 const std = @import("std");
 
-// Decode `count` signed-LEB128 values from `src` into `out`, returning the number of source
-// bytes consumed, or null if `src` runs out first. Mirror read_leb_128_detail: 7 bits per byte,
-// shift masked to 32, sign-extend when the final shift < 32 and bit 0x40 is set.
-//
-// The bound is load-bearing: a .nnue file states its section length and its value count
-// independently, so a corrupt one can promise more values than it carries. ReleaseFast checks
-// neither the slice nor the count, so without this the decode walks off the section.
+/// Decode `count` signed-LEB128 values from `src` into `out`, returning the number of source
+/// bytes consumed, or null if `src` runs out first. Mirror read_leb_128_detail: 7 bits per byte,
+/// shift masked to 32, sign-extend when the final shift < 32 and bit 0x40 is set.
+///
+/// The bound is load-bearing: a .nnue file states its section length and its value count
+/// independently, so a corrupt one can promise more values than it carries. ReleaseFast checks
+/// neither the slice nor the count, so without this the decode walks off the section.
 pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count: usize) ?usize {
     // Do NOT raise runtime safety over this loop, unlike the section framing in
     // nnue_parse.zig. Every access here is bounded by a test this function states itself --
@@ -96,7 +96,7 @@ pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count:
 
 const testing = std.testing;
 
-// Encode a reference signed-LEB128 value (standard) to round-trip against the decoder.
+/// Encode a reference signed-LEB128 value (standard) to round-trip against the decoder.
 fn encodeOne(comptime IntType: type, v: IntType, buf: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     var value: i64 = v;
     while (true) {

@@ -1,18 +1,18 @@
-// Allocate aligned + large pages behind a cross-platform seam.
-//
-// Use no @cImport here: sys/mman.h does not exist on Windows and the macOS SDK headers
-// can't be cross-compiled, so declare the C entry points directly via std.posix / std.c
-// (POSIX) / an extern kernel decl (Windows). Handle the three owned OSes:
-//   - Linux:       mmap + munmap, aligned to 2 MiB, with madvise(MADV_HUGEPAGE).
-//   - macOS:       posix_memalign + free.
-//   - Windows:     _aligned_malloc + _aligned_free (alignment-aware CRT allocator).
+/// Allocate aligned + large pages behind a cross-platform seam.
+///
+/// Use no @cImport here: sys/mman.h does not exist on Windows and the macOS SDK headers
+/// can't be cross-compiled, so declare the C entry points directly via std.posix / std.c
+/// (POSIX) / an extern kernel decl (Windows). Handle the three owned OSes:
+///   - Linux:       mmap + munmap, aligned to 2 MiB, with madvise(MADV_HUGEPAGE).
+///   - macOS:       posix_memalign + free.
+///   - Windows:     _aligned_malloc + _aligned_free (alignment-aware CRT allocator).
 const std = @import("std");
 const builtin = @import("builtin");
 const thread_runtime = @import("thread_runtime");
 
-// Bind the Windows CRT aligned allocator (ucrt/msvcrt via mingw). Unlike posix_memalign the
-// alignment is the SECOND argument, and release the block with _aligned_free -- never plain
-// free, which would corrupt the heap. Reference only on the Windows branch below.
+/// Bind the Windows CRT aligned allocator (ucrt/msvcrt via mingw). Unlike posix_memalign the
+/// alignment is the SECOND argument, and release the block with _aligned_free -- never plain
+/// free, which would corrupt the heap. Reference only on the Windows branch below.
 extern "c" fn _aligned_malloc(size: usize, alignment: usize) ?*anyopaque;
 extern "c" fn _aligned_free(ptr: ?*anyopaque) void;
 
@@ -40,10 +40,10 @@ pub fn stdAlignedFree(ptr: ?*anyopaque) void {
     }
 }
 
-// Return whether the MADV_HUGEPAGE hint is worth issuing on this kernel. WSL kernels
-// accept the advisory but never back the region with huge pages, so the hint only
-// costs cycles there; detect WSL by the kernel release string and skip it. The probe
-// is idempotent and cached after the first call.
+/// Return whether the MADV_HUGEPAGE hint is worth issuing on this kernel. WSL kernels
+/// accept the advisory but never back the region with huge pages, so the hint only
+/// costs cycles there; detect WSL by the kernel release string and skip it. The probe
+/// is idempotent and cached after the first call.
 var thp_hint_decided: bool = false;
 var thp_hint_useful: bool = false;
 
@@ -61,28 +61,28 @@ fn thpHintUseful() bool {
 /// Pin the alignment every large-page block is handed out at: one transparent huge page.
 pub const large_page_alignment: usize = 2 * 1024 * 1024;
 
-// Record base -> mapped length for every block mmapHugeAligned handed out, so the free path
-// can munmap exactly what was mapped. Upstream carries the same registry (a std::map behind a
-// mutex, memory.cpp) for the same reason: munmap needs a length and the caller returns only a
-// pointer. Linux only -- nothing else takes the mmap route.
-//
-// The mutex is not decoration: TT resize, `setoption name Threads`, and the NNUE arenas all
-// allocate and free through here, and a pool teardown frees one block per worker.
+/// Record base -> mapped length for every block mmapHugeAligned handed out, so the free path
+/// can munmap exactly what was mapped. Upstream carries the same registry (a std::map behind a
+/// mutex, memory.cpp) for the same reason: munmap needs a length and the caller returns only a
+/// pointer. Linux only -- nothing else takes the mmap route.
+///
+/// The mutex is not decoration: TT resize, `setoption name Threads`, and the NNUE arenas all
+/// allocate and free through here, and a pool teardown frees one block per worker.
 var large_map_mutex: thread_runtime.Mutex = .{};
 var large_map: std.AutoHashMapUnmanaged(usize, usize) = .empty;
 
 const use_mmap_large_pages = builtin.target.os.tag == .linux;
 
-// Map `size` bytes aligned to 2 MiB, going STRAIGHT to the kernel rather than through the
-// libc allocator (upstream 7ab49b9b). glibc serves a posix_memalign of this size from an
-// arena, and an arena outlives the thread it was created for: a later thread bound to a
-// different NUMA node reuses it and the engine silently runs on remote memory, which is what
-// made `setoption name Threads` twice measurably slower than setting it once.
-//
-// There is no aligned mmap, so over-reserve by one alignment with PROT_NONE, MAP_FIXED the
-// real mapping onto the aligned base inside that reservation, and give the prefix and suffix
-// back. Fall back to a plain unaligned mmap if any step fails -- the alignment is what the
-// huge-page hint wants, not what correctness needs.
+/// Map `size` bytes aligned to 2 MiB, going STRAIGHT to the kernel rather than through the
+/// libc allocator (upstream 7ab49b9b). glibc serves a posix_memalign of this size from an
+/// arena, and an arena outlives the thread it was created for: a later thread bound to a
+/// different NUMA node reuses it and the engine silently runs on remote memory, which is what
+/// made `setoption name Threads` twice measurably slower than setting it once.
+///
+/// There is no aligned mmap, so over-reserve by one alignment with PROT_NONE, MAP_FIXED the
+/// real mapping onto the aligned base inside that reservation, and give the prefix and suffix
+/// back. Fall back to a plain unaligned mmap if any step fails -- the alignment is what the
+/// huge-page hint wants, not what correctness needs.
 fn mmapHugeAligned(size: usize) ?[]align(std.heap.page_size_min) u8 {
     const page_size = std.heap.pageSize();
     if (size >= large_page_alignment and page_size > 0) {
@@ -132,8 +132,8 @@ fn mmapHugeAligned(size: usize) ?[]align(std.heap.page_size_min) u8 {
     ) catch null;
 }
 
-// Take the mmap route and record the mapping. Refuse the allocation if the registry cannot
-// record it rather than hand out a block free() could only leak.
+/// Take the mmap route and record the mapping. Refuse the allocation if the registry cannot
+/// record it rather than hand out a block free() could only leak.
 fn largePagesMmapAlloc(rounded_size: usize) ?*anyopaque {
     const mapped = mmapHugeAligned(rounded_size) orelse return null;
     large_map_mutex.lock();
@@ -145,7 +145,7 @@ fn largePagesMmapAlloc(rounded_size: usize) ?*anyopaque {
     return @ptrCast(mapped.ptr);
 }
 
-// Unmap a block the registry knows, reporting whether it owned it.
+/// Unmap a block the registry knows, reporting whether it owned it.
 fn largePagesMmapFree(ptr: *anyopaque) bool {
     large_map_mutex.lock();
     defer large_map_mutex.unlock();

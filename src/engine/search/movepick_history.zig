@@ -23,19 +23,19 @@ pub const CaptureHistoryRow = [square_nb][piece_type_nb]HistoryEntry;
 pub const PieceToHistoryRow = [square_nb]HistoryEntry;
 pub const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
-// Hold one continuation-history slot: a PieceToHistory page viewed as [piece][square].
+/// Hold one continuation-history slot: a PieceToHistory page viewed as [piece][square].
 pub const ContHistSlot = ?[*]const PieceToHistoryRow;
 
-// View a caller's contHist array as slots. The source is [1] on the qsearch path and [6] in
-// the main search, so keep the length: scoreList unwraps only the slots its kind reads, and
-// a bare many-pointer would let qsearch's single slot be read as six.
+/// View a caller's contHist array as slots. The source is [1] on the qsearch path and [6] in
+/// the main search, so keep the length: scoreList unwraps only the slots its kind reads, and
+/// a bare many-pointer would let qsearch's single slot be read as six.
 pub inline fn contHistSlice(arr: anytype) []const ContHistSlot {
     return @as([*]const ContHistSlot, @ptrCast(arr))[0..arr.len];
 }
 
-// Resolve the pawn-history block for one position: the PIECE_NB consecutive rows at
-// [(pawn_key & mask) * PIECE_NB]. Resolve it ONCE per move list — the key is fixed for
-// the whole list — and index the block per move with pawnHistoryRead.
+/// Resolve the pawn-history block for one position: the PIECE_NB consecutive rows at
+/// [(pawn_key & mask) * PIECE_NB]. Resolve it ONCE per move list — the key is fixed for
+/// the whole list — and index the block per move with pawnHistoryRead.
 pub fn pawnHistoryBlock(shared_history: ?*const SharedHistories, pawn_key: u64) ?[*]const PawnHistoryRow {
     const sh = shared_history orelse return null;
     if (sh.pawn_size == 0) return null;
@@ -57,17 +57,17 @@ pub fn continuationHistoryRead(page: [*]const PieceToHistoryRow, piece: u8, squa
     return @atomicLoad(i16, &page[@as(usize, piece)][@as(usize, square)].value, .monotonic);
 }
 
-// A [piece][square] subscript pair as ONE element index into the same run.
-//
-// The six history planes a quiet move reads are all indexed at the same [piece][to], and
-// each `[piece][square]` lowers to a base displaced by `piece * 64` plus a scaled `square`:
-// the addressing mode carries one term and an add carries the other, six times per move.
-// Naming the element index once leaves `base + index * 2` and the add goes with it.
-//
-// Both rows are plain arrays of a two-byte entry, so a plane IS one contiguous run and the
-// pair is element `piece * square_nb + square` of it. The asserts below hold that -- a
-// padded row would make the flat index silently address the wrong entry, and a wrong
-// history read is a search change no gate reports as one.
+/// A [piece][square] subscript pair as ONE element index into the same run.
+///
+/// The six history planes a quiet move reads are all indexed at the same [piece][to], and
+/// each `[piece][square]` lowers to a base displaced by `piece * 64` plus a scaled `square`:
+/// the addressing mode carries one term and an add carries the other, six times per move.
+/// Naming the element index once leaves `base + index * 2` and the add goes with it.
+///
+/// Both rows are plain arrays of a two-byte entry, so a plane IS one contiguous run and the
+/// pair is element `piece * square_nb + square` of it. The asserts below hold that -- a
+/// padded row would make the flat index silently address the wrong entry, and a wrong
+/// history read is a search change no gate reports as one.
 pub inline fn historyElemIndex(piece: u8, square: u8) usize {
     return @as(usize, piece) * square_nb + @as(usize, square);
 }

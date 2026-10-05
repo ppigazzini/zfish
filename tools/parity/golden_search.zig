@@ -26,9 +26,9 @@ const BestmoveLine = structured_diff.BestmoveLine;
 const parseInfoLine = structured_diff.parseInfoLine;
 const parseBestmove = structured_diff.parseBestmove;
 
-// search-parity: build a per-position (depth, score, nodes, bestmove) fingerprint + TOTAL. bench
-// info/bestmove are on stdout (51 blocks ending in `bestmove`); `Position:` + `Nodes
-// searched` are on stderr. Pair the K-th Position with the K-th stdout block by index.
+/// search-parity: build a per-position (depth, score, nodes, bestmove) fingerprint + TOTAL. bench
+/// info/bestmove are on stdout (51 blocks ending in `bestmove`); `Position:` + `Nodes
+/// searched` are on stderr. Pair the K-th Position with the K-th stdout block by index.
 pub fn buildSearchParity(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{"bench"}, null);
     defer cap.deinit(gpa);
@@ -98,8 +98,8 @@ pub fn buildSearchParity(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 
     return out.toOwnedSlice(gpa);
 }
 
-// perft: emit a `== label ==` header, then SORTED divide lines (byte order == C locale), then the
-// `Nodes searched` total, per position. Divide + total are on stdout.
+/// perft: emit a `== label ==` header, then SORTED divide lines (byte order == C locale), then the
+/// `Nodes searched` total, per position. Divide + total are on stdout.
 pub fn buildPerft(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
@@ -153,8 +153,8 @@ fn lessThanBytes(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
 }
 
-// eval: capture the NNUE trace block from `NNUE network contributions` through `Final evaluation`
-// (inclusive), per position. Read the trace from stderr.
+/// eval: capture the NNUE trace block from `NNUE network contributions` through `Final evaluation`
+/// (inclusive), per position. Read the trace from stderr.
 pub fn buildEval(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
@@ -196,12 +196,12 @@ pub fn buildEval(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// bench-matrix: collect bench node counts for non-default configs (hash size / shallow depth
-// / node limit / bench-perft), each a distinct deterministic code path the default bench
-// (16/1/depth-13, whose count `signature` owns) never exercises. Verify equal to the pristine oracle
-// and bit-exact across build modes (the node-limited config needed the conthistDelta i32-wrap
-// fix -- deep searches otherwise overflow under ReleaseSafe). Use the feed-all-then-quit path
-// safely -- `bench` is synchronous. Regenerate on an upstream/net bump, like the signature.
+/// bench-matrix: collect bench node counts for non-default configs (hash size / shallow depth
+/// / node limit / bench-perft), each a distinct deterministic code path the default bench
+/// (16/1/depth-13, whose count `signature` owns) never exercises. Verify equal to the pristine oracle
+/// and bit-exact across build modes (the node-limited config needed the conthistDelta i32-wrap
+/// fix -- deep searches otherwise overflow under ReleaseSafe). Use the feed-all-then-quit path
+/// safely -- `bench` is synchronous. Regenerate on an upstream/net bump, like the signature.
 const bench_matrix_configs = [_][]const u8{
     "16 1 8", // shallow depth
     "128 1 13", // hash size (a different count from the default depth-13 run -> the TT-sizing path)
@@ -232,15 +232,15 @@ pub fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// nodestime: with `nodestime` set, wall-clock budgets convert to a NODE budget
-// (timeman.zig `npmsec`), so the otherwise non-deterministic time-management path becomes
-// BIT-EXACT -- the `time-mgmt` gate can only band-check the reported ms. Pin the
-// allocation arithmetic across its distinct branches (sudden-death wtime/btime, movestogo,
-// increment, and the movetime hard limit) by the deterministic depth/score/nodes/bestmove
-// the budget yields; the volatile `time`/`nps` fields are dropped. Single thread + node
-// budget -> arch/OS-invariant. Drive the engine via the Interactive read-to-bestmove
-// path since this is an async search -- a feed-all-then-quit pipe would truncate it (the
-// batch hazard the search-modes gate also avoids).
+/// nodestime: with `nodestime` set, wall-clock budgets convert to a NODE budget
+/// (timeman.zig `npmsec`), so the otherwise non-deterministic time-management path becomes
+/// BIT-EXACT -- the `time-mgmt` gate can only band-check the reported ms. Pin the
+/// allocation arithmetic across its distinct branches (sudden-death wtime/btime, movestogo,
+/// increment, and the movetime hard limit) by the deterministic depth/score/nodes/bestmove
+/// the budget yields; the volatile `time`/`nps` fields are dropped. Single thread + node
+/// budget -> arch/OS-invariant. Drive the engine via the Interactive read-to-bestmove
+/// path since this is an async search -- a feed-all-then-quit pipe would truncate it (the
+/// batch hazard the search-modes gate also avoids).
 const NodestimeRow = struct { label: []const u8, cmds: []const u8 };
 pub fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
@@ -301,13 +301,13 @@ pub fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// mate: exercise `go mate N` -- the mate-distance search mode, distinct from the node/depth
-// modes in search-modes (it uses mate-distance pruning and reports `score mate N`). Pin the
-// mate DISTANCE and the mating move+ponder in the fingerprint: a bestmove-only golden would
-// pass an engine that plays the mating move but reports the wrong distance. Each position has a
-// VERIFIED forced mate at <= N, so `go mate N` finds it and stops fast (single thread ->
-// deterministic); a mate-finding regression would instead never emit bestmove and hang the
-// gate to the CI job timeout -- still a failure, just a slower one. Async -> Interactive path.
+/// mate: exercise `go mate N` -- the mate-distance search mode, distinct from the node/depth
+/// modes in search-modes (it uses mate-distance pruning and reports `score mate N`). Pin the
+/// mate DISTANCE and the mating move+ponder in the fingerprint: a bestmove-only golden would
+/// pass an engine that plays the mating move but reports the wrong distance. Each position has a
+/// VERIFIED forced mate at <= N, so `go mate N` finds it and stops fast (single thread ->
+/// deterministic); a mate-finding regression would instead never emit bestmove and hang the
+/// gate to the CI job timeout -- still a failure, just a slower one. Async -> Interactive path.
 const MateRow = struct { label: []const u8, fen: []const u8, n: u8 };
 pub fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const rows = [_]MateRow{
@@ -348,12 +348,12 @@ pub fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// chess960: cover UCI_Chess960 search + castling + eval. `perft` already covers FRC MOVEGEN
-// counts; exercise what it cannot -- FRC castling make/unmake inside a real search,
-// the FRC castling ENCODING (applying the king-to-rook-square move f1g1 = O-O and rendering
-// the resulting position), and the NNUE eval on FRC king placements. Single thread + fixed
-// node budget -> deterministic; FRC castling/eval are arch/OS-invariant. Searches are async
-// (Interactive); `d`/`eval` are synchronous (runEngine batch).
+/// chess960: cover UCI_Chess960 search + castling + eval. `perft` already covers FRC MOVEGEN
+/// counts; exercise what it cannot -- FRC castling make/unmake inside a real search,
+/// the FRC castling ENCODING (applying the king-to-rook-square move f1g1 = O-O and rendering
+/// the resulting position), and the NNUE eval on FRC king placements. Single thread + fixed
+/// node budget -> deterministic; FRC castling/eval are arch/OS-invariant. Searches are async
+/// (Interactive); `d`/`eval` are synchronous (runEngine batch).
 const frc_start = "nrkrbbqn/pppppppp/8/8/8/8/PPPPPPPP/NRKRBBQN w KQkq - 0 1";
 const frc_mid = "qbrnnkrb/pppppppp/8/8/8/8/PPPPPPPP/QBRNNKRB w KGkg - 0 1";
 pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {

@@ -3,12 +3,12 @@
 
 const std = @import("std");
 
-// Hold a blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
-// fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so input
-// reading, like output, never touches the engine's thread pool. Keep the reader's buffer
-// across calls -- its state must not move, so it lives in a module var recovered by
-// @fieldParentPtr. The buffer bounds one REFILL, not one command line; a line that spans
-// several is stitched in readCommandLineAlloc.
+/// Hold a blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
+/// fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so input
+/// reading, like output, never touches the engine's thread pool. Keep the reader's buffer
+/// across calls -- its state must not move, so it lives in a module var recovered by
+/// @fieldParentPtr. The buffer bounds one REFILL, not one command line; a line that spans
+/// several is stitched in readCommandLineAlloc.
 var stdin_threaded = std.Io.Threaded.init_single_threaded;
 var stdin_buffer: [4096]u8 = undefined;
 var stdin_reader: std.Io.File.Reader = undefined;
@@ -22,8 +22,8 @@ fn stdinInterface() *std.Io.Reader {
     return &stdin_reader.interface;
 }
 
-// Return the next command line (caller owns it, freed with the C allocator), or null at
-// end-of-input.
+/// Return the next command line (caller owns it, freed with the C allocator), or null at
+/// end-of-input.
 pub fn readCommandLineAlloc() !?[]u8 {
     const reader = stdinInterface();
     const gpa = std.heap.c_allocator;
@@ -75,7 +75,7 @@ pub fn readCommandLineAlloc() !?[]u8 {
     return try dupeTrimmed(gpa, carry.items);
 }
 
-// Drop the trailing newline/carriage return a GUI may or may not send (Windows sends CRLF).
+/// Drop the trailing newline/carriage return a GUI may or may not send (Windows sends CRLF).
 fn dupeTrimmed(gpa: std.mem.Allocator, line: []const u8) ![]u8 {
     var end = line.len;
     while (end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r')) {

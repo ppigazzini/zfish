@@ -15,8 +15,8 @@
 const std = @import("std");
 const c = @import("libc");
 
-// The raw std.c.malloc AccumulatorStack/RefreshCache blocks below stay on std.c.free;
-// every rendered string here is an owned slice freed through the Allocator interface.
+/// The raw std.c.malloc AccumulatorStack/RefreshCache blocks below stay on std.c.free;
+/// every rendered string here is an owned slice freed through the Allocator interface.
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
@@ -97,8 +97,8 @@ fn accumulatorStackCreate() ?*nnue_acc.AccumulatorStack {
 fn accumulatorStackDestroy(stack: ?*nnue_acc.AccumulatorStack) void {
     _ = stack; // static buffer -- nothing to free
 }
-// Create the AccumulatorCaches: clearRefreshCache clears every cache entry over the
-// caches block from the FT biases (the loaded net).
+/// Create the AccumulatorCaches: clearRefreshCache clears every cache entry over the
+/// caches block from the FT biases (the loaded net).
 pub fn accumulatorCachesCreate() ?*nnue_acc.RefreshCache {
     const buf: *nnue_acc.RefreshCache = @ptrCast(&trace_caches_buf);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.ftPtr() orelse return null));

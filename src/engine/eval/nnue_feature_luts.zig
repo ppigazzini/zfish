@@ -9,9 +9,9 @@
 const std = @import("std");
 const dims = @import("nnue_dimensions");
 
-// Hold the two result shapes BOTH feature sets return. They are not lookup tables, but
-// this is the leaf every feature file already imports, and duplicating a struct across
-// files that must agree on it is how the two silently drift apart.
+/// Hold the two result shapes BOTH feature sets return. They are not lookup tables, but
+/// this is the leaf every feature file already imports, and duplicating a struct across
+/// files that must agree on it is how the two silently drift apart.
 pub const FullAppendChangedLens = struct {
     removed: usize,
     added: usize,
@@ -144,14 +144,14 @@ pub const orient_tbl_half = [64]u32{
     7, 7, 7, 7, 0, 0, 0, 0,
 };
 
-// Fold every term halfMakeIndex adds to the square into one entry per (perspective, king
-// square, piece): upstream bf450596's `offsets`, indexed [perspective * 64 + ksq][piece].
-// The index then costs one xor and one load instead of two xors, two adds and three loads.
-//
-// The xor is only an add in disguise because the carry cannot reach the square's bits:
-// piece_square_index and king_buckets are both multiples of 64 and the orientation is below
-// 64, so the entry's low six bits ARE the orientation. The comptime check below holds that
-// for every entry, and the largest (22527) is what makes u16 lossless.
+/// Fold every term halfMakeIndex adds to the square into one entry per (perspective, king
+/// square, piece): upstream bf450596's `offsets`, indexed [perspective * 64 + ksq][piece].
+/// The index then costs one xor and one load instead of two xors, two adds and three loads.
+///
+/// The xor is only an add in disguise because the carry cannot reach the square's bits:
+/// piece_square_index and king_buckets are both multiples of 64 and the orientation is below
+/// 64, so the entry's low six bits ARE the orientation. The comptime check below holds that
+/// for every entry, and the largest (22527) is what makes u16 lossless.
 pub const half_offsets: [2 * 64][16]u16 align(64) = blk: {
     @setEvalBranchQuota(10_000);
     var table: [2 * 64][16]u16 = undefined;
@@ -180,13 +180,13 @@ pub const orient_tbl_full = [64]i8{
     0, 0, 0, 0, 7, 7, 7, 7,
 };
 
-// Pawn diagonal threats target only knights and rooks now (pawn-pawn relationships moved
-// to the PP_3Wide feature set), so a pawn has 4 valid targets (2 types x 2 colors) instead
-// of 6. Upstream SFNNv16 numValidTargets.
+/// Pawn diagonal threats target only knights and rooks now (pawn-pawn relationships moved
+/// to the PP_3Wide feature set), so a pawn has 4 valid targets (2 types x 2 colors) instead
+/// of 6. Upstream SFNNv16 numValidTargets.
 pub const num_valid_targets = [16]i32{ 0, 4, 10, 8, 8, 10, 0, 0, 0, 4, 10, 8, 8, 10, 0, 0 };
 
-// map[attackerType-1][attackedType-1]. The pawn row (attacker PAWN) now maps only KNIGHT
-// (slot 0) and ROOK (slot 1); PAWN/BISHOP/QUEEN/KING are excluded (-1).
+/// map[attackerType-1][attackedType-1]. The pawn row (attacker PAWN) now maps only KNIGHT
+/// (slot 0) and ROOK (slot 1); PAWN/BISHOP/QUEEN/KING are excluded (-1).
 pub const full_map = [6][6]i32{
     .{ -1, 0, -1, 1, -1, -1 },
     .{ 0, 1, 2, 3, 4, -1 },
@@ -202,14 +202,14 @@ pub const offsets = helper_offsets_and_offsets.second;
 pub const index_lut1 = initIndexLuts();
 pub const index_lut2 = indexLut2Array();
 
-// Colocate one attacker's whole lookup state -- its flattened index_lut1 row
-// ([attacked * 2 + less] addresses one element with one scaled index) and a
-// merged u16 `offsets[from] + index_lut2[from][to]` plane -- so a threat index
-// costs one block base plus two loads instead of three loads behind three
-// separately scaled bases. The merge fits u16 with a wide margin: the largest
-// per-from offset (queen, 1455) plus the largest within-from index still sits
-// far below 65535, and the builder asserts every sum. The source tables above
-// remain the comptime input; only the blocks are referenced at runtime.
+/// Colocate one attacker's whole lookup state -- its flattened index_lut1 row
+/// ([attacked * 2 + less] addresses one element with one scaled index) and a
+/// merged u16 `offsets[from] + index_lut2[from][to]` plane -- so a threat index
+/// costs one block base plus two loads instead of three loads behind three
+/// separately scaled bases. The merge fits u16 with a wide margin: the largest
+/// per-from offset (queen, 1455) plus the largest within-from index still sits
+/// far below 65535, and the builder asserts every sum. The source tables above
+/// remain the comptime input; only the blocks are referenced at runtime.
 pub const ThreatRouteBlock = extern struct {
     lut1: [32]u32,
     comb: [64 * 64]u16,
@@ -234,25 +234,25 @@ fn buildThreatRouteBlocks() [16]ThreatRouteBlock {
 pub const threat_route_blocks = buildThreatRouteBlocks();
 
 pub const ps_nb: u32 = 11 * 64;
-// FullThreats::Dimensions (SFNNv16): the threat feature count, also PP_3Wide's IndexBase.
+/// FullThreats::Dimensions (SFNNv16): the threat feature count, also PP_3Wide's IndexBase.
 pub const full_dimensions: u32 = dims.threat_dimensions;
 
 // ---- PP_3Wide (pawn-pair) feature set ---------------------------------------
 // Pawn ids run over ranks 2-7 (48 squares) per color: id = 48*color + (square - SQ_A2).
 pub const pp_pawn_ids: u32 = dims.pp_pawn_ids;
-// Dimensions = C(PawnIds, 2): every unordered pair of pawn ids.
+/// Dimensions = C(PawnIds, 2): every unordered pair of pawn ids.
 pub const pp_dimensions: u32 = dims.pp_dimensions;
-// Pair features are concatenated onto threats in the shared weight array; the first pair
-// feature sits at index full_dimensions (== ThreatFeatureSet::Dimensions).
+/// Pair features are concatenated onto threats in the shared weight array; the first pair
+/// feature sits at index full_dimensions (== ThreatFeatureSet::Dimensions).
 pub const pp_index_base: u32 = dims.pp_index_base;
 pub const threat_and_pp_dimensions: u32 = dims.threat_and_pp_dimensions;
 
 pub const rank1_bb: u64 = 0xff;
 pub const rank8_bb: u64 = rank1_bb << (8 * 7);
 
-// PawnPairBB[s]: the squares that can host a pawn forming a pair with a pawn on s -- own
-// file plus the two adjacent files, restricted to ranks 2-7, excluding s. Color-independent.
-// Upstream bitboard.h PawnPairBB; built here since it is consumed only by the PP feature set.
+/// PawnPairBB[s]: the squares that can host a pawn forming a pair with a pawn on s -- own
+/// file plus the two adjacent files, restricted to ranks 2-7, excluding s. Color-independent.
+/// Upstream bitboard.h PawnPairBB; built here since it is consumed only by the PP feature set.
 pub const pawn_pair_bb: [64]u64 = blk: {
     @setEvalBranchQuota(200000);
     var out: [64]u64 = undefined;

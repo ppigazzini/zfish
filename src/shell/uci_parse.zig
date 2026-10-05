@@ -56,24 +56,24 @@ pub const ParsedLimits = struct {
     clamp_notice: ?[]u8 = null,
 };
 
-// Bound a clock at the point it ENTERS, which is the only place that knows it came from
-// outside.
-//
-// wtime, btime, winc, binc and movetime used to reach timeman's arithmetic as raw i64s off the
-// wire, and that arithmetic is asked to hold a number the protocol never had a right to send.
-// Confirmed on this tree before the bound, ReleaseSafe:
-//
-//   go wtime 4000000000000000000 winc 4000000000000000000 btime 1000
-//     thread panic: integer overflow, inside the search worker
-//
-// Illegal behaviour in Zig, so the shipped ReleaseFast build wraps silently into a garbage
-// budget instead. Neither is a defect in timeman: `time_left` multiplies a clock by up to 51
-// (`inc * (mtg - 1)` and `overhead * (2 + mtg)`), and no formula written in i64 can hold an
-// arbitrary i64 times fifty.
-//
-// The bound is 1e12 ms -- about 31 years, past any real time control, and far enough below the
-// top that every product timeman forms stays inside an i64. A negative clock is bounded at 0
-// for the same reason: `go wtime -50000000000` underflows the same expression.
+/// Bound a clock at the point it ENTERS, which is the only place that knows it came from
+/// outside.
+///
+/// wtime, btime, winc, binc and movetime used to reach timeman's arithmetic as raw i64s off the
+/// wire, and that arithmetic is asked to hold a number the protocol never had a right to send.
+/// Confirmed on this tree before the bound, ReleaseSafe:
+///
+///   go wtime 4000000000000000000 winc 4000000000000000000 btime 1000
+///     thread panic: integer overflow, inside the search worker
+///
+/// Illegal behaviour in Zig, so the shipped ReleaseFast build wraps silently into a garbage
+/// budget instead. Neither is a defect in timeman: `time_left` multiplies a clock by up to 51
+/// (`inc * (mtg - 1)` and `overhead * (2 + mtg)`), and no formula written in i64 can hold an
+/// arbitrary i64 times fifty.
+///
+/// The bound is 1e12 ms -- about 31 years, past any real time control, and far enough below the
+/// top that every product timeman forms stays inside an i64. A negative clock is bounded at 0
+/// for the same reason: `go wtime -50000000000` underflows the same expression.
 pub const max_clock_ms: i64 = 1_000_000_000_000;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
@@ -285,9 +285,9 @@ fn parseInt(comptime T: type, token: ?[]const u8) ?T {
     return std.fmt.parseInt(T, text, 10) catch null;
 }
 
-// Parse a u64 the way upstream's `is >> uint64_t` (strtoull) does: a leading `-` is not an
-// error but a modular negation, so `go nodes -5` yields 2^64 - 5 and searches rather than
-// terminating. `parseInt(u64)` rejects the sign, so handle it explicitly.
+/// Parse a u64 the way upstream's `is >> uint64_t` (strtoull) does: a leading `-` is not an
+/// error but a modular negation, so `go nodes -5` yields 2^64 - 5 and searches rather than
+/// terminating. `parseInt(u64)` rejects the sign, so handle it explicitly.
 fn parseU64Wrapping(token: ?[]const u8) ?u64 {
     const text = token orelse return null;
     if (text.len != 0 and text[0] == '-') {
@@ -429,9 +429,9 @@ test "parseLimits bounds movestogo and mate where they enter" {
     }
 }
 
-// Fuzz to prove neither parser crashes / OOBs on arbitrary input -- it returns a struct
-// (parseLimits) or an ok/not-ok result (parsePosition). Use a deterministic PRNG so it
-// is reproducible in `zig build test`.
+/// Fuzz to prove neither parser crashes / OOBs on arbitrary input -- it returns a struct
+/// (parseLimits) or an ok/not-ok result (parsePosition). Use a deterministic PRNG so it
+/// is reproducible in `zig build test`.
 const uci_alphabet = "go position startpos fen moves wtime btime depth nodes infinite ponder 0123456789 /-KQkqabcdefgh ";
 
 test "fuzz: the UCI parsers tolerate arbitrary input" {

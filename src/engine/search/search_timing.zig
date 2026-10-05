@@ -23,9 +23,9 @@
 
 const std = @import("std");
 
-// Hold the instant the current search began, 0 when no search is being timed. Separate
-// from the total so a bestmove with no matching start (a path that emits without going
-// through time-management init) contributes nothing rather than a garbage interval.
+/// Hold the instant the current search began, 0 when no search is being timed. Separate
+/// from the total so a bestmove with no matching start (a path that emits without going
+/// through time-management init) contributes nothing rather than a garbage interval.
 var start_ms: std.atomic.Value(i64) = .init(0);
 var total_ms: std.atomic.Value(i64) = .init(0);
 

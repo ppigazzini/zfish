@@ -68,8 +68,8 @@
 const std = @import("std");
 const linux = std.os.linux;
 
-// A relative import: this tool is built with `zig build-exe` from tools/, so the probe needs
-// no module wiring in build.zig to be reachable.
+/// A relative import: this tool is built with `zig build-exe` from tools/, so the probe needs
+/// no module wiring in build.zig to be reachable.
 const probe = @import("perf_counters_probe.zig");
 const Counters = probe.Counters;
 const runOnce = probe.runOnce;

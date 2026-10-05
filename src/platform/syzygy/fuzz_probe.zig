@@ -33,11 +33,11 @@ const knight_pt = board_core.knight_pt;
 const queen_pt = board_core.queen_pt;
 const king_pt = board_core.king_pt;
 
-// Pair each material configuration with a position OF that material: the probe looks the key up,
-// and a position that misses returns before reading a byte. Cover the four shapes the parse
-// branches on -- pieces only, one leading pawn, several leading pawns, and pawns on BOTH sides
-// (`pp`, which is what routes a second group through the `order[1]` arm and reads a second order
-// nibble per file).
+/// Pair each material configuration with a position OF that material: the probe looks the key up,
+/// and a position that misses returns before reading a byte. Cover the four shapes the parse
+/// branches on -- pieces only, one leading pawn, several leading pawns, and pawns on BOTH sides
+/// (`pp`, which is what routes a second group through the `order[1]` arm and reads a second order
+/// nibble per file).
 const configs = [_]struct { pieces: []const u8, fen: []const u8 }{
     .{ .pieces = &.{ king_pt, queen_pt, king_pt }, .fen = "8/8/8/4k3/8/8/8/K5Q1 w - - 0 1" },
     .{ .pieces = &.{ king_pt, pawn_pt, king_pt }, .fen = "8/8/8/4k3/8/8/4P3/K7 w - - 0 1" },
@@ -46,7 +46,8 @@ const configs = [_]struct { pieces: []const u8, fen: []const u8 }{
     .{ .pieces = &.{ king_pt, knight_pt, king_pt, pawn_pt }, .fen = "8/4p3/8/4k3/8/2N5/8/K7 w - - 0 1" },
 };
 
-// Compute the material key registry.register files the table under, from the same per-color counts.
+/// Compute the material key registry.register files the table under, from the same per-color
+/// counts.
 fn materialKey(pieces: []const u8) u64 {
     var k2: usize = 1;
     while (k2 < pieces.len and pieces[k2] != king_pt) k2 += 1;
@@ -56,15 +57,15 @@ fn materialKey(pieces: []const u8) u64 {
     return position.computeMaterialKey(&counts, 16);
 }
 
-// Report the PARSE's verdict beside the probe's. A test that counts only answers cannot tell "the
-// parse refused every image" from "the parse accepted and the probe then refused the value it
-// decoded" -- and since a table built from arbitrary bytes decodes a legitimate WDL score only
-// rarely, those two want different assertions below.
+/// Report the PARSE's verdict beside the probe's. A test that counts only answers cannot tell "the
+/// parse refused every image" from "the parse accepted and the probe then refused the value it
+/// decoded" -- and since a table built from arbitrary bytes decodes a legitimate WDL score only
+/// rarely, those two want different assertions below.
 const Run = struct { result: ProbeResult, parsed: bool };
 
-// Parse one image into a registered table, publish it, and probe -- the body both the fuzz target
-// and the coverage test below run. `image` must be 64-aligned: loadFile hands `set` a 64-aligned
-// base and the data-section rounding in `set` is written against that.
+/// Parse one image into a registered table, publish it, and probe -- the body both the fuzz target
+/// and the coverage test below run. `image` must be 64-aligned: loadFile hands `set` a 64-aligned
+/// base and the data-section rounding in `set` is written against that.
 fn runOne(image: *const [1024]u8) Run {
     const cfg = configs[image[0] % configs.len];
     const len = 16 + (@as(usize, image[1]) % (image.len - 16));
@@ -92,9 +93,9 @@ fn runOne(image: *const [1024]u8) Run {
     return .{ .result = wdl.probeFen(cfg.fen.ptr, cfg.fen.len, 0), .parsed = parsed };
 }
 
-// Require the parse-then-probe chain to refuse or answer, never to trap. The verdict is
-// unconstrained -- a table built out of fuzzer bytes decodes to nonsense -- so the property is
-// only that every index the chain takes stays inside what the file provided.
+/// Require the parse-then-probe chain to refuse or answer, never to trap. The verdict is
+/// unconstrained -- a table built out of fuzzer bytes decodes to nonsense -- so the property is
+/// only that every index the chain takes stays inside what the file provided.
 fn fuzzProbeTable(_: void, smith: *std.testing.Smith) anyerror!void {
     var image: [1024]u8 align(64) = undefined;
     smith.bytesWithHash(&image, 2);

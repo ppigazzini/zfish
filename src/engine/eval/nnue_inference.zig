@@ -12,8 +12,8 @@ const weight_storage = @import("nnue_weight_storage.zig");
 const nnue_affine = @import("nnue_affine.zig");
 const nnue_parse = @import("nnue_parse.zig");
 
-// Take the layer activations from their own leaf (nnue_activations.zig): the squared and
-// linear clipped ReLUs, in every shape upstream emits for them.
+/// Take the layer activations from their own leaf (nnue_activations.zig): the squared and
+/// linear clipped ReLUs, in every shape upstream emits for them.
 const nnue_activations = @import("nnue_activations.zig");
 const sqrClippedReLU = nnue_activations.sqrClippedReLU;
 const clippedReLU = nnue_activations.clippedReLU;
@@ -42,18 +42,18 @@ pub const TraceOutput = struct {
     correct_bucket: usize,
 };
 
-// Run the NNUE network layer forward pass (NetworkArchitecture::propagate, SFNNv15). Layers:
-// fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 64->32) -> {ac_sqr_1, ac_1}
-// -> fc_2 (affine 128->1), plus the fwdOut skip term. Bit-exact with the
-// SSSE3 integer path. Weights are int8 in the SSSE3-scrambled layout;
-// biases int32 linear. WeightScaleBits=6.
-// Return the layer arrays with their true 64-byte alignment (each is its own
-// page_alloc block, >=64-aligned by contract): the affine kernels need the
-// alignment in the type so non-VEX SSE can fold weight loads into pmaddubsw's
-// m128 operand instead of paying a separate movdqu per chunk.
-//
-// Spell the unwrap `orelse unreachable`, not `.?`: the two lower differently, and `.?` here
-// reschedules aarch64's propagateBucket, a tier with no instruction lane to price it.
+/// Run the NNUE network layer forward pass (NetworkArchitecture::propagate, SFNNv15). Layers:
+/// fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 64->32) -> {ac_sqr_1, ac_1}
+/// -> fc_2 (affine 128->1), plus the fwdOut skip term. Bit-exact with the
+/// SSSE3 integer path. Weights are int8 in the SSSE3-scrambled layout;
+/// biases int32 linear. WeightScaleBits=6.
+/// Return the layer arrays with their true 64-byte alignment (each is its own
+/// page_alloc block, >=64-aligned by contract): the affine kernels need the
+/// alignment in the type so non-VEX SSE can fold weight loads into pmaddubsw's
+/// m128 operand instead of paying a separate movdqu per chunk.
+///
+/// Spell the unwrap `orelse unreachable`, not `.?`: the two lower differently, and `.?` here
+/// reschedules aarch64's propagateBucket, a tier with no instruction lane to price it.
 fn layerBiases(bucket: usize, idx: usize) [*]align(cache_line_size) const i32 {
     return @ptrCast(@alignCast(layerPtr(bucket, idx, .biases) orelse unreachable));
 }
@@ -121,8 +121,8 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     return @intCast(@divTrunc(fwd_sum * (600 * 16), 128 * 64 * 2));
 }
 
-// Return the net's value for the side to move: the bucket's forward pass scaled by
-// output_scale. SFNNv17 dropped the psqt half, so this is the positional output alone.
+/// Return the net's value for the side to move: the bucket's forward pass scaled by
+/// output_scale. SFNNv17 dropped the psqt half, so this is the positional output alone.
 pub fn evaluate(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
@@ -133,9 +133,9 @@ pub fn evaluate(
     return @divTrunc(evaluateBucketRaw(pos, accumulator_stack, cache, bucket), output_scale);
 }
 
-// Score every layer stack over ONE transform -- upstream's trace_evaluate. The transformer
-// has no bucket-dependent output since SFNNv17, so the input to every bucket is the same
-// bytes and the same non-zero record; only the forward pass differs.
+/// Score every layer stack over ONE transform -- upstream's trace_evaluate. The transformer
+/// has no bucket-dependent output since SFNNv17, so the input to every bucket is the same
+/// bytes and the same non-zero record; only the forward pass differs.
 pub fn traceEvaluate(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
@@ -159,8 +159,8 @@ pub fn traceEvaluate(
     return output;
 }
 
-// Run the transform and then one bucket's forward pass, unscaled -- the body of upstream's
-// Network::evaluate before its division by OutputScale.
+/// Run the transform and then one bucket's forward pass, unscaled -- the body of upstream's
+/// Network::evaluate before its division by OutputScale.
 fn evaluateBucketRaw(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,

@@ -27,14 +27,14 @@ const off = worker_layout.worker_off;
 // Use the FT pointer (network.zig-owned inference storage) to let the full
 // constructor fill the histories exactly as the worker-clear reset.
 
-// Treat reductions as the [256]u16 table in WorkerLayout; take the fixed element
-// count directly rather than deriving it from the neighbouring field offsets.
+/// Treat reductions as the [256]u16 table in WorkerLayout; take the fixed element
+/// count directly rather than deriving it from the neighbouring field offsets.
 const reductions_count: usize = 256;
 
-// Collect the inputs the Worker constructor receives, unpacked from the SharedState
-// plus the thread parameters. Point each reference member at the exact referent it
-// must bind to (the SharedState members), as a typed pointer: the referent types are
-// all reachable from here, so the seam needs no integer round-trip.
+/// Collect the inputs the Worker constructor receives, unpacked from the SharedState
+/// plus the thread parameters. Point each reference member at the exact referent it
+/// must bind to (the SharedState members), as a typed pointer: the referent types are
+/// all reachable from here, so the seam needs no integer round-trip.
 pub const WorkerCtorInputs = struct {
     shared_history: *search_driver.SharedHistories, // sharedState.sharedHistories.at(numa)
     threads: *worker_layout.ThreadPool, // sharedState.threads
@@ -46,9 +46,9 @@ pub const WorkerCtorInputs = struct {
     numa_access_token: usize,
 };
 
-// Write the constructor-set members into a (zeroed) Worker buffer. The caller
-// owns the buffer (aligned_large_pages, worker_size bytes) and must zero it and
-// run the worker-clear reset afterwards.
+/// Write the constructor-set members into a (zeroed) Worker buffer. The caller
+/// owns the buffer (aligned_large_pages, worker_size bytes) and must zero it and
+/// run the worker-clear reset afterwards.
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     const wl = worker_layout.WorkerLayout.fromPtr(worker);
 
@@ -84,11 +84,11 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     nnue_acc.setStackSize(&wl.accumulator_stack, 1);
 }
 
-// Construct a full Worker into a caller-owned, zeroed buffer: write the
-// constructor field set, then run the worker-clear reset pieces (histories,
-// shared history, reductions, refresh cache). The SharedHistories the thread clears
-// its range of is `in.shared_history` -- the same referent the reference member binds
-// to. Pass `biases` as the network feature-transformer bias array.
+/// Construct a full Worker into a caller-owned, zeroed buffer: write the
+/// constructor field set, then run the worker-clear reset pieces (histories,
+/// shared history, reductions, refresh cache). The SharedHistories the thread clears
+/// its range of is `in.shared_history` -- the same referent the reference member binds
+/// to. Pass `biases` as the network feature-transformer bias array.
 fn constructWorkerInto(buf: [*]u8, in: WorkerCtorInputs, biases: [*]const i16) void {
     const wl = worker_layout.WorkerLayout.fromPtr(buf);
     writeConstructorFields(buf, in);
@@ -98,10 +98,10 @@ fn constructWorkerInto(buf: [*]u8, in: WorkerCtorInputs, biases: [*]const i16) v
     nnue_acc.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
 
-// Enter production: construct a complete Worker into `buf` (a large-page
-// block of at least worker_size bytes). Zero the block, write the constructor
-// field set, and run the worker-clear reset pieces, called by the engine graph.
-// Source the feature-transformer biases from the network.
+/// Enter production: construct a complete Worker into `buf` (a large-page
+/// block of at least worker_size bytes). Zero the block, write the constructor
+/// field set, and run the worker-clear reset pieces, called by the engine graph.
+/// Source the feature-transformer biases from the network.
 pub fn constructFull(buf: ?*anyopaque, in: WorkerCtorInputs) void {
     const base: [*]u8 = @ptrCast(buf orelse return);
     @memset(base[0..worker_layout.worker_size], 0);

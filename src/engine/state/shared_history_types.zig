@@ -3,13 +3,13 @@ const correction_bundle = @import("correction_bundle");
 
 const CorrectionBundle = correction_bundle.CorrectionBundle;
 
-// Lay out SharedHistories, reached through the Worker's shared_history pointer.
-// correctionHistory and pawnHistory are each a DynStats { size_t size; T* data } (an
-// 8-byte data pointer), followed by the two index masks. pawn page = [16][64] int16
-// (1024); correction page = [2]CorrectionBundle. cont_data is the fixed-size
-// continuationHistory table ([2][2] of PieceToHistory pages), shared per NUMA node with
-// relaxed-atomic entries -- upstream binds it by reference (search.h:342). shared_history.zig
-// re-exports this as its canonical SharedHistories.
+/// Lay out SharedHistories, reached through the Worker's shared_history pointer.
+/// correctionHistory and pawnHistory are each a DynStats { size_t size; T* data } (an
+/// 8-byte data pointer), followed by the two index masks. pawn page = [16][64] int16
+/// (1024); correction page = [2]CorrectionBundle. cont_data is the fixed-size
+/// continuationHistory table ([2][2] of PieceToHistory pages), shared per NUMA node with
+/// relaxed-atomic entries -- upstream binds it by reference (search.h:342). shared_history.zig
+/// re-exports this as its canonical SharedHistories.
 pub const SharedHistories = struct {
     corr_size: usize,
     corr_data: [*][2]CorrectionBundle,

@@ -36,9 +36,9 @@ pub const TimemanInput = struct {
     ponder: u8,
 };
 
-// Stand for "no time bound" in the two budget members. Half of i64's range rather than all of
-// it, so the comparisons that add to a budget (`elapsed > maximum`, and the sums
-// search_id_loop forms from it) cannot overflow the way an actual maxInt would.
+/// Stand for "no time bound" in the two budget members. Half of i64's range rather than all of
+/// it, so the comparisons that add to a budget (`elapsed > maximum`, and the sums
+/// search_id_loop forms from it) cannot overflow the way an actual maxInt would.
 pub const no_bound: i64 = std.math.maxInt(i64) / 2;
 
 pub const TimemanOutput = struct {

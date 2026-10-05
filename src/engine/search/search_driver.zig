@@ -32,8 +32,8 @@ const search_common = @import("search_common");
 const captVal = search_common.captVal;
 const captEntry = search_common.captEntry;
 const history_mod = @import("history");
-// History-update functions live in the history leaf; aliased for the
-// search bodies and re-exported onward for position.zig's surface.
+/// History-update functions live in the history leaf; aliased for the
+/// search bodies and re-exported onward for position.zig's surface.
 pub const updateQuietHistoriesWorker = history_mod.updateQuietHistoriesWorker;
 pub const setContHist = history_mod.setContHist;
 pub const ageMainHistory = history_mod.ageMainHistory;
@@ -44,7 +44,7 @@ pub const updateContinuationHistories = history_mod.updateContinuationHistories;
 pub const updateAllStats = history_mod.updateAllStats;
 pub const updateCorrectionHistory = history_mod.updateCorrectionHistory;
 
-// Alias the types.
+/// Alias the types.
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
 const DirtyPiece = position_types.DirtyPiece;
@@ -57,7 +57,7 @@ const WorkerHistories = worker_histories.WorkerHistories;
 
 // Alias the worker_histories dimensions.
 
-// Alias the board ops -- the leaves position.zig re-exports, named here.
+/// Alias the board ops -- the leaves position.zig re-exports, named here.
 const isDraw = repetition.isDraw;
 const legal = legality.legal;
 
@@ -72,9 +72,9 @@ comptime {
     std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
 }
 
-// Alias the shared-history accessors here -- the arena lives in the shared_history
-// leaf -- and re-export the public management functions onward so
-// position.zig's surface is unchanged.
+/// Alias the shared-history accessors here -- the arena lives in the shared_history
+/// leaf -- and re-export the public management functions onward so
+/// position.zig's surface is unchanged.
 pub const SharedHistories = shared_history.SharedHistories;
 pub const SharedHistoriesMap = shared_history.SharedHistoriesMap;
 pub const clearSharedHistory = shared_history.clearSharedHistory;
@@ -102,9 +102,9 @@ pub const PVMoves = search_types.PVMoves;
 pub const RootPVMoves = search_types.RootPVMoves;
 pub const RootMove = search_types.RootMove;
 
-// Alias the driver-facing emitters to keep call sites unqualified: the search
-// UCI-reporting family (info/bestmove/currmove lines + the MultiPV walk) lives in the
-// search_emit leaf, and the driver calls these emitters directly.
+/// Alias the driver-facing emitters to keep call sites unqualified: the search
+/// UCI-reporting family (info/bestmove/currmove lines + the MultiPV walk) lives in the
+/// search_emit leaf, and the driver calls these emitters directly.
 const search_emit = @import("search_emit");
 const ssEmitNoMoves = search_emit.ssEmitNoMoves;
 const ssEmitBestmove = search_emit.ssEmitBestmove;
@@ -112,21 +112,21 @@ const ssEmitPv = search_emit.ssEmitPv;
 
 const SsCtx = search_ctx.SsCtx;
 
-// Provide the search-manager driver callbacks that touch only the Worker graph (via worker_layout)
-// + the accumulator stack; the driver (workerStartSearching) calls them locally.
-// Alias the Worker-graph accessors here to keep call sites; they live in the search_ctx leaf.
+/// Provide the search-manager driver callbacks that touch only the Worker graph (via worker_layout)
+/// + the accumulator stack; the driver (workerStartSearching) calls them locally.
+/// Alias the Worker-graph accessors here to keep call sites; they live in the search_ctx leaf.
 const workerRootMove0 = search_ctx.workerRootMove0;
 const workerTT = search_ctx.workerTT;
 
-// Reset per search: clear the worker's accumulator stack + last-iteration PV.
-// Alias the iterative-deepening orchestration helpers (they live in the search_id
-// leaf) so workerStartSearching/iterativeDeepening call sites are unchanged.
+/// Reset per search: clear the worker's accumulator stack + last-iteration PV.
+/// Alias the iterative-deepening orchestration helpers (they live in the search_id
+/// leaf) so workerStartSearching/iterativeDeepening call sites are unchanged.
 const ssPrologue = search_id.ssPrologue;
 const ssSetStop = search_id.ssSetStop;
 const ssShouldBusywait = search_id.ssShouldBusywait;
 const ssSetPrevScores = search_id.ssSetPrevScores;
 
-// Test best->rootMoves[0].pv.size()==1 && extract_ponder_from_tt(worker->tt, worker->rootPos).
+/// Test best->rootMoves[0].pv.size()==1 && extract_ponder_from_tt(worker->tt, worker->rootPos).
 fn ssPvOneAndPonder(wl: *worker_layout.WorkerLayout, best: *const worker_layout.WorkerLayout) u8 {
     const pv = &workerRootMove0(best).pv;
     if (pv.length != 1) return 0;
@@ -142,10 +142,10 @@ const ssWaitFinished = search_id.ssWaitFinished;
 const ssGetBestThread = search_id.ssGetBestThread;
 const ssNpmsecAdvance = search_id.ssNpmsecAdvance;
 
-// Drive the workerStartSearching control flow. The leaf helpers run the individual
-// time-management, thread-pool, skill, and UCI-output operations.
-// Alias iterative deepening back for workerStartSearching (the only caller) + the
-// position.zig entry re-export; it lives in the search_id_loop leaf.
+/// Drive the workerStartSearching control flow. The leaf helpers run the individual
+/// time-management, thread-pool, skill, and UCI-output operations.
+/// Alias iterative deepening back for workerStartSearching (the only caller) + the
+/// position.zig entry re-export; it lives in the search_id_loop leaf.
 const search_id_loop = @import("search_id_loop.zig");
 pub const iterativeDeepening = search_id_loop.iterativeDeepening;
 
@@ -225,18 +225,18 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 
 const QCtx = search_ctx.QCtx;
 
-// Run the update-seldepth step: selDepth tracks the deepest ply reached, used
-// only for UCI reporting. Bump the cached field when this ply is deeper.
-// Alias the node-level accumulator / do-move / eval helpers here so the qsearch/search
-// recursion call sites are unchanged; they live in the search_acc leaf.
+/// Run the update-seldepth step: selDepth tracks the deepest ply reached, used
+/// only for UCI reporting. Bump the cached field when this ply is deeper.
+/// Alias the node-level accumulator / do-move / eval helpers here so the qsearch/search
+/// recursion call sites are unchanged; they live in the search_acc leaf.
 const verifyDoMove = search_acc.verifyDoMove;
 const verifyUndoMove = search_acc.verifyUndoMove;
 const legalContains = search_acc.legalContains;
 
-// extractPonderFromTt: make the best move, probe the TT for a reply
-// stored there, append it to the PV if it is a legal move, unmake. Return
-// whether a ponder move was found (pv length > 1). The tt context (table base,
-// cluster count, generation) is handed over by the caller.
+/// extractPonderFromTt: make the best move, probe the TT for a reply
+/// stored there, append it to the PV if it is a legal move, unmake. Return
+/// whether a ponder move was found (pv length > 1). The tt context (table base,
+/// cluster count, generation) is handed over by the caller.
 pub fn extractPonderFromTt(pv: *RootPVMoves, table: [*]tt.TtCluster, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
     const move = pv.at(0);
     var st: StateInfo = undefined;
@@ -263,13 +263,13 @@ pub fn extractPonderFromTt(pv: *RootPVMoves, table: [*]tt.TtCluster, cluster_cou
 // is indexed by. Near the 50-move boundary it perturbs the key so positions
 // differing only in rule50 hash apart.
 
-// Fetch the stable per-search Worker state once and assemble the QCtx threaded
-// through the whole (q)search recursion.
+/// Fetch the stable per-search Worker state once and assemble the QCtx threaded
+/// through the whole (q)search recursion.
 const buildCtx = search_setup.buildCtx;
 
-// Alias root-search bookkeeping + time/stop control (checkTime / rootUpdate /
-// rootTtMove / rootInList / searchStopped / inLastIterPv) back under the names the
-// search bodies call; they live in the search_control leaf now.
+/// Alias root-search bookkeeping + time/stop control (checkTime / rootUpdate /
+/// rootTtMove / rootInList / searchStopped / inLastIterPv) back under the names the
+/// search bodies call; they live in the search_control leaf now.
 const search_control = @import("search_control.zig");
 const checkTime = search_control.checkTime;
 const rootUpdate = search_control.rootUpdate;
@@ -289,8 +289,8 @@ const inLastIterPv = search_control.inLastIterPv;
 
 // pos.capture(m): match an occupied target (non-castling) or en passant; exclude pure promotions.
 
-// Alias quiescence search + shared PV/search primitives back so the main search +
-// driver call sites are unchanged; they live in the search_qsearch leaf now.
+/// Alias quiescence search + shared PV/search primitives back so the main search +
+/// driver call sites are unchanged; they live in the search_qsearch leaf now.
 const search_qsearch = @import("search_qsearch.zig");
 pub const isShuffling = search_qsearch.isShuffling;
 const adjustKey50 = search_qsearch.adjustKey50;
@@ -305,8 +305,8 @@ const adjustKey50 = search_qsearch.adjustKey50;
 // Alias the ID-loop root-move / skill / mate helpers (they now live in the search_id leaf);
 // iterativeDeepening drives them through these aliases.
 
-// Alias the main alpha-beta search back for the iterative-deepening driver + entry
-// glue; it lives in the search_main leaf now.
+/// Alias the main alpha-beta search back for the iterative-deepening driver + entry
+/// glue; it lives in the search_main leaf now.
 const search_main = @import("search_main.zig");
 
 // Compute the three quiet-history entries for `move` from the table bases and

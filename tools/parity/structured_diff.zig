@@ -27,7 +27,7 @@ fn nextInt(t: *Tokenizer) ?i64 {
     return std.fmt.parseInt(i64, tok, 10) catch null;
 }
 
-// Hold one parsed `info` line. Absent fields stay null; `pv` is the move-list tail (a slice of `line`).
+/// Hold one parsed `info` line. Absent fields stay null; `pv` is the move-list tail (a slice of `line`).
 pub const InfoLine = struct {
     depth: ?i64 = null,
     seldepth: ?i64 = null,
@@ -102,8 +102,8 @@ fn diffIntField(name: []const u8, g: ?i64, l: ?i64) bool {
     return true;
 }
 
-// Provide pure predicates (no I/O -> unit-testable): does any parsed field differ? structuredFieldDiff
-// prints the per-field breakdown for the same decision, so these mirror its "any differ" result.
+/// Provide pure predicates (no I/O -> unit-testable): does any parsed field differ? structuredFieldDiff
+/// prints the per-field breakdown for the same decision, so these mirror its "any differ" result.
 fn infoLinesDiffer(g: InfoLine, l: InfoLine) bool {
     return !optEql(g.depth, l.depth) or !optEql(g.seldepth, l.seldepth) or
         !optEql(g.multipv, l.multipv) or g.score_kind != l.score_kind or
@@ -116,10 +116,10 @@ fn bestmoveLinesDiffer(g: BestmoveLine, l: BestmoveLine) bool {
     return !std.mem.eql(u8, g.bestmove, l.bestmove) or !std.mem.eql(u8, g.ponder, l.ponder);
 }
 
-// Print the field-level delta of a differing line pair. Return true iff the pair was a
-// recognized (info / bestmove) shape AND at least one PARSED field differs -- if the lines
-// differ only in an un-parsed field (wdl / time / nps), return false so the caller keeps the
-// raw `< / >` fallback rather than claiming "no field differs".
+/// Print the field-level delta of a differing line pair. Return true iff the pair was a
+/// recognized (info / bestmove) shape AND at least one PARSED field differs -- if the lines
+/// differ only in an un-parsed field (wdl / time / nps), return false so the caller keeps the
+/// raw `< / >` fallback rather than claiming "no field differs".
 fn structuredFieldDiff(golden_line: []const u8, live_line: []const u8) bool {
     if (parseInfoLine(golden_line)) |g| {
         const l = parseInfoLine(live_line) orelse return false;
@@ -156,8 +156,8 @@ fn structuredFieldDiff(golden_line: []const u8, live_line: []const u8) bool {
     return false;
 }
 
-// Print the first ~40 differing lines, in `diff`-ish `< golden` / `> live` form, each followed (when the
-// pair is a parseable search line) by the structured field-level delta.
+/// Print the first ~40 differing lines, in `diff`-ish `< golden` / `> live` form, each followed (when the
+/// pair is a parseable search line) by the structured field-level delta.
 pub fn printDiff(golden: []const u8, live: []const u8) void {
     var g = lines(golden);
     var l = lines(live);

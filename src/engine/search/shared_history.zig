@@ -26,46 +26,46 @@ pub inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
     return w.shared_history.?;
 }
 
-// Name one worker's share of a striped table: which slice, and out of how many.
-//
-// ONE value rather than two adjacent `usize` parameters, and that is the whole reason it
-// exists. Transposed, `(index, total)` is still two counts and still type-checks, and the
-// damage is silent in the direction that matters: the stripes cover the whole array only if
-// every index asks exactly once against the same total. A swap breaks that with no bound and
-// no diagnostic in the way -- at a total of 8 and an index of 3 it computes a start of
-// `8 * size / 3`, past the end, and `fillI16` writes there; at the single-worker case the
-// bench runs, it divides by zero. Neither is checked in ReleaseFast.
-//
-// It costs nothing to carry: two usizes in a struct with no methods travel in the same two
-// registers the two parameters did, and this is off every hot path -- three calls per worker
-// clear, none of them per node.
+/// Name one worker's share of a striped table: which slice, and out of how many.
+///
+/// ONE value rather than two adjacent `usize` parameters, and that is the whole reason it
+/// exists. Transposed, `(index, total)` is still two counts and still type-checks, and the
+/// damage is silent in the direction that matters: the stripes cover the whole array only if
+/// every index asks exactly once against the same total. A swap breaks that with no bound and
+/// no diagnostic in the way -- at a total of 8 and an index of 3 it computes a start of
+/// `8 * size / 3`, past the end, and `fillI16` writes there; at the single-worker case the
+/// bench runs, it divides by zero. Neither is checked in ReleaseFast.
+///
+/// It costs nothing to carry: two usizes in a struct with no methods travel in the same two
+/// registers the two parameters did, and this is off every hot path -- three calls per worker
+/// clear, none of them per node.
 pub const WorkerShare = struct {
     index: usize,
     total: usize,
 };
 
-// Partition `size` entries by numa: [start, end).
+/// Partition `size` entries by numa: [start, end).
 inline fn dynRange(size: usize, share: WorkerShare) struct { start: usize, end: usize } {
     const start = share.index * size / share.total;
     const end = if (share.index + 1 == share.total) size else (share.index + 1) * size / share.total;
     return .{ .start = start, .end = end };
 }
 
-// Clear a SharedHistories: fill correctionHistory entries (each [2]CorrectionBundle, 8 int16)
-// to -5 and pawnHistory pages (each a [16][64] int16 page) to -1338, over
-// this thread's numa partition.
-// Lane count for every int16 history broadcast fill: 32 lanes == 512 bits, which LLVM lowers to
-// one store per iteration on AVX-512 and to a short unrolled run of narrower stores below that.
-// A width is tuned for the tier it was measured on -- re-measure before changing it.
+/// Clear a SharedHistories: fill correctionHistory entries (each [2]CorrectionBundle, 8 int16)
+/// to -5 and pawnHistory pages (each a [16][64] int16 page) to -1338, over
+/// this thread's numa partition.
+/// Lane count for every int16 history broadcast fill: 32 lanes == 512 bits, which LLVM lowers to
+/// one store per iteration on AVX-512 and to a short unrolled run of narrower stores below that.
+/// A width is tuned for the tier it was measured on -- re-measure before changing it.
 const fill_i16_lanes = 32;
 
-// Broadcast-store fill of a flat int16 range. The clear is striped (disjoint per worker) so a
-// plain store is race-free, but the non-zero fill value is not a byte-memset and the toolchain
-// leaves a scalar `dst[i] = v` loop scalar (L13). An explicit @Vector broadcast store vectorizes
-// it -- this is the whole cost of workerClear, and the fill is bit-identical.
-//
-// Shared with the per-Worker table clears in `history`, which fill the same element type to
-// their own non-zero defaults; keep one broadcast-width choice for every int16 history fill.
+/// Broadcast-store fill of a flat int16 range. The clear is striped (disjoint per worker) so a
+/// plain store is race-free, but the non-zero fill value is not a byte-memset and the toolchain
+/// leaves a scalar `dst[i] = v` loop scalar (L13). An explicit @Vector broadcast store vectorizes
+/// it -- this is the whole cost of workerClear, and the fill is bit-identical.
+///
+/// Shared with the per-Worker table clears in `history`, which fill the same element type to
+/// their own non-zero defaults; keep one broadcast-width choice for every int16 history fill.
 pub inline fn fillI16(dst: [*]i16, start: usize, stop: usize, comptime val: i16) void {
     const V = fill_i16_lanes;
     const vv: @Vector(V, i16) = @splat(val);
@@ -74,8 +74,8 @@ pub inline fn fillI16(dst: [*]i16, start: usize, stop: usize, comptime val: i16)
     while (i < stop) : (i += 1) dst[i] = val;
 }
 
-// Fill a whole int16 table. The per-Worker clears own their tables outright (no numa
-// striping), so they want the range-free spelling.
+/// Fill a whole int16 table. The per-Worker clears own their tables outright (no numa
+/// striping), so they want the range-free spelling.
 pub inline fn fillI16Slice(dst: []i16, comptime val: i16) void {
     fillI16(dst.ptr, 0, dst.len, val);
 }
@@ -99,13 +99,13 @@ pub fn clearSharedHistory(shared: *SharedHistories, share: WorkerShare) void {
     }
 }
 
-// Construct one node's SharedHistories. Allocate the two DynStats arrays
-// from large pages (corr: [2]CorrectionBundle elements; pawn: [16][64] int16 pages,
-// exposed as a flat int16 array) and fill in the size fields + index masks.
-// `thread_count` is nextPowerOfTwo(threads on the node), so the counts are powers of two
-// and the masks are (count - 1). Element strides come from the same types the
-// search reads the histories through, so the layouts match; the COUNT logic is shared
-// with shared_histories.zig (sharedHistoriesSizes).
+/// Construct one node's SharedHistories. Allocate the two DynStats arrays
+/// from large pages (corr: [2]CorrectionBundle elements; pawn: [16][64] int16 pages,
+/// exposed as a flat int16 array) and fill in the size fields + index masks.
+/// `thread_count` is nextPowerOfTwo(threads on the node), so the counts are powers of two
+/// and the masks are (count - 1). Element strides come from the same types the
+/// search reads the histories through, so the layouts match; the COUNT logic is shared
+/// with shared_histories.zig (sharedHistoriesSizes).
 pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHistories {
     const sizes = shared_hist.sharedHistoriesSizes(thread_count);
     const corr_bytes = sizes.corr * @sizeOf([2]CorrectionBundle);
@@ -135,8 +135,8 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
     };
 }
 
-// Release a SharedHistories' two large-page arrays — the free hook the
-// sharedHists map (SharedHistoriesMap) calls per element on erase/clear.
+/// Release a SharedHistories' two large-page arrays — the free hook the
+/// sharedHists map (SharedHistoriesMap) calls per element on erase/clear.
 pub fn deinitSharedHistories(sh: *SharedHistories) void {
     page_alloc.free(@ptrCast(sh.corr_data));
     page_alloc.free(@ptrCast(sh.pawn_data));
@@ -144,12 +144,12 @@ pub fn deinitSharedHistories(sh: *SharedHistories) void {
     sh.* = undefined;
 }
 
-// Define the engine `sharedHists` member: NumaIndex -> SharedHistories, built with the
-// large-page-backed construct/free hooks.
+/// Define the engine `sharedHists` member: NumaIndex -> SharedHistories, built with the
+/// large-page-backed construct/free hooks.
 pub const SharedHistoriesMap = shared_histories_map.SharedHistoriesMapOf(SharedHistories);
 
-// Read a SharedHistories and confirm its four size fields match the sizing for
-// `thread_count`.
+/// Read a SharedHistories and confirm its four size fields match the sizing for
+/// `thread_count`.
 pub fn verifySharedHistories(shared: *const SharedHistories, thread_count: usize) bool {
     return shared_hist.verifySizes(
         shared.corr_size,
@@ -160,37 +160,37 @@ pub fn verifySharedHistories(shared: *const SharedHistories, thread_count: usize
     );
 }
 
-// Return the pawn_entry(pos) row base: pawnHistory[pawn_key & mask] is a [16][64] page.
+/// Return the pawn_entry(pos) row base: pawnHistory[pawn_key & mask] is a [16][64] page.
 pub inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i16 {
     const idx: usize = @intCast(pos.st.pawn_key & @as(u64, shared.pawn_hist_size_minus1));
     return shared.pawn_data + idx * hist_pieceto;
 }
 
-// Return the correctionHistory[key & sizeMinus1][us] bundle. Private on purpose -- see the
-// four accessors below, which are the only callers.
+/// Return the correctionHistory[key & sizeMinus1][us] bundle. Private on purpose -- see the
+/// four accessors below, which are the only callers.
 inline fn corrRow(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
     const idx: usize = @intCast(key & @as(u64, shared.size_minus1));
     return &shared.corr_data[idx];
 }
 
-// Weld each correction key to the counter it selects.
-//
-// The four counters live in one bundle and are selected by four DIFFERENT Zobrist keys --
-// pawn, minor-piece, and one non-pawn key per colour. While the row lookup took a bare key
-// and the field was picked afterwards, the pairing was a convention held by nothing:
-//
-//     corrRow(shared, pos.st.pawn_key)[c].minor      // compiles
-//
-// and it does not fault. It returns a REAL counter of the wrong kind, from a row the wrong
-// key chose, so the correction is a plausible wrong number and every value gate agrees.
-// Eight call sites across two files each restated the pairing by hand.
-//
-// Give each pair one accessor that reads its own key AND its own field. Neither half is a
-// parameter any more, so the pairing IS the signature and there is nothing left to
-// transpose. A key newtype -- the sibling's route -- is the wrong instrument in Zig: a
-// Zobrist key is XORed on every `do_move`, so it is COMPUTED WITH, which is the shape
-// docs/08-idiomatic-zig.md's cost rule says not to wrap, and with no operator overloading
-// every XOR would become a method call.
+/// Weld each correction key to the counter it selects.
+///
+/// The four counters live in one bundle and are selected by four DIFFERENT Zobrist keys --
+/// pawn, minor-piece, and one non-pawn key per colour. While the row lookup took a bare key
+/// and the field was picked afterwards, the pairing was a convention held by nothing:
+///
+///     corrRow(shared, pos.st.pawn_key)[c].minor      // compiles
+///
+/// and it does not fault. It returns a REAL counter of the wrong kind, from a row the wrong
+/// key chose, so the correction is a plausible wrong number and every value gate agrees.
+/// Eight call sites across two files each restated the pairing by hand.
+///
+/// Give each pair one accessor that reads its own key AND its own field. Neither half is a
+/// parameter any more, so the pairing IS the signature and there is nothing left to
+/// transpose. A key newtype -- the sibling's route -- is the wrong instrument in Zig: a
+/// Zobrist key is XORed on every `do_move`, so it is COMPUTED WITH, which is the shape
+/// docs/08-idiomatic-zig.md's cost rule says not to wrap, and with no operator overloading
+/// every XOR would become a method call.
 pub inline fn pawnCorrEntry(shared: *SharedHistories, pos: *const Position, c: usize) *i16 {
     return &corrRow(shared, pos.st.pawn_key)[c].pawn;
 }

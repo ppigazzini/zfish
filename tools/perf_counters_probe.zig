@@ -28,9 +28,9 @@ pub const Counters = struct {
         return @as(f64, @floatFromInt(self.instructions)) / @as(f64, @floatFromInt(self.cycles));
     }
 
-    // Report misses per retired branch. A miss COUNT cannot say whether a surplus is more
-    // branches or worse prediction of the same ones, and those two call for opposite fixes:
-    // one is a code-shape problem, the other a data-dependence problem.
+    /// Report misses per retired branch. A miss COUNT cannot say whether a surplus is more
+    /// branches or worse prediction of the same ones, and those two call for opposite fixes:
+    /// one is a code-shape problem, the other a data-dependence problem.
     pub fn branchMissRate(self: Counters) f64 {
         if (self.branches == 0) return 0;
         return @as(f64, @floatFromInt(self.branch_misses)) / @as(f64, @floatFromInt(self.branches));

@@ -52,22 +52,22 @@ fn memberThreadpoolNew() ?*worker_layout.ThreadPool {
     tp.* = .{};
     return tp;
 }
-// Trigger the NNUE load into the Zig-owned storage. There is no engine
-// `network` member -- the worker network resolver / eval / verify read the
-// global FT storage directly.
+/// Trigger the NNUE load into the Zig-owned storage. There is no engine
+/// `network` member -- the worker network resolver / eval / verify read the
+/// global FT storage directly.
 fn loadNetwork(binary_dir: []const u8) void {
     network_port.load(binary_dir, "");
 }
 // Hold updateContext + onVerifyNetwork INLINE in the engine object (stable address
 // for the worker managers / verify emit to bind via accessor), placement-constructed.
 
-// Reserve the UpdateContext slot. The search emit calls its onUpdateFull/onBestmove
-// (set by init_search_update_listeners) and binds this slot via the accessor. Take 240 as
-// a generous upper bound on sizeof(UpdateContext).
+/// Reserve the UpdateContext slot. The search emit calls its onUpdateFull/onBestmove
+/// (set by init_search_update_listeners) and binds this slot via the accessor. Take 240 as
+/// a generous upper bound on sizeof(UpdateContext).
 pub const update_context_size: usize = 240;
-// Reserve the onVerifyNetwork slot; take 64 as a safe upper bound on its size.
-// Set onVerifyNetwork to print_info_string (interactive) or a no-op (quiet), called
-// on a network verify message.
+/// Reserve the onVerifyNetwork slot; take 64 as a safe upper bound on its size.
+/// Set onVerifyNetwork to print_info_string (interactive) or a no-op (quiet), called
+/// on a network verify message.
 pub const verify_network_fn_size: usize = 64;
 
 /// Define the buffer-resident engine object: `main` allocates a `@sizeOf(EngineObject)`-byte
@@ -120,11 +120,11 @@ pub const EngineObject = struct {
     }
 };
 
-// Hold the side Position/TT storage the engine object uses. File-scope it here so the
-// accessors own them. Size each block from the type it is cast to, never from a literal:
-// setPosition zeroes worker_layout.position_size bytes from positionPtr(), and @ptrCast
-// checks no length, so a block shorter than its type is overrun into whichever global the
-// linker places next -- silently, in every build mode.
+/// Hold the side Position/TT storage the engine object uses. File-scope it here so the
+/// accessors own them. Size each block from the type it is cast to, never from a literal:
+/// setPosition zeroes worker_layout.position_size bytes from positionPtr(), and @ptrCast
+/// checks no length, so a block shorter than its type is overrun into whichever global the
+/// linker places next -- silently, in every build mode.
 var side_pos_storage: [@sizeOf(position_types.Position)]u8 align(64) = @splat(0);
 var side_tt_storage: [@sizeOf(worker_layout.TranspositionTable)]u8 align(64) = @splat(0);
 

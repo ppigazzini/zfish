@@ -135,10 +135,10 @@ pub fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchSt
     return search.correctionValue(pcv, micv, wnpcv, bnpcv, cch2, cch4, cch6, m_ok);
 }
 
-// Live in the board zone now (move_do.adjustKey50): upstream keeps adjust_key50 on
-// Position itself (position.h:322), and doMove's own exact-key TT prefetch needs it
-// without reaching into search. Re-exported here so this file's and search_main.zig's/
-// search_driver.zig's existing `search_qsearch.adjustKey50` call sites are unchanged.
+/// Live in the board zone now (move_do.adjustKey50): upstream keeps adjust_key50 on
+/// Position itself (position.h:322), and doMove's own exact-key TT prefetch needs it
+/// without reaching into search. Re-exported here so this file's and search_main.zig's/
+/// search_driver.zig's existing `search_qsearch.adjustKey50` call sites are unchanged.
 pub const adjustKey50 = move_do.adjustKey50;
 
 /// Mirror upstream `template<NodeType> qsearch<PV>/<NonPV>`: the node type is comptime, and

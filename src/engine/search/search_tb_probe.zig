@@ -21,11 +21,11 @@ const Position = position_types.Position;
 const SearchStack = search_types.SearchStack;
 const QCtx = search_ctx.QCtx;
 
-// Force a check of time on the next occasion after a TB probe (search.cpp:917);
-// calls_cnt is null off the main thread, mirroring upstream's is_mainthread()
-// guard. Keep the store out of line: the TB block never runs on a default build
-// (cardinality == 0), and an inline write to the counter perturbs the node
-// body's register allocation.
+/// Force a check of time on the next occasion after a TB probe (search.cpp:917);
+/// calls_cnt is null off the main thread, mirroring upstream's is_mainthread()
+/// guard. Keep the store out of line: the TB block never runs on a default build
+/// (cardinality == 0), and an inline write to the counter perturbs the node
+/// body's register allocation.
 noinline fn tbForceTimeCheck(ctx: *const QCtx) void {
     if (ctx.time_state.calls_cnt) |cc| cc.* = 0;
 }
