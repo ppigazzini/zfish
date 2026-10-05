@@ -402,6 +402,9 @@ meaning, write that:
   `var prng: std.Random.DefaultPrng = .init(seed);` — so the type is read once, on the
   name. `try .init(…)` carries the result type through; `.init(…) catch …` does not, so
   that one form keeps the type in front of `.init`.
+- Round up to a multiple with `@divCeil(x, a) * a`, new in 0.17. It neither overflows on
+  the `+ a - 1` of the C form nor assumes a power of two, which `std.mem.alignForward`
+  does — and in a fast build that assumption is unchecked.
 
 ## Keep memory safety where the input is not yours
 

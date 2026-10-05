@@ -64,7 +64,7 @@ pub const psq_feature_dimensions: usize = 22528;
 pub const cache_line_bytes: usize = 64;
 
 fn roundUp(x: usize, a: usize) usize {
-    return (x + a - 1) / a * a;
+    return @divCeil(x, a) * a;
 }
 
 // Count the elements of the feature-transformer arrays. The threat weight region holds
