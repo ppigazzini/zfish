@@ -25,28 +25,28 @@ const value_draw: i32 = 0;
 const castling_move_type: u16 = 3 << 14;
 const en_passant_move_type: u16 = 2 << 14;
 
-// Correct and extend the PV of a root move holding a tablebase score -- upstream
-// syzygy_extend_pv (search.cpp:2096). Hold the search PV while each move keeps the best available
-// rank, truncate at the first move that does not, then walk toward mate on the top-ranked
-// (minimal-DTZ) move. The mate is optimal only for simple endgames such as KRvK.
-//
-// Write through the caller's ROOT PV list, which grows: a mate walk is bounded by mate, a draw
-// or the clock, never by a ply count.
-//
-// Walk one live position forward from the root. `isDraw`/`isRepetition` read the state history,
-// so a position rebuilt from a FEN answers both wrongly.
+/// Correct and extend the PV of a root move holding a tablebase score -- upstream
+/// syzygy_extend_pv (search.cpp:2096). Hold the search PV while each move keeps the best available
+/// rank, truncate at the first move that does not, then walk toward mate on the top-ranked
+/// (minimal-DTZ) move. The mate is optimal only for simple endgames such as KRvK.
+///
+/// Write through the caller's ROOT PV list, which grows: a mate walk is bounded by mate, a draw
+/// or the clock, never by a ply count.
+///
+/// Walk one live position forward from the root. `isDraw`/`isRepetition` read the state history,
+/// so a position rebuilt from a FEN answers both wrongly.
 pub const ExtendPvResult = tb_extend_port.ExtendPvResult;
 
-// Bound the walk to half the Move Overhead while a clock runs, so extending cannot spend the
-// move's time. Upstream: `2 * multiPV * elapsed >= moveOverhead`.
-//
-// DIVIDE the budget by the number of PV lines rather than granting it to each: under MultiPV
-// every reported line is extended, so a per-line half-overhead let N lines spend N/2 of it and
-// lose on time. With the divisor, the whole report stays inside the same half.
-//
-// `use_deadline` is FALSE under `nodestime` even with a clock running, because the walk's cost
-// there is do_move calls the global node counter never sees -- the clock cannot advance from
-// them, so aborting on wall time only makes the reported PV nondeterministic.
+/// Bound the walk to half the Move Overhead while a clock runs, so extending cannot spend the
+/// move's time. Upstream: `2 * multiPV * elapsed >= moveOverhead`.
+///
+/// DIVIDE the budget by the number of PV lines rather than granting it to each: under MultiPV
+/// every reported line is extended, so a per-line half-overhead let N lines spend N/2 of it and
+/// lose on time. With the divisor, the whole report stays inside the same half.
+///
+/// `use_deadline` is FALSE under `nodestime` even with a clock running, because the walk's cost
+/// there is do_move calls the global node counter never sees -- the clock cannot advance from
+/// them, so aborting on wall time only makes the reported PV nondeterministic.
 const ExtendDeadline = struct {
     start_ms: i64,
     move_overhead: i32,
@@ -60,8 +60,8 @@ const ExtendDeadline = struct {
     }
 };
 
-// Score a move by how much it restricts the opponent, breaking DTZ ties: charge 1 per reply and
-// 100 per reply that captures. Upstream folds this into tbRank before ranking.
+/// Score a move by how much it restricts the opponent, breaking DTZ ties: charge 1 per reply and
+/// 100 per reply that captures. Upstream folds this into tbRank before ranking.
 fn opponentMobilityPenalty(scratch: *ScratchPosition, raw_move: u16) !i32 {
     try scratch.doMove(raw_move);
     defer position_port.undoMove(scratch.pos, raw_move);

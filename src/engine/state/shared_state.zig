@@ -24,9 +24,9 @@ pub fn SharedStateOf(
 
         const Self = @This();
 
-        // Bind the three live references the worker actually uses; options
-        // and network are read elsewhere (the global OptionsModel + the FT
-        // storage), not through SharedState.
+        /// Bind the three live references the worker actually uses; options
+        /// and network are read elsewhere (the global OptionsModel + the FT
+        /// storage), not through SharedState.
         pub fn init(
             threads: *Threads,
             tt: *TranspositionTable,

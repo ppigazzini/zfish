@@ -36,20 +36,20 @@ const Header = struct {
     description: []const u8,
 };
 
-// Report a load that failed AFTER it began overwriting the live weights, and stop naming the
-// net it replaced.
-//
-// The parse reads each section straight into the live object, so a file with a well-formed
-// header and a wrong section later leaves the network half this file and half the last one.
-// Leaving the recorded name alone then made that record a lie, and everything downstream
-// trusts it: `verify` compares it against the option and passes, and `load` SKIPS a path equal
-// to it -- so re-selecting the net the engine says it has was a silent no-op and the engine
-// went on evaluating with the wreck. Measured on a net truncated to 5% with bytes xor'd inside
-// the feature transformer: startpos `eval` read +0.10 after re-selecting the shipped net,
-// against +0.03 clean.
-//
-// Clearing it makes the record true. The engine then either reloads on the next selection or
-// refuses to search, which are the two states this seam already knows how to be in.
+/// Report a load that failed AFTER it began overwriting the live weights, and stop naming the
+/// net it replaced.
+///
+/// The parse reads each section straight into the live object, so a file with a well-formed
+/// header and a wrong section later leaves the network half this file and half the last one.
+/// Leaving the recorded name alone then made that record a lie, and everything downstream
+/// trusts it: `verify` compares it against the option and passes, and `load` SKIPS a path equal
+/// to it -- so re-selecting the net the engine says it has was a silent no-op and the engine
+/// went on evaluating with the wreck. Measured on a net truncated to 5% with bytes xor'd inside
+/// the feature transformer: startpos `eval` read +0.10 after re-selecting the shipped net,
+/// against +0.03 clean.
+///
+/// Clearing it makes the record true. The engine then either reloads on the next selection or
+/// refuses to search, which are the two states this seam already knows how to be in.
 fn clearLoadedAfterPartialWrite() bool {
     setLoadedState("", "");
     return false;
@@ -108,14 +108,14 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 // storage above (always resident after a network load) and runs the Zig accumulator
 // transform.
 
-// Parse the feature transformer into the Zig-owned storage and return the bytes
-// consumed (leading component hash + the LEB-coded params). The parse is the sole
-// source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
-// at the end of loadNetworkBytes verifies the consumed count).
-// Refuse a failed weight-storage allocation with the byte count and a clean exit --
-// upstream's report_failed_allocation (memory.h). A signal is not a diagnosable refusal, and
-// this is the last frame that still knows what could not be allocated; tt.zig reports its own
-// failure the same way.
+/// Parse the feature transformer into the Zig-owned storage and return the bytes
+/// consumed (leading component hash + the LEB-coded params). The parse is the sole
+/// source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
+/// at the end of loadNetworkBytes verifies the consumed count).
+/// Refuse a failed weight-storage allocation with the byte count and a clean exit --
+/// upstream's report_failed_allocation (memory.h). A signal is not a diagnosable refusal, and
+/// this is the last frame that still knows what could not be allocated; tt.zig reports its own
+/// failure the same way.
 fn reportFailedAllocation(bytes: usize) noreturn {
     std.debug.print("Failed to allocate {d} bytes.\n", .{bytes});
     std.process.exit(1);
@@ -140,9 +140,9 @@ fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
     return true;
 }
 
-// Parse this bucket's affine layers into the Zig-owned storage (skip the leading
-// architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
-// consumed. The parse is the sole source.
+/// Parse this bucket's affine layers into the Zig-owned storage (skip the leading
+/// architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
+/// consumed. The parse is the sole source.
 fn loadLayer(bucket: usize, blob: []const u8) usize {
     var pos: usize = 4; // architecture component hash
     // A blob too short to hold the hash cannot be sliced past it; reject rather than trap.

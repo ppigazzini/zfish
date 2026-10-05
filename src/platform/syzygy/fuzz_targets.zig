@@ -18,10 +18,10 @@ const decode = @import("decode.zig");
 const decode_header = @import("decode_header.zig");
 const probe = @import("probe.zig");
 
-// Give the PairsData the group state setSizes reads (`group_len` terminator -> `group_idx`
-// entry -> tb_size). Keep the values small and self-consistent: the point is to fuzz the FILE
-// bytes, not to fuzz zfish's own already-parsed state, and an absurd tb_size only starves the
-// header parse of the branches worth exploring.
+/// Give the PairsData the group state setSizes reads (`group_len` terminator -> `group_idx`
+/// entry -> tb_size). Keep the values small and self-consistent: the point is to fuzz the FILE
+/// bytes, not to fuzz zfish's own already-parsed state, and an absurd tb_size only starves the
+/// header parse of the branches worth exploring.
 fn seedGroups(d: *probe.PairsData, seed: u8) void {
     d.group_len = @splat(0);
     d.group_idx = @splat(0);
@@ -30,10 +30,10 @@ fn seedGroups(d: *probe.PairsData, seed: u8) void {
     d.group_idx[1] = @as(u64, seed) + 1;
 }
 
-// Require setSizes to survive arbitrary header bytes. It must return error.CorruptTable or fill
-// a PairsData whose every region lies inside the buffer it was given -- checked explicitly here,
-// because "did not crash" is a weaker claim than "stayed in bounds" and only the latter is what
-// the probe path then relies on.
+/// Require setSizes to survive arbitrary header bytes. It must return error.CorruptTable or fill
+/// a PairsData whose every region lies inside the buffer it was given -- checked explicitly here,
+/// because "did not crash" is a weaker claim than "stayed in bounds" and only the latter is what
+/// the probe path then relies on.
 fn fuzzSetSizes(_: void, smith: *std.testing.Smith) anyerror!void {
     var raw: [256]u8 = undefined;
     smith.bytesWithHash(&raw, 2);
@@ -71,7 +71,7 @@ fn fuzzSetSizes(_: void, smith: *std.testing.Smith) anyerror!void {
     }
 }
 
-// Report whether `part` lies wholly inside `whole`, by address.
+/// Report whether `part` lies wholly inside `whole`, by address.
 fn within(whole: []const u8, part: []const u8) bool {
     if (part.len == 0) return true;
     const lo = @intFromPtr(whole.ptr);
@@ -84,11 +84,11 @@ test "fuzz: setSizes rejects or bounds arbitrary header bytes" {
     try std.testing.fuzz({}, fuzzSetSizes, .{});
 }
 
-// Require decompressPairs to survive a fuzzer-built table. Parse a header out of the input,
-// then hand the decoder whatever remains as its sparse index / block lengths / compressed data
-// and probe it at fuzzer-chosen indices. This is the path that runs INSIDE the search, so it
-// deliberately carries no blanket runtime safety -- which makes it exactly the path whose
-// explicit bounds need a fuzzer behind them.
+/// Require decompressPairs to survive a fuzzer-built table. Parse a header out of the input,
+/// then hand the decoder whatever remains as its sparse index / block lengths / compressed data
+/// and probe it at fuzzer-chosen indices. This is the path that runs INSIDE the search, so it
+/// deliberately carries no blanket runtime safety -- which makes it exactly the path whose
+/// explicit bounds need a fuzzer behind them.
 fn fuzzDecompressPairs(_: void, smith: *std.testing.Smith) anyerror!void {
     var raw: [512]u8 = undefined;
     smith.bytesWithHash(&raw, 4);
@@ -121,7 +121,7 @@ fn fuzzDecompressPairs(_: void, smith: *std.testing.Smith) anyerror!void {
     }
 }
 
-// Take up to `n` bytes at `cut`, advancing it; empty once the buffer is spent.
+/// Take up to `n` bytes at `cut`, advancing it; empty once the buffer is spent.
 fn slice(buf: []const u8, cut: *usize, n: usize) []const u8 {
     if (cut.* >= buf.len) return &.{};
     const take = @min(n, buf.len - cut.*);

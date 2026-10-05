@@ -67,11 +67,11 @@ fn processSliders(
     }
 }
 
-// Count a threatened queen as a threat-feature only when the slider is itself a queen; every
-// other threatened type always counts. Mirrors upstream `can_slider_threat`. Rejecting here is what
-// keeps the dirty-threat list to the set the feature indexer accepts -- the combinations
-// filtered out are exactly those fullMakeIndex maps out of range and the accumulator then
-// discards, so recording them was pure work.
+/// Count a threatened queen as a threat-feature only when the slider is itself a queen; every other
+/// threatened type always counts. Mirrors upstream `can_slider_threat`. Rejecting here is what
+/// keeps the dirty-threat list to the set the feature indexer accepts -- the combinations filtered
+/// out are exactly those fullMakeIndex maps out of range and the accumulator then discards, so
+/// recording them was pure work.
 fn canSliderThreat(pc: u8, slider: u8) bool {
     return (pc & 7) != queen_pt or (slider & 7) == queen_pt;
 }

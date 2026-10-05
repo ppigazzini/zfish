@@ -1,10 +1,10 @@
-// Map the native CPU -> best Stockfish ARCH tier, in pure Zig, standing in for upstream's
-// scripts/get_native_properties.sh shell-out. Keep it a pure function of std.Target.Cpu, so it is
-// unit-testable against synthetic feature sets; build.zig calls detectArchFromCpu on the host CPU
-// that Zig's build graph already resolved via cpuid -- no /proc/cpuinfo grep, no `sh`, works on
-// every OS. Mirror get_native_properties.sh's set_arch_x86_64 table in tier order + predicates
-// (strongest -> weakest, first match wins), and archConfigFor in build.zig maps each returned name
-// to its -mcpu feature set.
+/// Map the native CPU -> best Stockfish ARCH tier, in pure Zig, standing in for upstream's
+/// scripts/get_native_properties.sh shell-out. Keep it a pure function of std.Target.Cpu, so it is
+/// unit-testable against synthetic feature sets; build.zig calls detectArchFromCpu on the host CPU
+/// that Zig's build graph already resolved via cpuid -- no /proc/cpuinfo grep, no `sh`, works on
+/// every OS. Mirror get_native_properties.sh's set_arch_x86_64 table in tier order + predicates
+/// (strongest -> weakest, first match wins), and archConfigFor in build.zig maps each returned name
+/// to its -mcpu feature set.
 const std = @import("std");
 
 fn hasX86(cpu: std.Target.Cpu, f: std.Target.x86.Feature) bool {

@@ -14,8 +14,8 @@ const page_alloc = @import("page_alloc");
 const layer_stacks_n = 8;
 const layers_per_stack = 3;
 
-// Track the loaded-net identity: the current EvalFile name, its description, and the
-// initialized flag. The load path owns these.
+/// Track the loaded-net identity: the current EvalFile name, its description, and the
+/// initialized flag. The load path owns these.
 var nn_initialized: bool = false;
 var nn_current: [256]u8 = undefined;
 var nn_current_len: usize = 0;
@@ -47,8 +47,8 @@ pub fn equalCurrentName(target: []const u8) bool {
     return std.mem.eql(u8, nnCurrent(), target);
 }
 
-// Hold the inference storage. The parse writes the weights straight here;
-// inference reads from the same memory.
+/// Hold the inference storage. The parse writes the weights straight here;
+/// inference reads from the same memory.
 var ft_ptr_storage: ?[*]u8 = null;
 var ft_len: usize = 0;
 
@@ -69,22 +69,22 @@ pub fn ftPtr() ?[*]const u8 {
     return ft_ptr_storage;
 }
 
-// Name the two arrays an affine layer stores, so a call site reads as `.biases` rather than 0.
+/// Name the two arrays an affine layer stores, so a call site reads as `.biases` rather than 0.
 pub const LayerPart = enum { biases, weights };
 
-// Fix the affine-layer byte sizes by the NNUE architecture (SFNNv15)
-// (fc_0 1024->32, fc_1 64->32, fc_2 128->1; biases int32 linear, weights int8 SSSE3-scrambled).
-// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,128}.
+/// Fix the affine-layer byte sizes by the NNUE architecture (SFNNv15)
+/// (fc_0 1024->32, fc_1 64->32, fc_2 128->1; biases int32 linear, weights int8 SSSE3-scrambled).
+/// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,128}.
 pub const layer_biases_bytes = [layers_per_stack]usize{ 128, 128, 4 };
 pub const layer_weights_bytes = [layers_per_stack]usize{ 32768, 2048, 128 };
 
-// Lay every bucket's layer stack out in ONE arena, mirroring upstream's in-line
-// `NetworkArchitecture network[LayerStacks]` member: consecutive buckets adjacent,
-// parts in traversal order (fc_0 b/w, fc_1 b/w, fc_2 b/w), each part rounded up to a
-// cache line so the SIMD kernels keep their 64-byte alignment. One allocation is the
-// point, not a convenience: 48 separate huge-page blocks put every part at the same
-// address bits modulo 2 MiB, so the whole layer stack aliased a handful of LL cache
-// sets and paid ~5 LL misses per eval that upstream does not.
+/// Lay every bucket's layer stack out in ONE arena, mirroring upstream's in-line
+/// `NetworkArchitecture network[LayerStacks]` member: consecutive buckets adjacent,
+/// parts in traversal order (fc_0 b/w, fc_1 b/w, fc_2 b/w), each part rounded up to a
+/// cache line so the SIMD kernels keep their 64-byte alignment. One allocation is the
+/// point, not a convenience: 48 separate huge-page blocks put every part at the same
+/// address bits modulo 2 MiB, so the whole layer stack aliased a handful of LL cache
+/// sets and paid ~5 LL misses per eval that upstream does not.
 const part_align = 64;
 fn alignPart(n: usize) usize {
     return (n + part_align - 1) & ~@as(usize, part_align - 1);
@@ -96,8 +96,8 @@ const stack_stride = blk: {
     }
     break :blk total;
 };
-// Precompute each part's offset inside a bucket's stack at comptime; layerPtr runs
-// on the per-eval path, so keep it a table read plus one multiply.
+/// Precompute each part's offset inside a bucket's stack at comptime; layerPtr runs
+/// on the per-eval path, so keep it a table read plus one multiply.
 const part_offsets: [layers_per_stack][2]usize = blk: {
     var offsets: [layers_per_stack][2]usize = undefined;
     var off: usize = 0;

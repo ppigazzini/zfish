@@ -20,9 +20,9 @@ pub const ThreadSummary = struct {
     pv_length: usize,
 };
 
-// Write a neutral record for a thread with no Worker rather than leaving the caller's slot
-// untouched: the slot would stay `undefined` and pickBestThread reads .score/.pv_length out
-// of it, making best-thread selection depend on stack garbage.
+/// Write a neutral record for a thread with no Worker rather than leaving the caller's slot
+/// untouched: the slot would stay `undefined` and pickBestThread reads .score/.pv_length out
+/// of it, making best-thread selection depend on stack garbage.
 fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
     const w = worker_layout.Worker.fromThread(thread) orelse {
         out.* = .{
@@ -40,7 +40,7 @@ fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
     out.pv_length = rmv.pv.length;
 }
 
-// Accumulate in i64 to match upstream's `unordered_map<Move, i64>` vote tally (thread.cpp:355).
+/// Accumulate in i64 to match upstream's `unordered_map<Move, i64>` vote tally (thread.cpp:355).
 fn voteForMove(summaries: []const ThreadSummary, move_raw: u16, min_score: i32) i64 {
     var vote: i64 = 0;
     for (0..summaries.len) |index| {
@@ -50,7 +50,7 @@ fn voteForMove(summaries: []const ThreadSummary, move_raw: u16, min_score: i32) 
     return vote;
 }
 
-// upstream thread.cpp:363 -- `score - minScore + 14`, no depth weighting.
+/// upstream thread.cpp:363 -- `score - minScore + 14`, no depth weighting.
 fn threadVotingValue(summary: ThreadSummary, min_score: i32) i64 {
     return @as(i64, summary.score - min_score + 14);
 }
@@ -106,7 +106,7 @@ fn pickBestThread(summaries: []const ThreadSummary) usize {
     return best_index;
 }
 
-// Return the index of the vote-winning thread within the pool.
+/// Return the index of the vote-winning thread within the pool.
 pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
     const thread_count = pool.numThreads();
     if (thread_count == 0) return 0;
@@ -123,8 +123,8 @@ pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
     return pickBestThread(summaries[0..voting]);
 }
 
-// Return the worker of the vote-winning thread -- the value the search driver picks as
-// `bestThread` when choosing the move to report.
+/// Return the worker of the vote-winning thread -- the value the search driver picks as
+/// `bestThread` when choosing the move to report.
 pub fn bestThreadWorker(pool: *worker_layout.ThreadPool) *worker_layout.WorkerLayout {
     const idx = bestThreadIndex(pool);
     const thread = pool.threadAt(idx);

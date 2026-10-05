@@ -29,11 +29,11 @@ const sep_char = registry.sep_char;
 
 const pawn_pt = board_core.pawn_pt;
 
-// Read <stem><ext> from the first SyzygyPath dir that has it into a 64-byte-aligned buffer,
-// verifying `magic`. Return the whole file (magic included) or null on any failure. The
-// 64-alignment makes the data-section rounding in `set` match an mmap base. POSIX only (libc
-// open/read); Windows file mapping (a distinct CreateFileMapping path) is not yet implemented, so on
-// Windows this yields null and the probe reports "unavailable" -- the graceful missing-file path.
+/// Read <stem><ext> from the first SyzygyPath dir that has it into a 64-byte-aligned buffer,
+/// verifying `magic`. Return the whole file (magic included) or null on any failure. The
+/// 64-alignment makes the data-section rounding in `set` match an mmap base. POSIX only (libc
+/// open/read); Windows file mapping (a distinct CreateFileMapping path) is not yet implemented, so on
+/// Windows this yields null and the probe reports "unavailable" -- the graceful missing-file path.
 fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
     if (builtin.target.os.tag == .windows) return null;
 
@@ -76,18 +76,18 @@ fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
 
 // ---- set: parse the file's PairsData records (SF `set`) ---------------------
 
-// Port SF `set`, generic over WDL/DTZ. `buf` is the whole file (64-aligned base); parsing starts at
-// offset 4 (after the magic). Fill every (side,file) PairsData. For DTZ, `set_dtz_map` reads the
-// value-remap table between the size headers and the sparse indices.
-//
-// Return false when the file cannot be parsed within its own length. A `.rtbw`/`.rtbz` is an
-// untrusted external file and `pos` is advanced entirely by values read out of it, so a truncated
-// or hostile table can drive every offset past the end -- which ReleaseFast does not check. The
-// caller must then treat the table exactly as a missing one; a half-parsed table left reachable
-// hands the probe empty regions and, before this bound existed, a null `[*]` deref.
-// `pub` for the fuzz target (fuzz_probe.zig), which parses an image into a registered TBTable and
-// publishes it by hand -- reaching the probe without a filesystem. `mapped`/`mappedDtz` below are
-// the only other callers, and the only ones the shipped binary has.
+/// Port SF `set`, generic over WDL/DTZ. `buf` is the whole file (64-aligned base); parsing starts
+/// at offset 4 (after the magic). Fill every (side,file) PairsData. For DTZ, `set_dtz_map` reads
+/// the value-remap table between the size headers and the sparse indices.
+///
+/// Return false when the file cannot be parsed within its own length. A `.rtbw`/`.rtbz` is an
+/// untrusted external file and `pos` is advanced entirely by values read out of it, so a truncated
+/// or hostile table can drive every offset past the end -- which ReleaseFast does not check. The
+/// caller must then treat the table exactly as a missing one; a half-parsed table left reachable
+/// hands the probe empty regions and, before this bound existed, a null `[*]` deref.
+/// `pub` for the fuzz target (fuzz_probe.zig), which parses an image into a registered TBTable and
+/// publishes it by hand -- reaching the probe without a filesystem. `mapped`/`mappedDtz` below are
+/// the only other callers, and the only ones the shipped binary has.
 pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     // Untrusted input, once per table, never on the probe path -- see decode.setSizes.
     @setRuntimeSafety(true);
@@ -188,9 +188,9 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     return true;
 }
 
-// Carve `n` bytes out of `buf` at `pos.*`, advancing it, or null if the file is too short. The
-// 64-byte alignment rounding above can push `pos` past the end on a corrupt file, so test the
-// cursor as well as the width.
+/// Carve `n` bytes out of `buf` at `pos.*`, advancing it, or null if the file is too short. The
+/// 64-byte alignment rounding above can push `pos` past the end on a corrupt file, so test the
+/// cursor as well as the width.
 fn take(buf: []const u8, pos: *usize, n: usize) ?[]const u8 {
     if (pos.* > buf.len or buf.len - pos.* < n) return null;
     const out = buf[pos.*..][0..n];
@@ -198,13 +198,13 @@ fn take(buf: []const u8, pos: *usize, n: usize) ?[]const u8 {
     return out;
 }
 
-// Carve up to `n` bytes, stopping at the end of the file, or null if the cursor is already past
-// it. The compressed data region is the one region a WELL-FORMED table declares longer than it
-// stores: `blocks_num * sizeof_block` counts whole blocks, and the file holds only the used bytes
-// of the final one -- upstream reads the tail out of the mmap's page padding, which zfish does not
-// have (loadFile allocates exactly `size` bytes). Requiring the full declared width here rejected
-// real 5-man tables and moved tb-cursed's node counts, so bound the region by the file instead;
-// decompressPairs checks each block start against this length before reading it.
+/// Carve up to `n` bytes, stopping at the end of the file, or null if the cursor is already past
+/// it. The compressed data region is the one region a WELL-FORMED table declares longer than it
+/// stores: `blocks_num * sizeof_block` counts whole blocks, and the file holds only the used bytes
+/// of the final one -- upstream reads the tail out of the mmap's page padding, which zfish does not
+/// have (loadFile allocates exactly `size` bytes). Requiring the full declared width here rejected
+/// real 5-man tables and moved tb-cursed's node counts, so bound the region by the file instead;
+/// decompressPairs checks each block start against this length before reading it.
 fn takeAtMost(buf: []const u8, pos: *usize, n: usize) ?[]const u8 {
     if (pos.* > buf.len) return null;
     const avail = @min(n, buf.len - pos.*);
@@ -213,10 +213,10 @@ fn takeAtMost(buf: []const u8, pos: *usize, n: usize) ?[]const u8 {
     return out;
 }
 
-// Port SF `set_dtz_map`: read the per-file DTZ value-remap tables. `map_idx[i]` records the offset of
-// each of the four WDL-class maps from `dtz_map` (u16 units when Wide, bytes otherwise, +1 as SF).
-// Return false when a map runs past the file. Each map's width is read from the file immediately
-// before it is skipped, so the cursor is entirely file-driven here too.
+/// Port SF `set_dtz_map`: read the per-file DTZ value-remap tables. `map_idx[i]` records the offset of
+/// each of the four WDL-class maps from `dtz_map` (u16 units when Wide, bytes otherwise, +1 as SF).
+/// Return false when a map runs past the file. Each map's width is read from the file immediately
+/// before it is skipped, so the cursor is entirely file-driven here too.
 fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, files: []const encode.TbFile) bool {
     @setRuntimeSafety(true); // untrusted input, once per table -- see decode.setSizes
     // Test the cursor on ENTRY, before anything derives a width from it. setSizes word-aligns
@@ -256,16 +256,16 @@ fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, files: []const encode.Tb
     return true;
 }
 
-// Serialise the one-time load of every table, as upstream does with a function-local
-// `static std::mutex` shared by both probes (tbprobe.cpp:1271).
+/// Serialise the one-time load of every table, as upstream does with a function-local
+/// `static std::mutex` shared by both probes (tbprobe.cpp:1271).
 var table_load_mutex: thread_runtime.Mutex = .{};
 
-// Load + parse lazily on first probe. Return true if the WDL table is usable.
-//
-// Publish `ready` with a RELEASE store only after `set()` has filled the PairsData, and read it
-// with ACQUIRE, so a thread taking the fast path either sees no table or sees one fully parsed.
-// Announcing readiness before the load lets a concurrent probe read a null base as "table absent"
-// or walk half-written PairsData. Upstream's mutex plus release-after-set forbids both.
+/// Load + parse lazily on first probe. Return true if the WDL table is usable.
+///
+/// Publish `ready` with a RELEASE store only after `set()` has filled the PairsData, and read it
+/// with ACQUIRE, so a thread taking the fast path either sees no table or sees one fully parsed.
+/// Announcing readiness before the load lets a concurrent probe read a null base as "table absent"
+/// or walk half-written PairsData. Upstream's mutex plus release-after-set forbids both.
 pub fn mapped(t: *TBTable) bool {
     if (@atomicLoad(bool, &t.ready, .acquire)) return t.base != null;
 
@@ -292,7 +292,7 @@ pub fn mapped(t: *TBTable) bool {
     return true;
 }
 
-// Load + parse the DTZ (.rtbz) file lazily on first DTZ probe. Same publication order as mapped().
+/// Load + parse the DTZ (.rtbz) file lazily on first DTZ probe. Same publication order as mapped().
 pub fn mappedDtz(t: *TBTable) bool {
     if (@atomicLoad(bool, &t.dtz_ready, .acquire)) return t.dtz_base != null;
 
@@ -319,9 +319,9 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-// Build a three-man KPvK entry and the first nine bytes of its `.rtbw`: the magic, the
-// split/has-pawns flags byte, the group order, and one nibble pair per man. Upstream's own file
-// carries `11 66 ee` there -- pawn, king, king -- for both side views.
+/// Build a three-man KPvK entry and the first nine bytes of its `.rtbw`: the magic, the
+/// split/has-pawns flags byte, the group order, and one nibble pair per man. Upstream's own file
+/// carries `11 66 ee` there -- pawn, king, king -- for both side views.
 fn kpvkStub(pieces0: u8) struct { table: TBTable, buf: [64]u8 } {
     var buf: [64]u8 = @splat(0);
     @memcpy(buf[0..4], &wdl_magic);

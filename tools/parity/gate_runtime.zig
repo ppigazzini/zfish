@@ -38,12 +38,12 @@ const mt_positions = [_]MtPos{
 const mt_depth = 12;
 const mt_band = 150;
 
-// mt-sanity: run a two-layer TT/search gate. (1) A bit-exact single-thread RE-ANCHOR: Threads=1
-// must reproduce the golden's score+nodes+bestmove EXACTLY (depth-limited, so deterministic)
-// -- an exact floor that catches a single-thread regression the band would mask. (2) The
-// non-deterministic Lazy-SMP band: Threads {2,4} must complete with a well-formed bestmove and
-// a score of the same kind/sign and within BAND cp of that single-thread reference -- catching
-// garbled result aggregation (wrong voting, dropped PV, sign flips) that no snapshot can.
+/// mt-sanity: run a two-layer TT/search gate. (1) A bit-exact single-thread RE-ANCHOR: Threads=1
+/// must reproduce the golden's score+nodes+bestmove EXACTLY (depth-limited, so deterministic)
+/// -- an exact floor that catches a single-thread regression the band would mask. (2) The
+/// non-deterministic Lazy-SMP band: Threads {2,4} must complete with a well-formed bestmove and
+/// a score of the same kind/sign and within BAND cp of that single-thread reference -- catching
+/// garbled result aggregation (wrong voting, dropped PV, sign flips) that no snapshot can.
 pub fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const u8, mode: []const u8) noreturn {
     if (std.mem.eql(u8, mode, "update")) {
         var out: std.ArrayList(u8) = .empty;
@@ -115,11 +115,11 @@ pub fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []co
 const stress_cycles = 24;
 const stress_churn = 12;
 
-// stress: assert liveness for the thread runtime. In Phase A, hammer ONE process with
-// go/stop cycles across thread counts {1,2,4,8} (a third use the go-infinite -> stop handshake,
-// which exercises the futex/RtlWaitOnAddress/__ulock wakeup); in Phase B, churn fresh engine graphs.
-// A hang trips the CI job timeout; every search must yield a well-formed bestmove and every
-// process must exit cleanly. Not a determinism gate.
+/// stress: assert liveness for the thread runtime. In Phase A, hammer ONE process with
+/// go/stop cycles across thread counts {1,2,4,8} (a third use the go-infinite -> stop handshake,
+/// which exercises the futex/RtlWaitOnAddress/__ulock wakeup); in Phase B, churn fresh engine graphs.
+/// A hang trips the CI job timeout; every search must yield a well-formed bestmove and every
+/// process must exit cleanly. Not a determinism gate.
 pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     const threads = [_]u8{ 1, 2, 4, 8 };
     std.debug.print("stress: phase A -- {d} go/stop cycles across threads {{1,2,4,8}}\n", .{stress_cycles});
@@ -163,28 +163,28 @@ pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// async: assert the two interrupted-search invariants nothing else in this battery reaches.
-//
-// NO GOLDEN CAN COVER THIS PATH. A command that lands inside a running search ends it
-// wherever the clock got to, so the final `info` line's node count moves run to run and
-// there is no value to photograph. These are properties of the UCI contract instead --
-// which is also why they carry no expectation authored here: the legal move list below is
-// read out of the engine's own `go perft 1`, and reading anything but the start position's
-// 20 root moves is a rig fault rather than a verdict.
-//
-// Two of the five ways a search is interrupted ARE already gated, and are deliberately not
-// repeated here: `stop` ending a live search is `parity-stress` phase A (a third of its 24
-// cycles are go-infinite -> stop), and `ponderhit` / `stop` during a ponder is
-// `parity-ponder`, which also checks the move it yields is legal. The other three had never
-// been driven at all, and the third of them -- a `setoption` landing inside a search -- was
-// a live wedge in this tree when the case was written: every gate stayed green while
-// `setoption name Hash value 32` during `go infinite` cost the engine its ability to answer
-// anything ever again. A command sequence nothing sends is a command sequence nothing checks.
-//
-// NO WATCHDOG, deliberately, for session.zig's reason: a deadline turns a slow runner into
-// a red gate, and a flaky gate is not evidence. An engine that ignores `quit` wedges here
-// until the CI job's own timeout, exactly as everywhere else in this battery -- the hang is
-// attributed from the other side, by `parity-stress`.
+/// async: assert the two interrupted-search invariants nothing else in this battery reaches.
+///
+/// NO GOLDEN CAN COVER THIS PATH. A command that lands inside a running search ends it
+/// wherever the clock got to, so the final `info` line's node count moves run to run and
+/// there is no value to photograph. These are properties of the UCI contract instead --
+/// which is also why they carry no expectation authored here: the legal move list below is
+/// read out of the engine's own `go perft 1`, and reading anything but the start position's
+/// 20 root moves is a rig fault rather than a verdict.
+///
+/// Two of the five ways a search is interrupted ARE already gated, and are deliberately not
+/// repeated here: `stop` ending a live search is `parity-stress` phase A (a third of its 24
+/// cycles are go-infinite -> stop), and `ponderhit` / `stop` during a ponder is
+/// `parity-ponder`, which also checks the move it yields is legal. The other three had never
+/// been driven at all, and the third of them -- a `setoption` landing inside a search -- was
+/// a live wedge in this tree when the case was written: every gate stayed green while
+/// `setoption name Hash value 32` during `go infinite` cost the engine its ability to answer
+/// anything ever again. A command sequence nothing sends is a command sequence nothing checks.
+///
+/// NO WATCHDOG, deliberately, for session.zig's reason: a deadline turns a slow runner into
+/// a red gate, and a flaky gate is not evidence. An engine that ignores `quit` wedges here
+/// until the CI job's own timeout, exactly as everywhere else in this battery -- the hang is
+/// attributed from the other side, by `parity-stress`.
 pub fn runAsync(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     // 1. A `stop` with NO search running answers nothing, and leaves the engine up.
     //
@@ -272,9 +272,9 @@ pub fn runAsync(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// Report whether `move` is in the legal-move list of `position` (a "position ..." command),
-// read from the engine's own `go perft 1` -- whose divide lines ("<move>: <count>") enumerate
-// exactly the legal moves. The gate then holds no move list of its own to go stale.
+/// Report whether `move` is in the legal-move list of `position` (a "position ..." command),
+/// read from the engine's own `go perft 1` -- whose divide lines ("<move>: <count>") enumerate
+/// exactly the legal moves. The gate then holds no move list of its own to go stale.
 fn moveIsLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []const u8, move: []const u8) bool {
     const input = gpa.print("{s}\ngo perft 1\nquit\n", .{position}) catch return false;
     defer gpa.free(input);
@@ -291,7 +291,7 @@ fn moveIsLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []cons
     return false;
 }
 
-// Copy the move and ponder tokens out of the first `bestmove` line in `seg`.
+/// Copy the move and ponder tokens out of the first `bestmove` line in `seg`.
 fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *usize) bool {
     var li = lines(seg);
     while (li.next()) |raw| {
@@ -309,10 +309,10 @@ fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *u
     return false;
 }
 
-// time-mgmt: assert wall-clock invariants no depth/node gate covers (the startTime=0 class of bug).
-// BAND: `go movetime T` reports elapsed within [T/3, 3T+1500]. SCALE: it grows with the
-// budget. ALLOC: `go wtime/btime` picks a sane sub-budget. Exercise the ported steady
-// clock directly (QueryPerformanceCounter on Windows, CLOCK_MONOTONIC on POSIX).
+/// time-mgmt: assert wall-clock invariants no depth/node gate covers (the startTime=0 class of
+/// bug). BAND: `go movetime T` reports elapsed within [T/3, 3T+1500]. SCALE: it grows with the
+/// budget. ALLOC: `go wtime/btime` picks a sane sub-budget. Exercise the ported steady clock
+/// directly (QueryPerformanceCounter on Windows, CLOCK_MONOTONIC on POSIX).
 pub fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     var reported: [2]i64 = .{ 0, 0 };
     const budgets = [_]i64{ 300, 900 };
@@ -339,8 +339,8 @@ pub fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// Assert bench reports the node count the caller was given. The eval is integer-exact, so
-// the count is arch- and OS-invariant; build.zig owns the reference, never a comment here.
+/// Assert bench reports the node count the caller was given. The eval is integer-exact, so
+/// the count is arch- and OS-invariant; build.zig owns the reference, never a comment here.
 pub fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
     defer cap.deinit(gpa);

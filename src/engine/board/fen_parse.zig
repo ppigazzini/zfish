@@ -55,17 +55,17 @@ fn pieceCharIndex(token: u8) ?u8 {
     }
     return null;
 }
-// Every diagnostic below is an owned SLICE the caller frees; a parse error already knows
-// its own length, so there is no reason to hand back a bare pointer and make the caller
-// re-scan for the NUL.
+/// Every diagnostic below is an owned SLICE the caller frees; a parse error already knows
+/// its own length, so there is no reason to hand back a bare pointer and make the caller
+/// re-scan for the NUL.
 fn setErr(comptime msg: []const u8) ?[]u8 {
     return std.heap.c_allocator.dupe(u8, msg) catch null;
 }
 
-// Render an error that quotes the offending input, as upstream does with
-// `std::string("...") + std::string(1, token)`. Every interpolated FEN diagnostic dropped
-// its value here, so `position fen not_a_fen` reported "Invalid piece." where upstream
-// reports "Invalid piece: o" -- the message named the rule but not what broke it.
+/// Render an error that quotes the offending input, as upstream does with
+/// `std::string("...") + std::string(1, token)`. Every interpolated FEN diagnostic dropped
+/// its value here, so `position fen not_a_fen` reported "Invalid piece." where upstream
+/// reports "Invalid piece: o" -- the message named the rule but not what broke it.
 fn setErrFmt(comptime fmt: []const u8, args: anytype) ?[]u8 {
     var buf: [160]u8 = undefined;
     const rendered = std.mem.print(&buf, fmt, args) catch return setErr("Invalid FEN.");
@@ -287,10 +287,10 @@ pub fn setPosition(
     return null;
 }
 
-// Saturate rather than wrap. The caller range-checks the result (rule50 <= 32767, game_ply <=
-// 100000) but only AFTER the digits are consumed, so an unguarded accumulate overflows i32 on
-// a long digit run before that check can reject it. Stop at a ceiling above every legal counter
-// and below i32's range: any saturated value still fails the caller's check.
+/// Saturate rather than wrap. The caller range-checks the result (rule50 <= 32767, game_ply <=
+/// 100000) but only AFTER the digits are consumed, so an unguarded accumulate overflows i32 on
+/// a long digit run before that check can reject it. Stop at a ceiling above every legal counter
+/// and below i32's range: any saturated value still fails the caller's check.
 const fen_int_ceiling: i64 = 1_000_000;
 
 fn parseInt(cur: *FenCursor) ?i32 {

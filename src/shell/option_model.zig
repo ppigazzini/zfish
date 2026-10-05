@@ -125,8 +125,8 @@ pub const OptionsModel = struct {
         return 0;
     }
 
-    // Serve index-keyed reads, for callers that carry a registration index rather than
-    // a name.
+    /// Serve index-keyed reads, for callers that carry a registration index rather than
+    /// a name.
     pub fn hasIndex(self: *const OptionsModel, idx: usize) bool {
         return idx < self.entries.items.len;
     }
@@ -145,8 +145,8 @@ pub const OptionsModel = struct {
         return 0;
     }
 
-    // Normalize a candidate value for an option.
-    // Return an allocator-owned normalized string, or null if rejected.
+    /// Normalize a candidate value for an option.
+    /// Return an allocator-owned normalized string, or null if rejected.
     fn normalize(self: *OptionsModel, entry: OptionEntry, value: []const u8) !?[]u8 {
         const is_button = entry.kind == .button;
         const is_string = entry.kind == .string;
@@ -195,7 +195,7 @@ pub const OptionsModel = struct {
         return .{ .found = true, .accepted = true, .changed = changed, .callback_kind = entry.callback_kind };
     }
 
-    // Render the UCI option listing in registration order.
+    /// Render the UCI option listing in registration order.
     pub fn renderAlloc(self: *OptionsModel) ![]u8 {
         var out: std.ArrayList(u8) = .empty;
         errdefer out.deinit(self.allocator);
@@ -225,7 +225,7 @@ pub const OptionsModel = struct {
     }
 };
 
-// Define the change-callback kinds, matching engine.zig's option_callback_* values.
+/// Define the change-callback kinds, matching engine.zig's option_callback_* values.
 pub const callback_none: u8 = 0;
 pub const callback_debug_log_file: u8 = 1;
 pub const callback_numa_policy: u8 = 2;
@@ -235,11 +235,11 @@ pub const callback_clear_hash: u8 = 5;
 pub const callback_syzygy_path: u8 = 6;
 pub const callback_eval_file: u8 = 7;
 
-// Map the on-change callback kind for an option, keyed by its (canonical) name — the same
-// mapping registerStandardOptions uses. The runtime registration path (addOption) does not
-// carry the kind, so derive it here;
-// otherwise every option registers with callback_none and setoption never fires the engine
-// callbacks (resize threads / TT / reload net / numa), i.e. options take no effect.
+/// Map the on-change callback kind for an option, keyed by its (canonical) name — the same
+/// mapping registerStandardOptions uses. The runtime registration path (addOption) does not
+/// carry the kind, so derive it here;
+/// otherwise every option registers with callback_none and setoption never fires the engine
+/// callbacks (resize threads / TT / reload net / numa), i.e. options take no effect.
 pub fn callbackKindForName(name: []const u8) u8 {
     if (nameEquals(name, "Debug Log File")) return callback_debug_log_file;
     if (nameEquals(name, "NumaPolicy")) return callback_numa_policy;
@@ -259,10 +259,10 @@ pub const StandardOptionParams = struct {
     eval_file: []const u8,
 };
 
-// Register the standard UCI option set into a fresh model, in the same order
-// and with the same defaults, bounds, and callback kinds as engine.zig initBody.
-// Take the machine-dependent Threads/Hash maxima and the eval-file name from
-// the caller, so this set stays in lockstep with engine.zig initBody.
+/// Register the standard UCI option set into a fresh model, in the same order
+/// and with the same defaults, bounds, and callback kinds as engine.zig initBody.
+/// Take the machine-dependent Threads/Hash maxima and the eval-file name from
+/// the caller, so this set stays in lockstep with engine.zig initBody.
 pub fn registerStandardOptions(model: *OptionsModel, params: StandardOptionParams) !void {
     var elo_buf: [16]u8 = undefined;
     const elo_default = std.mem.print(&elo_buf, "{d}", .{params.skill_lowest_elo}) catch unreachable;

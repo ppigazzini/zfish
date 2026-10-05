@@ -20,16 +20,16 @@ fn roundUp(value: usize, alignment: usize) usize {
 }
 
 const cache_entry_pieces_offset = half_dimensions * @sizeOf(i16);
-// Store the cached board's occupancy bitboard next to the piece array: the vector
-// refresh diff splits its changed-square bitboard into removed/added via
-// `changedBB & entry.pieceBB` / `changedBB & pos.pieces()` (upstream's shape), so
-// the occupancy must persist with the pieces it describes. Those 8 bytes cost the entry
-// a cache line: accumulation plus pieces is 2112 B, already line-aligned, so the entry is
-// 2176 B -- the size upstream's alignas(CacheLineSize) Entry has for the same three fields.
+/// Store the cached board's occupancy bitboard next to the piece array: the vector
+/// refresh diff splits its changed-square bitboard into removed/added via
+/// `changedBB & entry.pieceBB` / `changedBB & pos.pieces()` (upstream's shape), so
+/// the occupancy must persist with the pieces it describes. Those 8 bytes cost the entry
+/// a cache line: accumulation plus pieces is 2112 B, already line-aligned, so the entry is
+/// 2176 B -- the size upstream's alignas(CacheLineSize) Entry has for the same three fields.
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
 const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
-// The whole table: one entry per (king square, perspective). The Worker embeds a buffer of
-// exactly this many bytes; search_id comptime-asserts worker_layout's pins against it.
+/// The whole table: one entry per (king square, perspective). The Worker embeds a buffer of
+/// exactly this many bytes; search_id comptime-asserts worker_layout's pins against it.
 pub const table_bytes = cache_entry_bytes * square_count * color_count;
 
 /// Expose opaque handles. The refresh cache is a raw byte arena (the
@@ -44,10 +44,10 @@ pub fn cacheEntry(cache: *RefreshCache, king_square: u8, perspective: u8) *Cache
         ((@as(usize, king_square) * color_count + @as(usize, perspective)) * cache_entry_bytes));
 }
 
-// Clear the AccumulatorRefreshTable: initialize every (king_square, perspective)
-// refresh entry to the empty board -- accumulation = the feature-transformer
-// biases, and the rest of the entry (pieces, pieceBB) zeroed.
-// The biases pointer is passed in by the caller.
+/// Clear the AccumulatorRefreshTable: initialize every (king_square, perspective)
+/// refresh entry to the empty board -- accumulation = the feature-transformer
+/// biases, and the rest of the entry (pieces, pieceBB) zeroed.
+/// The biases pointer is passed in by the caller.
 pub fn clearRefreshCache(cache: *RefreshCache, biases: [*]const i16) void {
     const biases_bytes: [*]const u8 = @ptrCast(biases);
     for (0..square_count) |ks| {
@@ -81,8 +81,8 @@ pub fn cacheEntryPiecesMut(entry: *CacheEntry) []u8 {
     return (cacheEntryBytesMut(entry) + cache_entry_pieces_offset)[0..square_count];
 }
 
-// Read/write the cached occupancy through byte-array bitcasts so the module stays
-// std-free and no alignment is assumed; both sides use the same native byte order.
+/// Read/write the cached occupancy through byte-array bitcasts so the module stays
+/// std-free and no alignment is assumed; both sides use the same native byte order.
 pub fn cacheEntryPieceBb(entry: *const CacheEntry) u64 {
     return @bitCast((@as([*]const u8, @ptrCast(entry)) + cache_entry_piece_bb_offset)[0..8].*);
 }

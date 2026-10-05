@@ -15,28 +15,28 @@ const tt_types = @import("tt_types");
 const state_list = @import("state_list");
 const tb_config_types = @import("tb_config");
 
-// Derive the Worker footprint from the layout itself; the allocations size to it.
+/// Derive the Worker footprint from the layout itself; the allocations size to it.
 pub const worker_size: usize = @sizeOf(WorkerLayout);
 pub const worker_align: usize = 64;
-// Pin the two footprints a consumer outside this module must agree on: setPosition
-// takes them as explicit slot widths, and the comptime block below asserts each
-// against the type that fills it.
+/// Pin the two footprints a consumer outside this module must agree on: setPosition
+/// takes them as explicit slot widths, and the comptime block below asserts each
+/// against the type that fills it.
 pub const position_size: usize = 1064;
 pub const state_info_size: usize = 192;
-// Pin the ThreadPool footprint the pool buffer is calloc'd to; asserted below.
+/// Pin the ThreadPool footprint the pool buffer is calloc'd to; asserted below.
 pub const thread_pool_size: usize = 48;
-// Equal nnue_acc_layout.arena_bytes (both state arrays + the trailing size field,
-// 64-rounded); search_id comptime-asserts the equality. The size-sentinel offset below
-// (arena end - 64) addresses the arena's live size field.
+/// Equal nnue_acc_layout.arena_bytes (both state arrays + the trailing size field,
+/// 64-rounded); search_id comptime-asserts the equality. The size-sentinel offset below
+/// (arena end - 64) addresses the arena's live size field.
 pub const accumulator_stack_size: usize = 1138240;
-// Equal nnue_refresh_cache.table_bytes, as refresh_table_bytes below does; search_id
-// comptime-asserts both.
+/// Equal nnue_refresh_cache.table_bytes, as refresh_table_bytes below does; search_id
+/// comptime-asserts both.
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = root_move.root_move_footprint;
 
-// Aggregate the ThreadPool reads (sum over the pool's threads): position.zig (the search
-// driver) reads them here without importing the thread module. thread.zig's public
-// nodesSearched/tbHits forward here.
+/// Aggregate the ThreadPool reads (sum over the pool's threads): position.zig (the search
+/// driver) reads them here without importing the thread module. thread.zig's public
+/// nodesSearched/tbHits forward here.
 pub fn poolNodesSearched(tp: *ThreadPool) u64 {
     const n = tp.numThreads();
     var total: u64 = 0;
@@ -52,15 +52,15 @@ pub fn poolTbHits(tp: *ThreadPool) u64 {
     return total;
 }
 
-// Measure the byte size of the WorkerHistories block embedded in the Worker.
+/// Measure the byte size of the WorkerHistories block embedded in the Worker.
 pub const worker_histories_bytes: usize = @sizeOf(worker_histories.WorkerHistories);
 pub const refresh_table_bytes: usize = 278528; // FT refresh cache, asserted in search_id
 
-// Lay out the full Worker block as a Zig layout, using worker_layout's own
-// LimitsType/PVMoves and the typed WorkerHistories. Let Zig pick the field order (the
-// 64-aligned NNUE arenas float to the front); every consumer reads a named field, and
-// worker_off exists only so the constructor's cross-check test can address the same
-// slots by byte offset.
+/// Lay out the full Worker block as a Zig layout, using worker_layout's own
+/// LimitsType/PVMoves and the typed WorkerHistories. Let Zig pick the field order (the
+/// 64-aligned NNUE arenas float to the front); every consumer reads a named field, and
+/// worker_off exists only so the constructor's cross-check test can address the same
+/// slots by byte offset.
 pub const WorkerLayout = struct {
     // Align the history block to a CACHE LINE, not to its i16 element. These are the largest
     // randomly-indexed structures the search touches -- every node probes them and every update
@@ -133,8 +133,8 @@ comptime {
 
 pub const worker_off = struct {
     pub const histories = @offsetOf(WorkerLayout, "histories");
-    // Find shared_history inside WorkerHistories at position.worker_shared_history_off
-    // (a Zig-owned struct, so not a fixed sub-offset); users add histories + that.
+    /// Find shared_history inside WorkerHistories at position.worker_shared_history_off
+    /// (a Zig-owned struct, so not a fixed sub-offset); users add histories + that.
     pub const limits = @offsetOf(WorkerLayout, "limits");
     pub const pv_idx = @offsetOf(WorkerLayout, "pv_idx");
     pub const pv_last = @offsetOf(WorkerLayout, "pv_last");
@@ -164,8 +164,8 @@ pub const worker_off = struct {
     pub const refresh_table = @offsetOf(WorkerLayout, "refresh_table");
 };
 
-// Lay out TimeManagement: the clock sub-object embedded in SearchManager.
-// available_nodes is set to -1 by TimeManagement's clear.
+/// Lay out TimeManagement: the clock sub-object embedded in SearchManager.
+/// available_nodes is set to -1 by TimeManagement's clear.
 pub const TimeManagement = struct {
     start_time: i64 = 0,
     optimum_time: i64 = 0,
@@ -178,9 +178,9 @@ pub const TimeManagement = struct {
     use_nodes_time: u8 = 0, // bool
 };
 
-// Lay out the SearchManager object: the embedded TimeManagement and the per-search
-// bookkeeping the time-management + PV code reads. Dispatch is direct, so there is no
-// vtable slot. Keep `ponder` an atomic bool in a 4-byte slot.
+/// Lay out the SearchManager object: the embedded TimeManagement and the per-search
+/// bookkeeping the time-management + PV code reads. Dispatch is direct, so there is no
+/// vtable slot. Keep `ponder` an atomic bool in a 4-byte slot.
 pub const SearchManager = struct {
     tm: TimeManagement = .{},
     original_time_adjust: f64 = 0,
@@ -194,8 +194,8 @@ pub const SearchManager = struct {
     id: usize = 0,
     updates: ?*const anyopaque = null, // pointer to a const UpdateContext
 
-    // Provide typed accessors that reset the per-search MainSearchManager state the
-    // ThreadPool's start_searching path re-inits.
+    /// Provide typed accessors that reset the per-search MainSearchManager state the
+    /// ThreadPool's start_searching path re-inits.
     pub inline fn resetCallsCount(self: *SearchManager) void {
         self.calls_cnt = 0;
     }
@@ -211,8 +211,8 @@ pub const SearchManager = struct {
     pub inline fn resetPreviousTimeReduction(self: *SearchManager) void {
         self.previous_time_reduction = 0.85;
     }
-    // Store atomically: search threads poll this while the UCI thread writes it, and a plain
-    // store against their atomic loads is mixed access to one location.
+    /// Store atomically: search threads poll this while the UCI thread writes it, and a plain
+    /// store against their atomic loads is mixed access to one location.
     pub inline fn setPonder(self: *SearchManager, v: bool) void {
         @atomicStore(u8, &self.ponder, @intFromBool(v), .monotonic);
     }
@@ -229,10 +229,10 @@ pub const SearchManager = struct {
 // accessors, pointed to by worker_off.manager, so its internal layout is Zig's to
 // choose. The allocation in zfishMakeSearchManager sizes to @sizeOf(SearchManager).
 
-// Lay out the ThreadPool object (48 bytes): the runtime constructs and reads the pool
-// through these fields. Keep `threads` and `bound` both Zig slices: `threads` holds
-// Thread* addresses, `bound` holds the per-thread NUMA-node index of the cold binding
-// path. thread_pool allocates the backing buffers and the accessors index them.
+/// Lay out the ThreadPool object (48 bytes): the runtime constructs and reads the pool
+/// through these fields. Keep `threads` and `bound` both Zig slices: `threads` holds
+/// Thread* addresses, `bound` holds the per-thread NUMA-node index of the cold binding
+/// path. thread_pool allocates the backing buffers and the accessors index them.
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
@@ -264,7 +264,7 @@ pub const ThreadPool = struct {
     pub inline fn boundAt(self: *const ThreadPool, i: usize) usize {
         return self.bound[i];
     }
-    // Store atomically -- see setPonder.
+    /// Store atomically -- see setPonder.
     pub inline fn setStop(self: *ThreadPool, v: bool) void {
         @atomicStore(u8, &self.stop, @intFromBool(v), .monotonic);
     }
@@ -287,10 +287,10 @@ comptime {
     std.debug.assert(@sizeOf(ThreadPool) == thread_pool_size);
 }
 
-// View a Thread. The full Thread is 208 bytes; the search-driver code only
-// needs the LargePagePtr<Worker> `worker` at offset 8 (a single pointer, dereferenced
-// to the Worker base), so this partial view struct reinterprets a Thread pointer to
-// read that one slot. Keep `worker` as a raw address (the loaded pointer value).
+/// View a Thread. The full Thread is 208 bytes; the search-driver code only
+/// needs the LargePagePtr<Worker> `worker` at offset 8 (a single pointer, dereferenced
+/// to the Worker base), so this partial view struct reinterprets a Thread pointer to
+/// read that one slot. Keep `worker` as a raw address (the loaded pointer value).
 pub const Thread = struct {
     idle_region: usize, // @0 (idle-loop / vtable region; unused here)
     worker: ?*WorkerLayout, // @8 (LargePagePtr<Worker>; a typed pointer, null == 0)
@@ -310,10 +310,10 @@ pub const Thread = struct {
     }
 };
 
-// Provide a cursor over the ~4.5 MB Worker: the base address plus typed accessors for the few
-// fields the search-driver reads/writes. Each accessor reinterprets the base as a
-// *WorkerLayout (via layout()) and touches the field directly -- typing the *access*
-// over a raw Worker base address.
+/// Provide a cursor over the ~4.5 MB Worker: the base address plus typed accessors for the few
+/// fields the search-driver reads/writes. Each accessor reinterprets the base as a
+/// *WorkerLayout (via layout()) and touches the field directly -- typing the *access*
+/// over a raw Worker base address.
 pub const Worker = struct {
     base: *WorkerLayout,
 
@@ -355,11 +355,11 @@ pub const Worker = struct {
     }
 };
 
-// Re-export PVMoves + RootMove from the canonical definition in
-// support/root_move.zig. The Worker embeds `last_iteration_pv: PVMoves` -- the FIXED carrier,
-// which the follow-PV heuristic reads and which never grows -- and strides its rootMoves vector
-// by @sizeOf(RootMove), whose two PVs are the OWNING growable carrier. The size asserts below
-// pin both (504 / root_move_size).
+/// Re-export PVMoves + RootMove from the canonical definition in
+/// support/root_move.zig. The Worker embeds `last_iteration_pv: PVMoves` -- the FIXED carrier,
+/// which the follow-PV heuristic reads and which never grows -- and strides its rootMoves vector
+/// by @sizeOf(RootMove), whose two PVs are the OWNING growable carrier. The size asserts below
+/// pin both (504 / root_move_size).
 pub const PVMoves = root_move.PVMoves;
 pub const RootMove = root_move.RootMove;
 
@@ -371,9 +371,9 @@ comptime {
     std.debug.assert(@sizeOf(RootMove) == root_move_size);
 }
 
-// Lay out the TranspositionTable object (24 bytes): clusterCount, table (Cluster*),
-// generation8, in declaration order. The side TT the engine allocates uses
-// this layout.
+/// Lay out the TranspositionTable object (24 bytes): clusterCount, table (Cluster*),
+/// generation8, in declaration order. The side TT the engine allocates uses
+/// this layout.
 pub const TranspositionTable = struct {
     cluster_count: usize = 0,
     table: ?[*]tt_types.TtCluster = null,
@@ -387,15 +387,15 @@ pub const TranspositionTable = struct {
 // Write and read the side-TT handle in engine_object.side_tt_storage only through
 // these typed accessors, so Zig owns the (naturally-ordered) layout.
 
-// Re-export LimitsType + SearchMoveText from the limits_type module so the
-// go-command chain keeps resolving worker_layout.LimitsType / .SearchMoveText.
-// WorkerLayout embeds the re-exported LimitsType (same layout, the 120-byte
-// contractual slot is asserted in limits_type.zig).
+/// Re-export LimitsType + SearchMoveText from the limits_type module so the
+/// go-command chain keeps resolving worker_layout.LimitsType / .SearchMoveText.
+/// WorkerLayout embeds the re-exported LimitsType (same layout, the 120-byte
+/// contractual slot is asserted in limits_type.zig).
 pub const SearchMoveText = limits_type.SearchMoveText;
 pub const LimitsType = limits_type.LimitsType;
 
-// Re-export TbConfig from its std-only leaf, so the Worker's embedded field and the
-// root-move builder that produces the value name one type.
+/// Re-export TbConfig from its std-only leaf, so the Worker's embedded field and the
+/// root-move builder that produces the value name one type.
 pub const TbConfig = tb_config_types.TbConfig;
 
 test {

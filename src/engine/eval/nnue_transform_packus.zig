@@ -9,24 +9,24 @@
 
 const std = @import("std");
 
-// Run the transform's clip-multiply-narrow at i16 width on the 256-bit tiers with
-// upstream's packus body (nnue_feature_transformer.h): clamp only the FIRST half's
-// operand to [0,255] and shift it left 7; the second half gets min(255, .) alone, no
-// max -- a negative second operand keeps its sign through the SIGNED vpmulhw, drives
-// the product negative, and the saturating vpackuswb zeroes it on pack, which is
-// exactly the max(0, .) the generic path pays a vpmaxsw for (upstream: "saves one max
-// operation per pair"). One byte shuffle (vpermq) undoes the pack's 128-bit-lane
-// interleave, so the output bytes, the nnz bitset and everything downstream are
-// unchanged. Positive products never saturate: (255<<7)*255 >> 16 == 127.
+/// Run the transform's clip-multiply-narrow at i16 width on the 256-bit tiers with
+/// upstream's packus body (nnue_feature_transformer.h): clamp only the FIRST half's
+/// operand to [0,255] and shift it left 7; the second half gets min(255, .) alone, no
+/// max -- a negative second operand keeps its sign through the SIGNED vpmulhw, drives
+/// the product negative, and the saturating vpackuswb zeroes it on pack, which is
+/// exactly the max(0, .) the generic path pays a vpmaxsw for (upstream: "saves one max
+/// operation per pair"). One byte shuffle (vpermq) undoes the pack's 128-bit-lane
+/// interleave, so the output bytes, the nnz bitset and everything downstream are
+/// unchanged. Positive products never saturate: (255<<7)*255 >> 16 == 127.
 pub const use_packus_avx2 = @import("builtin").target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx2) and
     !std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx512bw);
 
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 const packuswb256 = struct {
     extern fn @"llvm.x86.avx2.packuswb"(@Vector(16, i16), @Vector(16, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(32, u8);
 }.@"llvm.x86.avx2.packuswb";
@@ -34,13 +34,13 @@ const transform_pmulhw256 = struct {
     extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i16);
 }.@"llvm.x86.avx2.pmulh.w";
 
-// Run the same packus body at zmm width, which is the arm upstream's transform takes on
-// AVX-512 too: its `#else` covers every x86 tier, and only NEON, LSX/LASX and wasm branch
-// away. zfish gated the trick to `avx2 and !avx512f`, leaving the 512-bit tiers on the
-// widen-free mulhi-UNSIGNED path -- which pays, per 64 output bytes, two vpmaxsw for the
-// second half plus two vpmovwb and a vinserti64x4 to narrow, where packus narrows in one
-// op and its saturation supplies the max. vpmulhw and vpackuswb are AVX512BW, so gate on
-// that; a hypothetical avx512f-without-bw target keeps the generic path.
+/// Run the same packus body at zmm width, which is the arm upstream's transform takes on
+/// AVX-512 too: its `#else` covers every x86 tier, and only NEON, LSX/LASX and wasm branch
+/// away. zfish gated the trick to `avx2 and !avx512f`, leaving the 512-bit tiers on the
+/// widen-free mulhi-UNSIGNED path -- which pays, per 64 output bytes, two vpmaxsw for the
+/// second half plus two vpmovwb and a vinserti64x4 to narrow, where packus narrows in one
+/// op and its saturation supplies the max. vpmulhw and vpackuswb are AVX512BW, so gate on
+/// that; a hypothetical avx512f-without-bw target keeps the generic path.
 pub const use_packus_avx512 = @import("builtin").target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx512bw);
 
@@ -51,10 +51,10 @@ const transform_pmulhw512 = struct {
     extern fn @"llvm.x86.avx512.pmulh.w.512"(@Vector(32, i16), @Vector(32, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(32, i16);
 }.@"llvm.x86.avx512.pmulh.w.512";
 
-// Run the same packus body at xmm width on the pre-AVX2 x86 tiers (upstream's SSE2
-// transform shape). The saturation argument is width-independent, and the 128-bit
-// pack concatenates its operands' low bytes in order -- pa's 8 bytes then pb's 8
-// bytes ARE natural element order, so no lane fix is needed at all.
+/// Run the same packus body at xmm width on the pre-AVX2 x86 tiers (upstream's SSE2
+/// transform shape). The saturation argument is width-independent, and the 128-bit
+/// pack concatenates its operands' low bytes in order -- pa's 8 bytes then pb's 8
+/// bytes ARE natural element order, so no lane fix is needed at all.
 pub const use_packus_sse = @import("builtin").target.cpu.arch == .x86_64 and
     !std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx2);
 
@@ -65,7 +65,7 @@ const transform_pmulhw128 = struct {
     extern fn @"llvm.x86.sse2.pmulh.w"(@Vector(8, i16), @Vector(8, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(8, i16);
 }.@"llvm.x86.sse2.pmulh.w";
 
-// Compute 16 output bytes from the two halves' i16 accumulator lanes (a = first half,
+/// Compute 16 output bytes from the two halves' i16 accumulator lanes (a = first half,
 const packssdw256 = struct {
     extern fn @"llvm.x86.avx2.packssdw"(@Vector(8, i32), @Vector(8, i32)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i16);
 }.@"llvm.x86.avx2.packssdw";
@@ -105,8 +105,8 @@ pub inline fn nnzFold4(packs: [4]@Vector(32, u8)) u32 {
     return @bitCast(bytes > @as(@Vector(32, i8), @splat(0)));
 }
 
-// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
-// element order. The scalar-reference unit test pins the packus trick's equivalence.
+/// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
+/// element order. The scalar-reference unit test pins the packus trick's equivalence.
 pub inline fn packusTransform16(a: [2]@Vector(8, i16), b: [2]@Vector(8, i16)) @Vector(16, u8) {
     const c255: @Vector(8, i16) = @splat(255);
     const zero: @Vector(8, i16) = @splat(0);
@@ -121,9 +121,9 @@ pub inline fn packusTransform16(a: [2]@Vector(8, i16), b: [2]@Vector(8, i16)) @V
     );
 }
 
-// Compute 32 output bytes from the two halves' i16 accumulator lanes (a = first half,
-// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
-// element order. The scalar-reference unit test pins the packus trick's equivalence.
+/// Compute 32 output bytes from the two halves' i16 accumulator lanes (a = first half,
+/// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
+/// element order. The scalar-reference unit test pins the packus trick's equivalence.
 pub inline fn packusTransform32(a: [2]@Vector(16, i16), b: [2]@Vector(16, i16)) @Vector(32, u8) {
     const c255: @Vector(16, i16) = @splat(255);
     const zero: @Vector(16, i16) = @splat(0);
@@ -148,9 +148,9 @@ pub inline fn packusTransform32(a: [2]@Vector(16, i16), b: [2]@Vector(16, i16)) 
     return @shuffle(u8, packed_bytes, undefined, natural_fix);
 }
 
-// Compute 64 output bytes from the two halves' i16 accumulator lanes (a = first half,
-// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
-// element order. The scalar-reference unit test pins the packus trick's equivalence.
+/// Compute 64 output bytes from the two halves' i16 accumulator lanes (a = first half,
+/// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
+/// element order. The scalar-reference unit test pins the packus trick's equivalence.
 pub inline fn packusTransform64(a: [2]@Vector(32, i16), b: [2]@Vector(32, i16)) @Vector(64, u8) {
     const c255: @Vector(32, i16) = @splat(255);
     const zero: @Vector(32, i16) = @splat(0);

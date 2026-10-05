@@ -31,7 +31,7 @@ const WorkerLayout = worker_layout.WorkerLayout;
 
 fn noopPool(_: *ThreadPool) void {}
 fn noopWaitThread(_: *ThreadPool, _: usize) void {}
-// Return thread 0 (the main worker) as the single-threaded default best thread.
+/// Return thread 0 (the main worker) as the single-threaded default best thread.
 fn mainWorker(pool: *ThreadPool) *WorkerLayout {
     return pool.threadAt(0).worker.?;
 }

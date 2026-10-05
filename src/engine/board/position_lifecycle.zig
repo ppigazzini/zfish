@@ -22,9 +22,9 @@ const doMove = move_do.doMove;
 const givesCheck = legality.givesCheck;
 const setPosition = fen_parse.setPosition;
 
-// Do a move with fresh dirty-piece/threats scratch (the perft/setup path, which
-// does not thread an accumulator delta through). Not a search make, so it passes no
-// PrefetchBank (perft, root building, tablebase walks and tests all reach here).
+/// Do a move with fresh dirty-piece/threats scratch (the perft/setup path, which
+/// does not thread an accumulator delta through). Not a search make, so it passes no
+/// PrefetchBank (perft, root building, tablebase walks and tests all reach here).
 pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;

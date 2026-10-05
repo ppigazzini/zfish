@@ -1,6 +1,6 @@
 const std = @import("std");
 const board_core = @import("board_core");
-// Single-source the move-word decoders; legality.zig aliases the same set.
+/// Single-source the move-word decoders; legality.zig aliases the same set.
 const moveFrom = board_core.moveFrom;
 const moveType = board_core.moveTypeOf;
 const bitboard = @import("bitboard");
@@ -8,9 +8,9 @@ const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const movegen_splat_avx512 = @import("movegen_splat_avx512.zig");
 
-// Thread the board's typed Position as `pos` through every generator:
-// each function hands it to position_snapshot.moveIsLegal(), which takes it as
-// the concrete type now. position_types is a pure std leaf, so no import cycle.
+/// Thread the board's typed Position as `pos` through every generator:
+/// each function hands it to position_snapshot.moveIsLegal(), which takes it as
+/// the concrete type now. position_types is a pure std leaf, so no import cycle.
 const Position = position_types.Position;
 
 const white: u8 = 0;
@@ -65,9 +65,9 @@ const MoveWriter = struct {
     moves: []u16,
     len: usize = 0,
 
-    // Keep the caller's length: every caller passes a [256]u16 and 218 is the true legal
-    // maximum, but a many-pointer means no build mode -- including the ReleaseSafe fuzz
-    // artifact that exists for this class -- can trap a generator that over-emits.
+    /// Keep the caller's length: every caller passes a [256]u16 and 218 is the true legal
+    /// maximum, but a many-pointer means no build mode -- including the ReleaseSafe fuzz
+    /// artifact that exists for this class -- can trap a generator that over-emits.
     fn push(self: *MoveWriter, raw: u16) void {
         self.moves[self.len] = raw;
         self.len += 1;

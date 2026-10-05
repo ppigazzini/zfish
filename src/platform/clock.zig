@@ -4,9 +4,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Read the Windows steady clock: QueryPerformanceCounter is the monotonic high-res counter;
-// divide ticks by QueryPerformanceFrequency for seconds. Declare here (only linked on Windows, where
-// the switch below references it).
+/// Read the Windows steady clock: QueryPerformanceCounter is the monotonic high-res counter;
+/// divide ticks by QueryPerformanceFrequency for seconds. Declare here (only linked on Windows, where
+/// the switch below references it).
 extern "kernel32" fn QueryPerformanceCounter(count: *i64) callconv(.winapi) i32;
 extern "kernel32" fn QueryPerformanceFrequency(freq: *i64) callconv(.winapi) i32;
 

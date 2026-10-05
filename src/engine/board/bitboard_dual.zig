@@ -35,24 +35,24 @@ const south_east: i8 = south + east;
 const south_west: i8 = south + west;
 const north_west: i8 = north + west;
 
-// Gate the dual hyperbola quintessence slider path on AVX2, tracking upstream's
-// USE_DUAL_HYPERBOLA_QUINT (attacks.h:35, `#elif defined(USE_AVX2)`) 1:1. Below this tier
-// upstream runs magic bitboards, same as bothAttacks' fallback; at and above it, upstream
-// does not even compile the magic tables (attacks.cpp:28) -- a footprint win this port
-// does not take, since bitboard.zig's derived-table bootstrap (initDerivedTables) still
-// walks the magic path unconditionally and reworking that is a separate change.
+/// Gate the dual hyperbola quintessence slider path on AVX2, tracking upstream's
+/// USE_DUAL_HYPERBOLA_QUINT (attacks.h:35, `#elif defined(USE_AVX2)`) 1:1. Below this tier
+/// upstream runs magic bitboards, same as bothAttacks' fallback; at and above it, upstream
+/// does not even compile the magic tables (attacks.cpp:28) -- a footprint win this port
+/// does not take, since bitboard.zig's derived-table bootstrap (initDerivedTables) still
+/// walks the magic path unconditionally and reworking that is a separate change.
 pub const use_avx2 = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx2);
 
-// Solve the RANK on the lane the other three rays leave empty, where the ISA can reverse
-// bits inside a byte. `vgf2p8affineqb` by 0x8040201008040201 reverses the bits within
-// every byte in one instruction, so a byte reversal followed by it IS the full 64-bit
-// reversal -- and Zig's `@bitReverse` on a @Vector(4, u64) lowers to exactly that pair
-// under GFNI (verified on the emitted asm: `vpshufb`, then `vgf2p8affineqb`). With the
-// real reversal in hand the rank is no different from the other three rays, so it moves
-// into the empty lane and the table, the shift and the scalar load beside every call all
-// go. GFNI is enumerated at one tier here, x86-64-avx512icl (build/arch.zig); every other
-// tier keeps the table. No branch is added, so there is no taken-rate to predict.
+/// Solve the RANK on the lane the other three rays leave empty, where the ISA can reverse
+/// bits inside a byte. `vgf2p8affineqb` by 0x8040201008040201 reverses the bits within
+/// every byte in one instruction, so a byte reversal followed by it IS the full 64-bit
+/// reversal -- and Zig's `@bitReverse` on a @Vector(4, u64) lowers to exactly that pair
+/// under GFNI (verified on the emitted asm: `vpshufb`, then `vgf2p8affineqb`). With the
+/// real reversal in hand the rank is no different from the other three rays, so it moves
+/// into the empty lane and the table, the shift and the scalar load beside every call all
+/// go. GFNI is enumerated at one tier here, x86-64-avx512icl (build/arch.zig); every other
+/// tier keeps the table. No branch is added, so there is no taken-rate to predict.
 pub const use_gfni_rank = use_avx2 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .gfni);
 
@@ -77,15 +77,15 @@ const DualMagic = struct {
 
 var dual_magics: [64]DualMagic = undefined;
 
-// Sliding attacks within a rank, indexed by [file][6 INNER bits of the rank occupancy].
-// A piece on a1 or h1 blocks nothing a rook on that rank can reach past, so the two edge
-// bits never change the answer -- dropping them shrinks the table 4x, from 2 KB to 512 B,
-// and is what upstream's own index does (attacks.h:107). Reuses slidingAttack(ROOK, file,
-// occ6 << 1): occ is zero-extended past bit 7, so the north/south rays run unblocked off
-// the top of a u64 and the u8 truncation drops them, leaving only the east/west ray bits.
-//
-// Built at comptime, so it lands in .rodata rather than being filled at startup -- and
-// under `use_gfni_rank` nothing references it, so it lands nowhere at all.
+/// Sliding attacks within a rank, indexed by [file][6 INNER bits of the rank occupancy].
+/// A piece on a1 or h1 blocks nothing a rook on that rank can reach past, so the two edge
+/// bits never change the answer -- dropping them shrinks the table 4x, from 2 KB to 512 B,
+/// and is what upstream's own index does (attacks.h:107). Reuses slidingAttack(ROOK, file,
+/// occ6 << 1): occ is zero-extended past bit 7, so the north/south rays run unblocked off
+/// the top of a u64 and the u8 truncation drops them, leaving only the east/west ray bits.
+///
+/// Built at comptime, so it lands in .rodata rather than being filled at startup -- and
+/// under `use_gfni_rank` nothing references it, so it lands nowhere at all.
 const rank_attacks: [8][64]u8 = blk: {
     @setEvalBranchQuota(200_000);
     var table: [8][64]u8 = undefined;
@@ -97,9 +97,9 @@ const rank_attacks: [8][64]u8 = blk: {
     break :blk table;
 };
 
-// The ray through `square` along d1/d2, excluding `square` -- upstream's line_mask
-// (attacks.cpp:81). Two directions only (not the full 4 slidingAttack sums per piece
-// type), so the file ray and each diagonal stay separable in the DualMagic masks.
+/// The ray through `square` along d1/d2, excluding `square` -- upstream's line_mask
+/// (attacks.cpp:81). Two directions only (not the full 4 slidingAttack sums per piece
+/// type), so the file ray and each diagonal stay separable in the DualMagic masks.
 fn lineMask(square: usize, d1: i8, d2: i8) u64 {
     var mask: u64 = 0;
     inline for (.{ d1, d2 }) |d| {

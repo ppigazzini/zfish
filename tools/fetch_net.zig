@@ -17,7 +17,7 @@ const std = @import("std");
 const Io = std.Io;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
-// Lay out a net filename as `nn-` ++ 12 lowercase-hex ++ `.nnue` == 20 bytes.
+/// Lay out a net filename as `nn-` ++ 12 lowercase-hex ++ `.nnue` == 20 bytes.
 const name_len = 3 + 12 + 5;
 
 fn isLowerHex(c: u8) bool {

@@ -23,19 +23,19 @@ const headless_search = @import("headless_search");
 const position_size = worker_layout.position_size;
 const state_info_size = worker_layout.state_info_size;
 
-// Return the stored (incremental) zobrist key of the current position -- fillSnapshot copies
-// `st.key`, the value doMove maintains, NOT a recomputed one, so comparing it across a
-// make/unmake round-trip is a genuine incremental-hash correctness check.
+/// Return the stored (incremental) zobrist key of the current position -- fillSnapshot copies
+/// `st.key`, the value doMove maintains, NOT a recomputed one, so comparing it across a
+/// make/unmake round-trip is a genuine incremental-hash correctness check.
 fn positionKey(p: *const position.Position) u64 {
     var snap: position_snapshot.PositionSnapshot = undefined;
     position.fillSnapshot(p, &snap);
     return snap.key;
 }
 
-// Assert setPosition never crashes / OOBs on arbitrary input -- it rejects it
-// or produces a self-consistent position, and any position it accepts must survive
-// generateLegal + one make/unmake. The coverage-guided fuzzer explores toward
-// inputs that pass more of the parser than random bytes would reach.
+/// Assert setPosition never crashes / OOBs on arbitrary input -- it rejects it
+/// or produces a self-consistent position, and any position it accepts must survive
+/// generateLegal + one make/unmake. The coverage-guided fuzzer explores toward
+/// inputs that pass more of the parser than random bytes would reach.
 fn fuzzSetPosition(_: void, smith: *std.testing.Smith) anyerror!void {
     var raw: [129]u8 = undefined;
     smith.bytesWithHash(&raw, 1);
@@ -65,12 +65,12 @@ test "fuzz: setPosition tolerates coverage-guided input" {
 
 const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-// Assert that playing a deep sequence of legal moves (each picked from the current
-// legal list by a fuzzer byte) then unwinding it never crashes. This stresses
-// make/unmake far past the single-move setPosition fuzz -- the StateInfo previous-
-// chain grows one live buffer per ply, repetition/50-move detection runs at every
-// make, and undo must restore each ply byte-exactly. The coverage-guided fuzzer
-// steers the byte stream toward move sequences that reach deeper board states.
+/// Assert that playing a deep sequence of legal moves (each picked from the current
+/// legal list by a fuzzer byte) then unwinding it never crashes. This stresses
+/// make/unmake far past the single-move setPosition fuzz -- the StateInfo previous-
+/// chain grows one live buffer per ply, repetition/50-move detection runs at every
+/// make, and undo must restore each ply byte-exactly. The coverage-guided fuzzer
+/// steers the byte stream toward move sequences that reach deeper board states.
 fn fuzzRandomGame(_: void, smith: *std.testing.Smith) anyerror!void {
     var choices: [96]u8 = undefined;
     smith.bytesWithHash(&choices, 3);
@@ -105,11 +105,11 @@ test "fuzz: deep random legal-move games make/unmake cleanly" {
     try std.testing.fuzz({}, fuzzRandomGame, .{});
 }
 
-// Assert a deep line of legal moves, fully unwound, restores the incremental
-// zobrist key byte-exactly. This is a correctness invariant far stronger than "doesn't
-// crash" -- a make/unmake key desync (mis-hashed castling right, en-passant file, or
-// side-to-move) survives fuzzRandomGame silently but is caught here. The coverage-
-// guided fuzzer steers toward lines that reach the rarely-hit hashing branches.
+/// Assert a deep line of legal moves, fully unwound, restores the incremental
+/// zobrist key byte-exactly. This is a correctness invariant far stronger than "doesn't
+/// crash" -- a make/unmake key desync (mis-hashed castling right, en-passant file, or
+/// side-to-move) survives fuzzRandomGame silently but is caught here. The coverage-
+/// guided fuzzer steers toward lines that reach the rarely-hit hashing branches.
 fn fuzzKeyStability(_: void, smith: *std.testing.Smith) anyerror!void {
     var choices: [96]u8 = undefined;
     smith.bytesWithHash(&choices, 3);
@@ -145,10 +145,10 @@ test "fuzz: make/unmake restores the zobrist key over a deep line" {
     try std.testing.fuzz({}, fuzzKeyStability, .{});
 }
 
-// Assert that from a fuzzer-reached position, EVERY legal move restores the key on
-// undo -- not just the first. This exercises each move category (captures, castling,
-// en passant, promotions, double-push) at one board, so a category-specific
-// incremental-hash bug cannot hide behind a quiet leading move.
+/// Assert that from a fuzzer-reached position, EVERY legal move restores the key on
+/// undo -- not just the first. This exercises each move category (captures, castling,
+/// en passant, promotions, double-push) at one board, so a category-specific
+/// incremental-hash bug cannot hide behind a quiet leading move.
 fn fuzzAllMovesKeyStability(_: void, smith: *std.testing.Smith) anyerror!void {
     var choices: [24]u8 = undefined;
     smith.bytesWithHash(&choices, 3);
@@ -194,10 +194,10 @@ test "fuzz: every legal move restores the zobrist key on undo" {
     try std.testing.fuzz({}, fuzzAllMovesKeyStability, .{});
 }
 
-// Assert that at any fuzzer-reached position, the legal-move list is WELL-FORMED --
-// every move has from != to (no null move leaks into the list) and no move is
-// duplicated. A movegen bug (a stale mask, a double-emitted promotion) shows up here
-// even when make/unmake and the key are all fine.
+/// Assert that at any fuzzer-reached position, the legal-move list is WELL-FORMED --
+/// every move has from != to (no null move leaks into the list) and no move is
+/// duplicated. A movegen bug (a stale mask, a double-emitted promotion) shows up here
+/// even when make/unmake and the key are all fine.
 fn fuzzLegalMoveWellFormedness(_: void, smith: *std.testing.Smith) anyerror!void {
     var choices: [24]u8 = undefined;
     smith.bytesWithHash(&choices, 3);
@@ -243,11 +243,11 @@ test "fuzz: the legal-move list is well-formed (no null / no duplicates)" {
     try std.testing.fuzz({}, fuzzLegalMoveWellFormedness, .{});
 }
 
-// Assert that making then immediately unmaking EACH legal move leaves the legal-move
-// COUNT unchanged. This is a coarser but broader corruption detector than the key
-// check -- it catches a doMove/undoMove that restores the zobrist key but leaves a
-// board field (occupancy, castling, ep) subtly wrong, since the very next generateLegal
-// would then produce a different number of moves.
+/// Assert that making then immediately unmaking EACH legal move leaves the legal-move
+/// COUNT unchanged. This is a coarser but broader corruption detector than the key
+/// check -- it catches a doMove/undoMove that restores the zobrist key but leaves a
+/// board field (occupancy, castling, ep) subtly wrong, since the very next generateLegal
+/// would then produce a different number of moves.
 fn fuzzMoveCountStability(_: void, smith: *std.testing.Smith) anyerror!void {
     var choices: [24]u8 = undefined;
     smith.bytesWithHash(&choices, 3);
@@ -291,34 +291,34 @@ test "fuzz: make/unmake of every move preserves the legal-move count" {
     try std.testing.fuzz({}, fuzzMoveCountStability, .{});
 }
 
-// Exercise the whole eval crown jewel via the NNUE forward pass, which the board fuzz above
-// never reaches: feature extraction from the position, a full accumulator refresh, the
-// feature transformer, and the bucket's fully-connected layers. The
-// accumulator stack + refresh cache are opaque byte blocks (sized by worker_layout), reused
-// across iterations (single-threaded fuzz) exactly like the eval-trace command's static
-// arenas. Built under ReleaseSafe so an OOB feature index, a mis-aligned FT read, or an
-// overflow in the accumulation trips a Zig safety check instead of reading garbage.
+/// Exercise the whole eval crown jewel via the NNUE forward pass, which the board fuzz above
+/// never reaches: feature extraction from the position, a full accumulator refresh, the
+/// feature transformer, and the bucket's fully-connected layers. The
+/// accumulator stack + refresh cache are opaque byte blocks (sized by worker_layout), reused
+/// across iterations (single-threaded fuzz) exactly like the eval-trace command's static
+/// arenas. Built under ReleaseSafe so an OOB feature index, a mis-aligned FT read, or an
+/// overflow in the accumulation trips a Zig safety check instead of reading garbage.
 var eval_stack_buf: [worker_layout.accumulator_stack_size]u8 align(64) = undefined;
 var eval_caches_buf: [worker_layout.accumulator_caches_size]u8 align(64) = undefined;
 
-// Load the on-disk net once into the module-global weight storage (there is no embedded
-// net in the Zig port). `network.load` scans cwd + the given root dir; the fuzz artifact
-// runs from the repo root, so "net/" reaches net/nn-<default>.nnue (and the parity harness's
-// cwd is net/ itself, which the "" scan covers). Return false when the net is absent so the
-// body no-ops instead of dereferencing a null FT -- the target is then a vacuous pass rather
-// than a spurious failure in an environment without the weights.
+/// Load the on-disk net once into the module-global weight storage (there is no embedded
+/// net in the Zig port). `network.load` scans cwd + the given root dir; the fuzz artifact
+/// runs from the repo root, so "net/" reaches net/nn-<default>.nnue (and the parity harness's
+/// cwd is net/ itself, which the "" scan covers). Return false when the net is absent so the
+/// body no-ops instead of dereferencing a null FT -- the target is then a vacuous pass rather
+/// than a spurious failure in an environment without the weights.
 fn ensureNetLoaded() bool {
     if (network.ftPtr() != null) return true;
     network.load("net/", "");
     return network.ftPtr() != null;
 }
 
-// Assert the NNUE evaluation of ANY fuzzer-reached legal position completes without UB and
-// returns a finite score. The reached board is arbitrary (a legal line from the start), so
-// this steers the feature/accumulator code through positions the fixed golden `eval` test
-// never sees (lopsided material, many promotions, deep pawn structures). The bound is a gross
-// tripwire: a correct internal eval is in the hundreds (kiwipete = -427; startpos = +10), so
-// 1<<22 cannot false-positive on a legal board yet still catches pointer-garbage / overflow.
+/// Assert the NNUE evaluation of ANY fuzzer-reached legal position completes without UB and
+/// returns a finite score. The reached board is arbitrary (a legal line from the start), so
+/// this steers the feature/accumulator code through positions the fixed golden `eval` test
+/// never sees (lopsided material, many promotions, deep pawn structures). The bound is a gross
+/// tripwire: a correct internal eval is in the hundreds (kiwipete = -427; startpos = +10), so
+/// 1<<22 cannot false-positive on a legal board yet still catches pointer-garbage / overflow.
 fn fuzzNnueEval(_: void, smith: *std.testing.Smith) anyerror!void {
     if (!ensureNetLoaded()) return; // no weights available -- nothing to fuzz
 
@@ -369,12 +369,12 @@ test "fuzz: NNUE eval of reached positions is finite and crash-free" {
     try std.testing.fuzz({}, fuzzNnueEval, .{});
 }
 
-// Run the deepest crown-jewel target: a shallow SEARCH on a fuzzer-reached position. This
-// drives the whole engine-zone search tree headless -- move ordering, the transposition
-// table, pruning/reduction, qsearch, the incremental accumulator push/pop, and the eval
-// -- via the headless_search helper (no platform thread pool). Built under ReleaseSafe so
-// any OOB / overflow / null-deref anywhere in that tree trips a safety check. A correct
-// search must return a move that is LEGAL at the reached root and a finite score.
+/// Run the deepest crown-jewel target: a shallow SEARCH on a fuzzer-reached position. This
+/// drives the whole engine-zone search tree headless -- move ordering, the transposition
+/// table, pruning/reduction, qsearch, the incremental accumulator push/pop, and the eval
+/// -- via the headless_search helper (no platform thread pool). Built under ReleaseSafe so
+/// any OOB / overflow / null-deref anywhere in that tree trips a safety check. A correct
+/// search must return a move that is LEGAL at the reached root and a finite score.
 fn fuzzShallowSearch(_: void, smith: *std.testing.Smith) anyerror!void {
     if (!ensureNetLoaded()) return; // no weights -> nothing to search
 

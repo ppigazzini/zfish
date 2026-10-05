@@ -39,8 +39,8 @@ const stateAccumulationMut = layout.stateAccumulationMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
-// Route one square's HalfKA index into removed or added. Forward only -- the shared walk
-// has no backward direction -- so `is_removed` reads literally.
+/// Route one square's HalfKA index into removed or added. Forward only -- the shared walk
+/// has no backward direction -- so `is_removed` reads literally.
 inline fn appendHalf(removed: [*]PsqIndex, removed_len: *usize, added: [*]PsqIndex, added_len: *usize, index: u32, is_removed: bool) void {
     // Narrow on the store, the way upstream's ValueList<u16> converts on push_back:
     // halfMakeIndex computes in the full index space and the list holds PsqIndex.
@@ -54,9 +54,9 @@ inline fn appendHalf(removed: [*]PsqIndex, removed_len: *usize, added: [*]PsqInd
     }
 }
 
-// Build one perspective's HalfKA changed-index lists from this ply's piece diff. Kept
-// per-perspective exactly as upstream keeps it: only the orientation differs, but the
-// index formula is cheap and sharing it would buy nothing.
+/// Build one perspective's HalfKA changed-index lists from this ply's piece diff. Kept
+/// per-perspective exactly as upstream keeps it: only the orientation differs, but the
+/// index formula is cheap and sharing it would buy nothing.
 fn psqChangedIndices(
     diff: layout.HalfDiff,
     perspective: u8,

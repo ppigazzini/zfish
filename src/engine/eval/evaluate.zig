@@ -14,7 +14,7 @@ pub const EvalInput = struct {
     value_tb_win_in_max_ply: i32,
 };
 
-// Upstream's PawnValue (types.h), the pawn weight of simple_eval's material balance.
+/// Upstream's PawnValue (types.h), the pawn weight of simple_eval's material balance.
 const pawn_value: i32 = 208;
 
 pub const EvalTraceInput = struct {

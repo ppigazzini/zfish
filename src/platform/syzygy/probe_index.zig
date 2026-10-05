@@ -30,12 +30,12 @@ const white = board_core.color_white;
 const black = board_core.color_black;
 const pawn_pt = board_core.pawn_pt;
 
-// Define SF ProbeState: FAIL=0, OK=1, ZEROING_BEST_MOVE=2, CHANGE_STM=-1.
+/// Define SF ProbeState: FAIL=0, OK=1, ZEROING_BEST_MOVE=2, CHANGE_STM=-1.
 pub const probe_fail: i32 = 0;
 pub const probe_ok: i32 = 1;
 pub const probe_zeroing: i32 = 2;
 pub const change_stm: i32 = -1;
-// Define SF WDLScore.
+/// Define SF WDLScore.
 pub const wdl_win: i32 = 2;
 pub const wdl_cursed_win: i32 = 1;
 pub const wdl_draw: i32 = 0;
@@ -56,9 +56,9 @@ inline fn mapPawns(sq: u8) i32 {
     return encode.map_pawns[sq];
 }
 
-// Port SF do_probe_table, generic over WDL/DTZ. WDL returns the raw score in -2..2 (value - 2); DTZ
-// returns map_score<DTZ>(value) given the position's `wdl_score`. For DTZ, if the stored side does
-// not match the side to move, sets out_state = CHANGE_STM (the caller does a 1-ply search).
+/// Port SF do_probe_table, generic over WDL/DTZ. WDL returns the raw score in -2..2 (value - 2);
+/// DTZ returns map_score<DTZ>(value) given the position's `wdl_score`. For DTZ, if the stored side
+/// does not match the side to move, sets out_state = CHANGE_STM (the caller does a 1-ply search).
 pub fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_score: i32, out_state: *i32) i32 {
     var squares: [tb_pieces]u8 = undefined;
     var pieces_arr: [tb_pieces]u8 = undefined;

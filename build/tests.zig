@@ -15,7 +15,7 @@
 //! file now, not build.zig) -- it scans build/ for that reason.
 
 const std = @import("std");
-// The module table, for the standalone roots that enumerate engine modules.
+/// The module table, for the standalone roots that enumerate engine modules.
 const graph = @import("modules.zig");
 const module_specs = graph.specs;
 const module_edges = graph.edges;

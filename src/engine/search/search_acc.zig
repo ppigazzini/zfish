@@ -37,24 +37,24 @@ const doMove = move_do.doMove;
 const undoMove = move_do.undoMove;
 const givesCheck = legality.givesCheck;
 
-// Bound the TB win-in-max-ply eval clamp (VALUE_TB_WIN_IN_MAX_PLY):
-// q_value_mate(32000) - q_max_ply(246) - 1 - q_max_ply(246).
+/// Bound the TB win-in-max-ply eval clamp (VALUE_TB_WIN_IN_MAX_PLY):
+/// q_value_mate(32000) - q_max_ply(246) - 1 - q_max_ply(246).
 const q_value_tb_win: i32 = 31507;
 
 pub inline fn updateSelDepth(ctx: *const QCtx, ply: i32) void {
     if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
 }
 
-// Compute the LMR reduction step: the LMR base reduction from the per-thread reductions
-// table, the root delta, and the improving flag. Use truncating integer division.
-//
-// Hold the product and the improving term UNSIGNED. Both factors come from the reductions
-// table, which is a scaled logarithm with no negative entry (search.fillReductions), so the
-// product and everything built from it are non-negative -- but stored as i32 that is a fact
-// the backend cannot use, and `/ 512` then carries the round-toward-zero correction on every
-// move the search reduces: the dividend materialised twice, biased, sign-tested and selected
-// by a cmov, where an unsigned shift stands alone. The widths are the bound: 124 * 124 * 197
-// is 3,029,072, well inside u32.
+/// Compute the LMR reduction step: the LMR base reduction from the per-thread reductions
+/// table, the root delta, and the improving flag. Use truncating integer division.
+///
+/// Hold the product and the improving term UNSIGNED. Both factors come from the reductions
+/// table, which is a scaled logarithm with no negative entry (search.fillReductions), so the
+/// product and everything built from it are non-negative -- but stored as i32 that is a fact
+/// the backend cannot use, and `/ 512` then carries the round-toward-zero correction on every
+/// move the search reduces: the dividend materialised twice, biased, sign-tested and selected
+/// by a cmov, where an unsigned shift stands alone. The widths are the bound: 124 * 124 * 197
+/// is 3,029,072, well inside u32.
 pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32, window_term: i32) i32 {
     const reduction_scale: u32 =
         @as(u32, ctx.reductions[@intCast(d)]) * @as(u32, ctx.reductions[@intCast(mn)]);
@@ -63,22 +63,22 @@ pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32, window_te
         @as(i32, @intCast(improving_term)) + 982;
 }
 
-// Compute the window term `reductionAcc` subtracts: `(beta - alpha) * 577 / root_delta`.
-//
-// It is CARRIED across the move loop rather than recomputed per move. `root_delta` is fixed
-// for the whole search (search_id_loop writes it once per aspiration iteration) and `beta`
-// does not move inside a node, so the quotient can change only where `alpha` is raised --
-// the single assignment in step 22. At a non-PV node `alpha` is pinned to `beta - 1` and
-// cannot be raised at all, so there the divide ran once per move to produce the same
-// constant every time. This is a hardware integer division, on a divider that is not
-// pipelined.
+/// Compute the window term `reductionAcc` subtracts: `(beta - alpha) * 577 / root_delta`.
+///
+/// It is CARRIED across the move loop rather than recomputed per move. `root_delta` is fixed
+/// for the whole search (search_id_loop writes it once per aspiration iteration) and `beta`
+/// does not move inside a node, so the quotient can change only where `alpha` is raised --
+/// the single assignment in step 22. At a non-PV node `alpha` is pinned to `beta - 1` and
+/// cannot be raised at all, so there the divide ran once per move to produce the same
+/// constant every time. This is a hardware integer division, on a divider that is not
+/// pipelined.
 pub inline fn reductionWindowTerm(ctx: *const QCtx, beta: i32, alpha: i32) i32 {
     return @divTrunc((beta - alpha) * 577, ctx.root_delta.*);
 }
 
-// Run the evaluate step: the NNUE forward pass on the current position, then
-// evaluate.scaleEvaluation over it with the side to move's optimism, the position's
-// pawn counts and non-pawn material, and +/-VALUE_TB_WIN_IN_MAX_PLY as the clamp.
+/// Run the evaluate step: the NNUE forward pass on the current position, then
+/// evaluate.scaleEvaluation over it with the side to move's optimism, the position's
+/// pawn counts and non-pawn material, and +/-VALUE_TB_WIN_IN_MAX_PLY as the clamp.
 pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     const pos = pos_ptr;
     // SPINE ISOLATION (-Dstub-eval): replace the whole NNUE forward pass and the eval blend
@@ -111,12 +111,12 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     });
 }
 
-// Run the do-move step: count the node, push a fresh accumulator slot, make the
-// move (the make-move records the dirty piece/threats into that slot), then set
-// the Stack's current move and continuation-history pointer. Every caller has
-// already read capture_stage pre-move for its own pruning, so it hands the answer in
-// rather than have it recomputed here (upstream 1bf75bb3); dirtyPiece.pc is read
-// post-move.
+/// Run the do-move step: count the node, push a fresh accumulator slot, make the
+/// move (the make-move records the dirty piece/threats into that slot), then set
+/// the Stack's current move and continuation-history pointer. Every caller has
+/// already read capture_stage pre-move for its own pruning, so it hands the answer in
+/// rather than have it recomputed here (upstream 1bf75bb3); dirtyPiece.pc is read
+/// post-move.
 pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *StateInfo, gives_check: u8, capture: bool, ss_ptr: *SearchStack) void {
     const pos = pos_ptr;
     const ss = ss_ptr;
@@ -159,19 +159,19 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     setContHist(ctx.worker, ss_ptr, InCheck.of(ss.in_check), WasCapture.of(capture), dp.pc, moveTo(move));
 }
 
-// Run the undo-move step: unmake the move, then drop the accumulator slot.
+/// Run the undo-move step: unmake the move, then drop the accumulator slot.
 pub inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
     nnue_acc.stackPop(ctx.acc_stack);
 }
 
-// Verify with a position-level make/unmake used by the qsearch TT-move cutoff.
-// gives_check is computed here, a fresh DirtyThreats list and a throwaway
-// DirtyPiece are passed as scratch (no accumulator slot is pushed, so the dirty
-// state doMove writes is never consumed). undo is the plain Position-level unmake.
-// No PrefetchBank: this make is immediately unmade without a node ever running on the
-// resulting position, matching upstream's own no-prefetch overload for this exact
-// verification make (search.cpp:882).
+/// Verify with a position-level make/unmake used by the qsearch TT-move cutoff.
+/// gives_check is computed here, a fresh DirtyThreats list and a throwaway
+/// DirtyPiece are passed as scratch (no accumulator slot is pushed, so the dirty
+/// state doMove writes is never consumed). undo is the plain Position-level unmake.
+/// No PrefetchBank: this make is immediately unmade without a node ever running on the
+/// resulting position, matching upstream's own no-prefetch overload for this exact
+/// verification make (search.cpp:882).
 pub inline fn verifyDoMove(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;
@@ -183,7 +183,7 @@ pub inline fn verifyUndoMove(pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
 }
 
-// Test whether `move` is in the legal move list of the current position.
+/// Test whether `move` is in the legal move list of the current position.
 pub fn legalContains(pos_ptr: *const Position, move: u16) bool {
     var buf: [256]u16 = undefined;
     const n = movegen.generateLegal(pos_ptr, &buf);

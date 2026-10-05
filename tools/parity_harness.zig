@@ -39,16 +39,16 @@ const printDiff = parity.structured_diff.printDiff;
 
 const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", @"fen-errors", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search", @"tb-cursed" };
 
-// net-missing: exercise the ONLY gate that runs the installed binary from a cwd the build
-// does not pin. Every other gate sets cwd to resources/ (build.zig `run.setCwd(b.path("resources"))`),
-// which supplies the very precondition the binary must check -- so none of them can
-// see a startup that fails without the net.
-//
-// Treat the net as a runtime input (NNUE_EMBEDDING_OFF): `network.load` searches the cwd and
-// the binary directory and returns void on a miss. Unchecked, worker construction
-// `orelse return`s on the null feature-transformer pointer, leaves the Worker zeroed,
-// and the clear job null-unwraps on a worker thread -- a SIGSEGV naming nothing.
-// Assert here a NAMED diagnostic and a clean non-zero exit, never a signal.
+/// net-missing: exercise the ONLY gate that runs the installed binary from a cwd the build
+/// does not pin. Every other gate sets cwd to resources/ (build.zig `run.setCwd(b.path("resources"))`),
+/// which supplies the very precondition the binary must check -- so none of them can
+/// see a startup that fails without the net.
+///
+/// Treat the net as a runtime input (NNUE_EMBEDDING_OFF): `network.load` searches the cwd and
+/// the binary directory and returns void on a miss. Unchecked, worker construction
+/// `orelse return`s on the null feature-transformer pointer, leaves the Worker zeroed,
+/// and the clear job null-unwraps on a worker thread -- a SIGSEGV naming nothing.
+/// Assert here a NAMED diagnostic and a clean non-zero exit, never a signal.
 fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
     // Absolutize the binary path before spawning -- this gate sets cwd to a scratch dir
     // (every other gate keeps cwd = resources/), so a path relative to the harness's own cwd
@@ -119,12 +119,12 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// EXIT 1 MEANS "THE GOLDEN MOVED", AND NOTHING ELSE. A `!void` main hands an error to Zig's
-// default handler, which prints `error: FileNotFound` and exits 1 -- the same status a real
-// drift produces, from a harness that never reached the comparison. Catch here instead and
-// route every failure through `fail`, which is exit 2: a caller can then tell "the engine's
-// output changed" from "the harness could not run the engine at all", which is the whole
-// point of having two statuses.
+/// EXIT 1 MEANS "THE GOLDEN MOVED", AND NOTHING ELSE. A `!void` main hands an error to Zig's
+/// default handler, which prints `error: FileNotFound` and exits 1 -- the same status a real
+/// drift produces, from a harness that never reached the comparison. Catch here instead and
+/// route every failure through `fail`, which is exit 2: a caller can then tell "the engine's
+/// output changed" from "the harness could not run the engine at all", which is the whole
+/// point of having two statuses.
 pub fn main(init: std.process.Init) void {
     fallibleMain(init) catch |err| fail(
         "parity_harness: {s} before any comparison -- a harness failure, not a golden mismatch",

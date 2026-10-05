@@ -75,7 +75,7 @@ fn parsePositionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedPo
 
 const testing = std.testing;
 
-// Shared with uci_parse.zig's fuzz test, which drives both parsers.
+/// Shared with uci_parse.zig's fuzz test, which drives both parsers.
 pub fn freePosition(pp: ParsedPosition) void {
     if (pp.fen) |f| std.heap.c_allocator.free(f);
     if (pp.moves) |m| std.heap.c_allocator.free(m);

@@ -11,8 +11,8 @@ const encode = @import("encode.zig");
 pub const tb_pieces = 7; // SF TBPIECES: max supported men
 pub const Sym = u16; // Huffman symbol
 
-// Represent a RE-PAIR btree entry: 3 bytes packing two 12-bit symbols (left child, right child). If the
-// symbol has length 1 the left field is the stored value; right == 0xFFF marks a leaf.
+/// Represent a RE-PAIR btree entry: 3 bytes packing two 12-bit symbols (left child, right child). If the
+/// symbol has length 1 the left field is the stored value; right == 0xFFF marks a leaf.
 pub const LR = extern struct {
     lr: [3]u8,
     pub inline fn left(self: LR) Sym {
@@ -27,22 +27,22 @@ comptime {
     std.debug.assert(@sizeOf(LR) == 3);
 }
 
-// Hold a partial index into blockLength[] (SF SparseEntry: `char block[4]; offset[2]`, read LE at
-// access time -- byte arrays so it is exactly 6 bytes with no padding).
+/// Hold a partial index into blockLength[] (SF SparseEntry: `char block[4]; offset[2]`, read LE at
+/// access time -- byte arrays so it is exactly 6 bytes with no padding).
 pub const SparseEntry = extern struct { block: [4]u8, offset: [2]u8 };
 
 comptime {
     std.debug.assert(@sizeOf(SparseEntry) == 6);
 }
 
-// Hold low-level indexing/decompression state for one (side, file) of a table. The file-backed
-// fields are SLICES into the loaded table bytes, not `[*]` pointers: the table is an untrusted
-// external file, and a many-item pointer carries no length for either the parse or the decoder to
-// check against. table_load.set fills them by carving `buf` with a bound (`take`), so a truncated
-// file is rejected at load; the remaining slices are owned allocations.
-// Stand in for the bucket table on a PairsData nothing has filled -- the SingleValue branch,
-// a hand-built stub, a fuzzer's partial parse. Two entries and a shift of 63 index in range for
-// any word and name index 0, which is where the scan started before there was a table at all.
+/// Hold low-level indexing/decompression state for one (side, file) of a table. The file-backed
+/// fields are SLICES into the loaded table bytes, not `[*]` pointers: the table is an untrusted
+/// external file, and a many-item pointer carries no length for either the parse or the decoder to
+/// check against. table_load.set fills them by carving `buf` with a bound (`take`), so a truncated
+/// file is rejected at load; the remaining slices are owned allocations.
+/// Stand in for the bucket table on a PairsData nothing has filled -- the SingleValue branch,
+/// a hand-built stub, a fuzzer's partial parse. Two entries and a shift of 63 index in range for
+/// any word and name index 0, which is where the scan started before there was a table at all.
 const walk_from_zero: [2]u8 = .{ 0, 0 };
 
 pub const PairsData = struct {
@@ -88,13 +88,13 @@ pub const PairsData = struct {
     map_idx: [4]u16 = @splat(0),
 };
 
-// Release the allocations setSizes owns on this PairsData.
-//
-// Skip the bucket table when it is still the shared walk-from-zero default: that is static
-// storage, not an allocation, and a PairsData that never reached the table build -- the
-// SingleValue branch, a header refused before it -- still carries it. The shipped loader frees
-// through an arena and never calls this; the fuzz targets and any test holding a checking
-// allocator do.
+/// Release the allocations setSizes owns on this PairsData.
+///
+/// Skip the bucket table when it is still the shared walk-from-zero default: that is static
+/// storage, not an allocation, and a PairsData that never reached the table build -- the
+/// SingleValue branch, a header refused before it -- still carries it. The shipped loader frees
+/// through an arena and never calls this; the fuzz targets and any test holding a checking
+/// allocator do.
 pub fn freeOwned(d: *PairsData, gpa: std.mem.Allocator) void {
     gpa.free(d.base64);
     gpa.free(d.symlen);
@@ -104,7 +104,8 @@ pub fn freeOwned(d: *PairsData, gpa: std.mem.Allocator) void {
     d.len_tab = &walk_from_zero;
 }
 
-// Hold the per-table metadata (built at init from the material config); PairsData is filled lazily.
+/// Hold the per-table metadata (built at init from the material config); PairsData is filled
+/// lazily.
 pub const EntryInfo = struct {
     has_pawns: bool,
     has_unique_pieces: bool,
@@ -112,24 +113,24 @@ pub const EntryInfo = struct {
     pawn_count: [2]u8, // [lead color, other color]
 };
 
-// Report the geometry-table row a group length may index, or null when the piece sequence has
-// produced a group no real table has. `binomial` and `lead_pawns_size` are sized for the longest
-// group a legal material configuration can make (5 -- seven men, two of them kings); the piece
-// sequence they are indexed by is a run of raw file NIBBLES, so a corrupt table can make a group
-// longer than that and read off the end of the array. Upstream indexes both unchecked, its own
-// writer having produced the file.
+/// Report the geometry-table row a group length may index, or null when the piece sequence has
+/// produced a group no real table has. `binomial` and `lead_pawns_size` are sized for the longest
+/// group a legal material configuration can make (5 -- seven men, two of them kings); the piece
+/// sequence they are indexed by is a run of raw file NIBBLES, so a corrupt table can make a group
+/// longer than that and read off the end of the array. Upstream indexes both unchecked, its own
+/// writer having produced the file.
 fn geometryRow(len: i32, rows: usize) ?usize {
     if (len < 0 or @as(usize, @intCast(len)) >= rows) return null;
     return @intCast(len);
 }
 
-// Port SF `set_groups`: from the piece sequence in d.pieces, fill group_len[] (0-terminated) and
-// group_idx[] (the multiplicative start index of each group). `order` + `f` come from the file
-// header. Use encode.binomial / encode.lead_pawns_size.
-//
-// Return false when the sequence indexes past either geometry table, so the caller refuses the
-// table at LOAD -- the one point where a corrupt file can still be answered with "no table"
-// instead of a probe reading off the end of the arrays.
+/// Port SF `set_groups`: from the piece sequence in d.pieces, fill group_len[] (0-terminated) and
+/// group_idx[] (the multiplicative start index of each group). `order` + `f` come from the file
+/// header. Use encode.binomial / encode.lead_pawns_size.
+///
+/// Return false when the sequence indexes past either geometry table, so the caller refuses the
+/// table at LOAD -- the one point where a corrupt file can still be answered with "no table"
+/// instead of a probe reading off the end of the arrays.
 pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: encode.TbFile) bool {
     var n: usize = 0;
     var first_len: i32 = if (e.has_pawns) 0 else if (e.has_unique_pieces) 3 else 2;
@@ -182,20 +183,20 @@ pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: encode.TbFile) b
     return true;
 }
 
-// Port SF `set_symlen`: expand btree symbol `s` into its children until the leaves, returning the
-// number of values it represents (minus 1). Recurse; the tree is acyclic so `visited` guards
-// re-entry. Fill d.symlen[].
-//
-// PRECONDITION, and it is load-bearing: every non-leaf btree entry's two child symbols index
-// inside d.btree / d.symlen / visited. Both children are 12-bit fields of the FILE, so a corrupt
-// table can name a symbol past the tree -- and `d.symlen[sl] = ...` below would then be an
-// out-of-bounds WRITE, which ReleaseFast does not check. decode.setSizes validates the whole
-// btree before calling here, so this walk is in-bounds by construction rather than by trust; the
-// asserts restate that where ReleaseSafe (tests, fuzz) can see it.
-// Colour a symbol during the btree walk. GREY means "on the current DFS path", so meeting a
-// GREY child IS a cycle. Two states cannot express that: a symbol has to be marked before its
-// subtree is walked, which makes a cycle read as "already computed" -- the walk terminates and
-// sums symlen[] entries that are still zero.
+/// Port SF `set_symlen`: expand btree symbol `s` into its children until the leaves, returning the
+/// number of values it represents (minus 1). Recurse; the tree is acyclic so `visited` guards
+/// re-entry. Fill d.symlen[].
+///
+/// PRECONDITION, and it is load-bearing: every non-leaf btree entry's two child symbols index
+/// inside d.btree / d.symlen / visited. Both children are 12-bit fields of the FILE, so a corrupt
+/// table can name a symbol past the tree -- and `d.symlen[sl] = ...` below would then be an
+/// out-of-bounds WRITE, which ReleaseFast does not check. decode.setSizes validates the whole
+/// btree before calling here, so this walk is in-bounds by construction rather than by trust; the
+/// asserts restate that where ReleaseSafe (tests, fuzz) can see it.
+/// Colour a symbol during the btree walk. GREY means "on the current DFS path", so meeting a
+/// GREY child IS a cycle. Two states cannot express that: a symbol has to be marked before its
+/// subtree is walked, which makes a cycle read as "already computed" -- the walk terminates and
+/// sums symlen[] entries that are still zero.
 pub const SymColour = enum(u8) { white, grey, black };
 
 pub fn setSymLen(d: *PairsData, s: Sym, colour: []SymColour, cyclic: *bool) u8 {

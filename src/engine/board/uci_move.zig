@@ -1,6 +1,6 @@
 const std = @import("std");
 const board_core = @import("board_core");
-// Single-source the move-word decoders; legality.zig aliases the same set.
+/// Single-source the move-word decoders; legality.zig aliases the same set.
 const moveFrom = board_core.moveFrom;
 const moveTo = board_core.moveTo;
 const moveType = board_core.moveTypeOf;

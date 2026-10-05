@@ -17,9 +17,9 @@ pub const Captured = struct {
     }
 };
 
-// Spawn the engine, optionally feed it a UCI script on stdin, and capture stdout+stderr
-// (CR-stripped so Windows text-mode CRLF matches the LF goldens). Mirror std.process.run's
-// deadlock-free MultiReader drain, adding the stdin write run() lacks.
+/// Spawn the engine, optionally feed it a UCI script on stdin, and capture stdout+stderr
+/// (CR-stripped so Windows text-mode CRLF matches the LF goldens). Mirror std.process.run's
+/// deadlock-free MultiReader drain, adding the stdin write run() lacks.
 pub fn runEngine(
     gpa: std.mem.Allocator,
     io: Io,
@@ -102,7 +102,7 @@ pub fn startsWithIgnoreCase(line: []const u8, prefix: []const u8) bool {
     return std.ascii.eqlIgnoreCase(line[0..prefix.len], prefix);
 }
 
-// Remove the first " <field> <digits>" run from a line (sed 's/ field [0-9]+//').
+/// Remove the first " <field> <digits>" run from a line (sed 's/ field [0-9]+//').
 pub fn removeField(gpa: std.mem.Allocator, line: []const u8, field: []const u8) ![]u8 {
     const idx = std.mem.find(u8, line, field) orelse return gpa.dupe(u8, line);
     var end = idx + field.len;
@@ -114,14 +114,14 @@ pub fn removeField(gpa: std.mem.Allocator, line: []const u8, field: []const u8) 
     return out;
 }
 
-// Report the CR-trimmed line. The interactive reads split on '\n' alone, so a Windows
-// text-mode stream leaves the '\r' attached to every line a comparison then misses.
+/// Report the CR-trimmed line. The interactive reads split on '\n' alone, so a Windows
+/// text-mode stream leaves the '\r' attached to every line a comparison then misses.
 pub fn trimCR(line: []const u8) []const u8 {
     return if (line.len > 0 and line[line.len - 1] == '\r') line[0 .. line.len - 1] else line;
 }
 
-// Report whether the line is one `go perft` divide row (`e2e4: 20`) rather than a total or
-// a blank -- the perft golden sorts these, and the ponder gate counts them.
+/// Report whether the line is one `go perft` divide row (`e2e4: 20`) rather than a total or
+/// a blank -- the perft golden sorts these, and the ponder gate counts them.
 pub fn isDivideLine(line: []const u8) bool {
     if (line.len < 6) return false;
     var i: usize = 0;
@@ -140,8 +140,8 @@ pub fn isDivideLine(line: []const u8) bool {
     return true;
 }
 
-// Print the message and exit 2, the harness's "crash / usage" status. Live here rather than
-// beside `main` so a leaf can call it without importing the root.
+/// Print the message and exit 2, the harness's "crash / usage" status. Live here rather than
+/// beside `main` so a leaf can call it without importing the root.
 pub fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.debug.print(fmt ++ "\n", args);
     std.process.exit(2);

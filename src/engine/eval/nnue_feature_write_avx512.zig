@@ -20,11 +20,11 @@ const std = @import("std");
 const builtin = @import("builtin");
 const luts = @import("nnue_feature_luts.zig");
 
-// HalfKA index element type -- upstream's `HalfKAv2_hm::IndexList` is ValueList<u16,32>
-// (d96c183f). Restated rather than imported: this file is a leaf of the nnue_feature
-// module and nnue_acc_layout (which owns `PsqIndex` and the comptime bound proving the
-// index space fits) imports the accumulator side. The two are pinned equal by the
-// callers, which pass a *[psq_index_capacity]PsqIndex straight into these pointers.
+/// HalfKA index element type -- upstream's `HalfKAv2_hm::IndexList` is ValueList<u16,32>
+/// (d96c183f). Restated rather than imported: this file is a leaf of the nnue_feature
+/// module and nnue_acc_layout (which owns `PsqIndex` and the comptime bound proving the
+/// index space fits) imports the accumulator side. The two are pinned equal by the
+/// callers, which pass a *[psq_index_capacity]PsqIndex straight into these pointers.
 const PsqIndex = u16;
 
 pub const use_avx512_nnue_feature = builtin.target.cpu.arch == .x86_64 and
@@ -32,27 +32,27 @@ pub const use_avx512_nnue_feature = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vbmi2);
 
 const V64u8 = @Vector(64, u8);
-// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
-// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
-// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
-// argument type") and the AVX-512 tiers stop building.
+/// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
+/// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
+/// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
+/// argument type") and the AVX-512 tiers stop building.
 const V64mask = @Vector(64, u1);
 const V32u16 = @Vector(32, u16);
 
-// LLVM intrinsic names/argument orders verified empirically (clang -O2 -mavx512f
-// -mavx512bw -mavx512vbmi -mavx512vbmi2 -S -emit-llvm), same protocol as the other
-// avx512-tier ports on this branch. `_mm512_permutexvar_epi16(idx, table)` lowers to
-// `llvm.x86.avx512.permvar.hi.512(table, idx)` -- table and idx SWAP position relative
-// to the C wrapper, same class of surprise `mask.expand.v16i32` had for the move
-// sorter. `_mm512_cvtepu16_epi32`/`_mm512_cvtepi8_epi16`/`_mm512_extracti64x4_epi64`
-// all lower to plain shufflevector(+zext/sext), no intrinsic; `_mm512_add_epi16`/
-// `_mm512_xor_si512` are plain add/xor. Only compress (already verified for the
-// dirty-threat writer) and this permute need raw declarations.
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// LLVM intrinsic names/argument orders verified empirically (clang -O2 -mavx512f
+/// -mavx512bw -mavx512vbmi -mavx512vbmi2 -S -emit-llvm), same protocol as the other
+/// avx512-tier ports on this branch. `_mm512_permutexvar_epi16(idx, table)` lowers to
+/// `llvm.x86.avx512.permvar.hi.512(table, idx)` -- table and idx SWAP position relative
+/// to the C wrapper, same class of surprise `mask.expand.v16i32` had for the move
+/// sorter. `_mm512_cvtepu16_epi32`/`_mm512_cvtepi8_epi16`/`_mm512_extracti64x4_epi64`
+/// all lower to plain shufflevector(+zext/sext), no intrinsic; `_mm512_add_epi16`/
+/// `_mm512_xor_si512` are plain add/xor. Only compress (already verified for the
+/// dirty-threat writer) and this permute need raw declarations.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 extern fn @"llvm.x86.avx512.mask.compress.v64i8"(a: V64u8, src: V64u8, mask: V64mask) callconv(.{ .x86_64_sysv = .{} }) V64u8;
 extern fn @"llvm.x86.avx512.permvar.hi.512"(table: V32u16, idx: V32u16) callconv(.{ .x86_64_sysv = .{} }) V32u16;
 
@@ -67,9 +67,9 @@ fn compressBytes(mask: u64, data: V64u8) V64u8 {
     return @"llvm.x86.avx512.mask.compress.v64i8"(data, @splat(0), mask_v);
 }
 
-// The low 32 (of 64) compressed bytes, zero-extended to u16 lanes. Values are always
-// square indices (0-63) or piece codes (0-15), so zero- vs upstream's sign-extension
-// (`_mm512_cvtepi8_epi16`) is identical for every value either can ever hold.
+/// The low 32 (of 64) compressed bytes, zero-extended to u16 lanes. Values are always
+/// square indices (0-63) or piece codes (0-15), so zero- vs upstream's sign-extension
+/// (`_mm512_cvtepi8_epi16`) is identical for every value either can ever hold.
 fn widenLow32(bytes: V64u8) V32u16 {
     var low: [32]u8 = undefined;
     inline for (0..32) |i| low[i] = bytes[i];
@@ -78,20 +78,20 @@ fn widenLow32(bytes: V64u8) V32u16 {
 
 pub const WriteResult = struct { removed_len: usize, added_len: usize };
 
-// removed_out/added_out must have 32 slots of headroom past the caller's write
-// position -- the store is unmasked, upstream's own shape (half_ka_v2_hm.cpp:73-74);
-// only the first popCount(removed_bb)/popCount(added_bb) of the 32 written words are
-// meaningful.
-//
-// The real body is gated on `use_avx512_nnue_feature` INSIDE the function, not just at
-// its call sites: nnue_feature.zig re-exports this function by value
-// (`writeIndicesAvx512`), and that file's own (unconditional) `refAllDecls` reaches the
-// re-export regardless of target -- a comptime guard on the call site alone doesn't
-// stop refAllDecls from forcing this body to compile on a target that can't lower the
-// AVX-512 intrinsics inside it. Gating the body itself means the function is safe to
-// reference from anywhere, on any target: the `unreachable` arm has no intrinsics to
-// lower, and it is provably never taken (every real call site also checks
-// `use_avx512_nnue_feature` before calling, per this branch's established pattern).
+/// removed_out/added_out must have 32 slots of headroom past the caller's write
+/// position -- the store is unmasked, upstream's own shape (half_ka_v2_hm.cpp:73-74);
+/// only the first popCount(removed_bb)/popCount(added_bb) of the 32 written words are
+/// meaningful.
+///
+/// The real body is gated on `use_avx512_nnue_feature` INSIDE the function, not just at
+/// its call sites: nnue_feature.zig re-exports this function by value
+/// (`writeIndicesAvx512`), and that file's own (unconditional) `refAllDecls` reaches the
+/// re-export regardless of target -- a comptime guard on the call site alone doesn't
+/// stop refAllDecls from forcing this body to compile on a target that can't lower the
+/// AVX-512 intrinsics inside it. Gating the body itself means the function is safe to
+/// reference from anywhere, on any target: the `unreachable` arm has no intrinsics to
+/// lower, and it is provably never taken (every real call site also checks
+/// `use_avx512_nnue_feature` before calling, per this branch's established pattern).
 pub fn writeIndices(
     old_pieces: []const u8,
     new_pieces: []const u8,
@@ -146,11 +146,11 @@ pub fn writeIndices(
 
 const testing = std.testing;
 
-// An independent re-derivation of nnue_feature.halfMakeIndex's formula (not a call to
-// it -- this file would need to import the "nnue_feature" module back to reach it,
-// which its sibling nnue_feature.zig already imports THIS file from; duplicating three
-// lines keeps the module graph acyclic and this test provably can't pass by sharing a
-// bug with the code under test).
+/// An independent re-derivation of nnue_feature.halfMakeIndex's formula (not a call to
+/// it -- this file would need to import the "nnue_feature" module back to reach it,
+/// which its sibling nnue_feature.zig already imports THIS file from; duplicating three
+/// lines keeps the module graph acyclic and this test provably can't pass by sharing a
+/// bug with the code under test).
 fn referenceIndex(perspective: u8, square: u8, piece: u8, king_square: u8) u32 {
     const flip: u32 = 56 * perspective;
     return (@as(u32, square) ^ luts.orient_tbl_half[king_square] ^ flip) +

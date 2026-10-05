@@ -63,8 +63,8 @@ pub fn threadAllocationInformation(
     return formatThreadAllocation(gpa, threads.numThreads(), binding);
 }
 
-// The four *Engine entries are what the UCI layer calls; each renders with the process
-// allocator and hands the caller an owned slice to free.
+/// The four *Engine entries are what the UCI layer calls; each renders with the process
+/// allocator and hands the caller an owned slice to free.
 const engine_gpa = std.heap.c_allocator;
 
 pub fn numaConfigStringEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {

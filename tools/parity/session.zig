@@ -51,9 +51,9 @@ pub fn wellFormedMove(m: []const u8) bool {
     return true;
 }
 
-// Parse "score cp N" / "score mate N" (last one wins), "time N", "nodes N", and the
-// "bestmove M" move token into `out`. Use it both on live engine output (info + bestmove
-// lines) and on a committed golden line that packs the same fields.
+/// Parse "score cp N" / "score mate N" (last one wins), "time N", "nodes N", and the
+/// "bestmove M" move token into `out`. Use it both on live engine output (info + bestmove
+/// lines) and on a committed golden line that packs the same fields.
 pub fn scanInfo(out: *Outcome, line: []const u8) void {
     var t = std.mem.tokenizeScalar(u8, line, ' ');
     var prev: []const u8 = "";
@@ -80,11 +80,11 @@ pub fn scanInfo(out: *Outcome, line: []const u8) void {
     }
 }
 
-// Drive an interactive UCI session. The child's stdout pipe is non-blocking (the Io sets it so), so a
-// raw File.Reader busy-spins; MultiReader.fill is the Io-aware await that std.process.run
-// uses, so this drives the search through it -- accumulate stdout, scan the buffer for a
-// marker, keep the search alive (no early quit) until it emits its real bestmove. stderr ->
-// null so a single-stream read can't deadlock. Init in place (self-referential buffers).
+/// Drive an interactive UCI session. The child's stdout pipe is non-blocking (the Io sets it so), so a
+/// raw File.Reader busy-spins; MultiReader.fill is the Io-aware await that std.process.run
+/// uses, so this drives the search through it -- accumulate stdout, scan the buffer for a
+/// marker, keep the search alive (no early quit) until it emits its real bestmove. stderr ->
+/// null so a single-stream read can't deadlock. Init in place (self-referential buffers).
 pub const Interactive = struct {
     io: Io,
     gpa: std.mem.Allocator,
@@ -117,7 +117,7 @@ pub const Interactive = struct {
         return self.mr.reader(0).buffered();
     }
 
-    // Read more stdout until the NEXT `needle` appears (past prior matches); false at EOF.
+    /// Read more stdout until the NEXT `needle` appears (past prior matches); false at EOF.
     pub fn fillUntil(self: *Interactive, needle: []const u8) bool {
         while (true) {
             if (std.mem.findPos(u8, self.buffered(), self.scanned, needle)) |pos| {
@@ -134,7 +134,7 @@ pub const Interactive = struct {
         }
     }
 
-    // Send quit, drain to EOF, reap. Return whether the process exited with code 0.
+    /// Send quit, drain to EOF, reap. Return whether the process exited with code 0.
     pub fn finish(self: *Interactive) bool {
         self.send("quit\n");
         self.child.stdin.?.close(self.io);
@@ -150,7 +150,7 @@ pub const Interactive = struct {
     }
 };
 
-// Scan a captured transcript for the last score/time before the first bestmove, and the move.
+/// Scan a captured transcript for the last score/time before the first bestmove, and the move.
 fn parseOutcome(text: []const u8) Outcome {
     var out = Outcome{};
     var li = lines(text);
@@ -165,7 +165,7 @@ fn parseOutcome(text: []const u8) Outcome {
     return out;
 }
 
-// Run one interactive search: send `cmds`, read to the real bestmove (no early-quit truncation).
+/// Run one interactive search: send `cmds`, read to the real bestmove (no early-quit truncation).
 pub fn runSearch(io: Io, gpa: std.mem.Allocator, bin: []const u8, cmds: []const u8) !Outcome {
     var s: Interactive = undefined;
     try s.init(io, gpa, bin);

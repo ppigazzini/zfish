@@ -14,9 +14,9 @@ const Position = position_types.Position;
 const PVMoves = root_move.PVMoves;
 const RootMove = root_move.RootMove;
 
-// Share the Worker-graph accessors between BOTH the ID-orchestration driver and the node
-// recursion: pure reads of a `*WorkerLayout` into its bound subsystems. Keep them
-// here in the context leaf so search_id and search_driver both reach them.
+/// Share the Worker-graph accessors between BOTH the ID-orchestration driver and the node
+/// recursion: pure reads of a `*WorkerLayout` into its bound subsystems. Keep them
+/// here in the context leaf so search_id and search_driver both reach them.
 pub fn workerThreadsPool(wl: *const worker_layout.WorkerLayout) *worker_layout.ThreadPool {
     return wl.threads;
 }
@@ -66,18 +66,18 @@ pub const SearchTimeState = struct {
     threads: ?*worker_layout.ThreadPool,
 };
 
-// Sum the nodes searched across the pool -- the quantity upstream's check_time gates on,
-// for both the node limit and `nodestime` elapsed. Live here rather than in
-// search_control so that module keeps its import set (it already depends on search_ctx);
-// worker_layout is already a dependency of this module.
+/// Sum the nodes searched across the pool -- the quantity upstream's check_time gates on,
+/// for both the node limit and `nodestime` elapsed. Live here rather than in
+/// search_control so that module keeps its import set (it already depends on search_ctx);
+/// worker_layout is already a dependency of this module.
 pub fn timeStatePoolNodes(ts: *const SearchTimeState, own_nodes: u64) u64 {
     const tp = ts.threads orelse return own_nodes; // no pool wired => own count is all there is
     return worker_layout.poolNodesSearched(tp);
 }
 
-// Snapshot the iterative_deepening state once at entry (skill-off path only). Live
-// fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
-// read once.
+/// Snapshot the iterative_deepening state once at entry (skill-off path only). Live
+/// fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
+/// read once.
 pub const ZfishIdState = struct {
     root_pos: *Position,
     root_moves: [*]RootMove,
@@ -119,10 +119,10 @@ pub const ZfishIdState = struct {
     skill_enabled: u8,
 };
 
-// Carry the hot per-node context through the qsearch/search recursion: the Worker graph +
-// the pointers into it the node bodies read/write. `table` is the typed TT cluster
-// base, non-optional: a search runs only on a sized table, so the per-node TT reads
-// carry no null guard. `acc_stack`/`cache` are the NNUE arena opaque handles (B4 idiom).
+/// Carry the hot per-node context through the qsearch/search recursion: the Worker graph +
+/// the pointers into it the node bodies read/write. `table` is the typed TT cluster
+/// base, non-optional: a search runs only on a sized table, so the per-node TT reads
+/// carry no null guard. `acc_stack`/`cache` are the NNUE arena opaque handles (B4 idiom).
 pub const QCtx = struct {
     worker: *worker_layout.WorkerLayout,
     table: [*]tt_types.TtCluster,

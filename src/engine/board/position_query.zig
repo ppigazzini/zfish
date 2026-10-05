@@ -32,20 +32,20 @@ pub fn hasCheckers(pos: *const Position) bool {
     return pos.st.checkers_bb != 0;
 }
 
-// Count the WDL-model material (src/uci.cpp): pawns + 3*(knights+bishops) +
-// 5*rooks + 9*queens, both colours. piece_count is indexed by piece
-// (white type at 1..5, black type at 9..13).
+/// Count the WDL-model material (src/uci.cpp): pawns + 3*(knights+bishops) +
+/// 5*rooks + 9*queens, both colours. piece_count is indexed by piece
+/// (white type at 1..5, black type at 9..13).
 pub fn wdlMaterial(pos: *const Position) i32 {
     const pc = pos.piece_count;
     return (pc[1] + pc[9]) + 3 * (pc[2] + pc[10]) + 3 * (pc[3] + pc[11]) +
         5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);
 }
 
-// Alias position_snapshot.PositionSnapshot -- the snapshot the fill hook writes.
+/// Alias position_snapshot.PositionSnapshot -- the snapshot the fill hook writes.
 const FillSnapshot = position_snapshot.PositionSnapshot;
 
-// Derive the NNUE/board snapshot from the live Position (fillSnapshot).
-// Read the Position fields directly.
+/// Derive the NNUE/board snapshot from the live Position (fillSnapshot).
+/// Read the Position fields directly.
 pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     const st = pos.st;
 
@@ -82,8 +82,8 @@ pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     @memcpy(out.board[0..64], pos.board[0..64]);
 }
 
-// Copy the 64-square piece board only, for NNUE piece-count/accumulator callers that
-// need just the board (not the full snapshot).
+/// Copy the 64-square piece board only, for NNUE piece-count/accumulator callers that
+/// need just the board (not the full snapshot).
 pub fn accumulatorSnapshot(pos: *const Position, pieces_out: [*]u8) void {
     var s: usize = 0;
     while (s < 64) : (s += 1) pieces_out[s] = pos.board[s];

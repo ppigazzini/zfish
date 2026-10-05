@@ -51,8 +51,8 @@ const Event = struct {
 const cycles_ev = Event{ .name = "cycles", .type_ = .HARDWARE, .config = @backingInt(linux.PERF.COUNT.HW.CPU_CYCLES) };
 const instr_ev = Event{ .name = "instructions", .type_ = .HARDWARE, .config = @backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS) };
 
-// Zen 4 top-down level 1 (PMCx1A0 de_no_dispatch_per_slot, units of dispatch SLOTS,
-// 6 per cycle) and its retiring complement (PMCx0C1 ex_ret_ops).
+/// Zen 4 top-down level 1 (PMCx1A0 de_no_dispatch_per_slot, units of dispatch SLOTS,
+/// 6 per cycle) and its retiring complement (PMCx0C1 ex_ret_ops).
 const fe_slots_ev = Event{ .name = "fe_bound_slots", .type_ = .RAW, .config = zen4(0x1A0, 0x01) };
 const be_slots_ev = Event{ .name = "be_stall_slots", .type_ = .RAW, .config = zen4(0x1A0, 0x1E) };
 const ret_ops_ev = Event{ .name = "retired_ops", .type_ = .RAW, .config = zen4(0x0C1, 0x00) };

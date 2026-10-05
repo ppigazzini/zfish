@@ -29,19 +29,19 @@ const optEql = structured_diff.optEql;
 const parseInfoLine = structured_diff.parseInfoLine;
 const parseBestmove = structured_diff.parseBestmove;
 
-// reset-determinism: run a metamorphic gate for TT/history reset. A stale-state bleed (a
-// ucinewgame that fails to clear the TT/histories, or a Clear Hash that no-ops) is invisible
-// to every golden -- those run one clean process. Here, in ONE process, run the SAME fixed-node
-// single-thread search several times and assert three relations no snapshot can:
-//   R1 reuse-live: a second identical search WITHOUT a reset changes the node count (the TT is
-//                  actually being consulted -- else it would repeat the same count).
-//   R2 clear-hash: after `setoption Clear Hash`, the search no longer gets the reuse discount
-//                  (its node count differs from the reuse run). Compared against the REUSE run,
-//                  not the clean run, on purpose: Clear Hash empties only the TT, not the
-//                  histories, so it need not reproduce the clean count exactly -- only lose the
-//                  TT-reuse speedup.
-//   R3 full-reset: `ucinewgame` restores the EXACT clean search (depth/score/nodes/bestmove/
-//                  ponder), proving it clears both the TT and the histories with no bleed.
+/// reset-determinism: run a metamorphic gate for TT/history reset. A stale-state bleed (a
+/// ucinewgame that fails to clear the TT/histories, or a Clear Hash that no-ops) is invisible
+/// to every golden -- those run one clean process. Here, in ONE process, run the SAME fixed-node
+/// single-thread search several times and assert three relations no snapshot can:
+///   R1 reuse-live: a second identical search WITHOUT a reset changes the node count (the TT is
+///                  actually being consulted -- else it would repeat the same count).
+///   R2 clear-hash: after `setoption Clear Hash`, the search no longer gets the reuse discount
+///                  (its node count differs from the reuse run). Compared against the REUSE run,
+///                  not the clean run, on purpose: Clear Hash empties only the TT, not the
+///                  histories, so it need not reproduce the clean count exactly -- only lose the
+///                  TT-reuse speedup.
+///   R3 full-reset: `ucinewgame` restores the EXACT clean search (depth/score/nodes/bestmove/
+///                  ponder), proving it clears both the TT and the histories with no bleed.
 const ResetFp = struct {
     depth: ?i64 = null,
     kind: ScoreKind = .none,
@@ -63,9 +63,9 @@ const ResetFp = struct {
     }
 };
 
-// Run one startpos depth-14 search in the shared session (optionally preceded by `pre`, e.g.
-// ucinewgame / Clear Hash) and fingerprint its final scored info line + bestmove. Parse only
-// the output since the previous search (the buffer grows; `mark` is a stable offset).
+/// Run one startpos depth-14 search in the shared session (optionally preceded by `pre`, e.g.
+/// ucinewgame / Clear Hash) and fingerprint its final scored info line + bestmove. Parse only
+/// the output since the previous search (the buffer grows; `mark` is a stable offset).
 fn resetSearch(s: *Interactive, pre: []const u8) ResetFp {
     const mark = s.buffered().len;
     if (pre.len != 0) s.send(pre);
@@ -116,14 +116,14 @@ pub fn runResetDeterminism(gpa: std.mem.Allocator, io: Io, bin: []const u8) nore
     std.process.exit(0);
 }
 
-// skill: treat Skill Level as a NON-deterministic path (a wall-clock-seeded PRNG biases the move
-// pick, search_id.zig), so no snapshot is possible. Assert the metamorphic relations a snapshot
-// cannot: (1) at Skill 20 the handicap is disabled (skill_enabled=0), so repeated searches are
-// DETERMINISTIC -- one distinct move; (2) at Skill 0 the PRNG is active, so repeated searches
-// VARY -- >= 2 distinct moves, every one legal. The PRNG seeds once per process and advances per
-// pick (it is not reset by ucinewgame), so K searches in ONE process give variance without the
-// cross-process same-millisecond seed collision a multi-process loop risks. Robustness measured:
-// over 25 process-seeds, K=12 skill-0 cardinality was min 3 (never near the >=2 floor).
+/// skill: treat Skill Level as a NON-deterministic path (a wall-clock-seeded PRNG biases the move
+/// pick, search_id.zig), so no snapshot is possible. Assert the metamorphic relations a snapshot
+/// cannot: (1) at Skill 20 the handicap is disabled (skill_enabled=0), so repeated searches are
+/// DETERMINISTIC -- one distinct move; (2) at Skill 0 the PRNG is active, so repeated searches
+/// VARY -- >= 2 distinct moves, every one legal. The PRNG seeds once per process and advances per
+/// pick (it is not reset by ucinewgame), so K searches in ONE process give variance without the
+/// cross-process same-millisecond seed collision a multi-process loop risks. Robustness measured:
+/// over 25 process-seeds, K=12 skill-0 cardinality was min 3 (never near the >=2 floor).
 const MoveSet = struct {
     moves: [24][8]u8 = undefined,
     lens: [24]usize = undefined,
@@ -144,8 +144,8 @@ const skill_depth = 10;
 const skill_det_runs = 6; // Skill 20: must stay a single move (deterministic)
 const skill_live_runs = 12; // Skill 0: must vary (>= 2 distinct)
 
-// Run one startpos depth-`skill_depth` search in the shared session (fresh TT via ucinewgame; the
-// skill PRNG persists across it) -> the bestmove (a slice into s.buffered(), valid until finish).
+/// Run one startpos depth-`skill_depth` search in the shared session (fresh TT via ucinewgame; the
+/// skill PRNG persists across it) -> the bestmove (a slice into s.buffered(), valid until finish).
 fn skillMove(s: *Interactive) []const u8 {
     const mark = s.buffered().len;
     s.send("ucinewgame\nposition startpos\ngo depth 10\n");
@@ -162,15 +162,15 @@ fn skillMove(s: *Interactive) []const u8 {
     return "";
 }
 
-// repeat-go: drive consecutive `go` commands with NO intervening `position`, the most ordinary
-// sequence a GUI issues (analyse, stop, analyse again). Upstream guards the setup-state transfer
-// -- `if (states.get()) setupStates = std::move(states)` (thread.cpp:316-321) -- so the pool
-// reuses the list it already owns when the engine's slot is empty. zfish freed that list and
-// stored null instead, so the SECOND `go` panicked and dumped core in the shipped ReleaseFast
-// binary. Every other gate re-sends `position` before each `go`, which is precisely why a
-// process-killing defect was invisible to all of them.
-//
-// Liveness, not a snapshot: N `go`s must produce N well-formed bestmoves and a clean exit.
+/// repeat-go: drive consecutive `go` commands with NO intervening `position`, the most ordinary
+/// sequence a GUI issues (analyse, stop, analyse again). Upstream guards the setup-state transfer
+/// -- `if (states.get()) setupStates = std::move(states)` (thread.cpp:316-321) -- so the pool
+/// reuses the list it already owns when the engine's slot is empty. zfish freed that list and
+/// stored null instead, so the SECOND `go` panicked and dumped core in the shipped ReleaseFast
+/// binary. Every other gate re-sends `position` before each `go`, which is precisely why a
+/// process-killing defect was invisible to all of them.
+///
+/// Liveness, not a snapshot: N `go`s must produce N well-formed bestmoves and a clean exit.
 pub fn runRepeatGo(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     const rounds = 4;
 
@@ -205,14 +205,14 @@ pub fn runRepeatGo(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// fen-truncated: a FEN missing trailing fields must SET, not fail. Upstream reads them with
-// `ss >> token`, so an exhausted stream leaves the castling loop unentered, the en-passant char at
-// its '-' initializer, and `ss >> rule50 >> gamePly` failing into 0/0. A malformed halfmove field
-// puts the stream in fail state, so the fullmove field cannot be read into rule50 either.
-//
-// The expectations are LITERAL, not a regenerable golden: each was verified against the pristine
-// upstream oracle at the tracked sha. A golden here could be regenerated green over a defect,
-// which is the failure mode this gate exists to prevent.
+/// fen-truncated: a FEN missing trailing fields must SET, not fail. Upstream reads them with
+/// `ss >> token`, so an exhausted stream leaves the castling loop unentered, the en-passant char at
+/// its '-' initializer, and `ss >> rule50 >> gamePly` failing into 0/0. A malformed halfmove field
+/// puts the stream in fail state, so the fullmove field cannot be read into rule50 either.
+///
+/// The expectations are LITERAL, not a regenerable golden: each was verified against the pristine
+/// upstream oracle at the tracked sha. A golden here could be regenerated green over a defect,
+/// which is the failure mode this gate exists to prevent.
 const FenCase = struct { fen: []const u8, want: []const u8 };
 const fen_truncated_cases = [_]FenCase{
     // Stops after the side to move: castling, ep and both counters default.
@@ -256,14 +256,14 @@ pub fn runFenTruncated(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn
     std.process.exit(0);
 }
 
-// flip-chess960: `flip` re-sets the board from its own FEN, and must re-parse it under the
-// variant the board already has. Upstream ends Position::flip with `set(f, is_chess960(), st)`
-// (position.cpp:1626), so toggling UCI_Chess960 between `position` and `flip` cannot reinterpret
-// castling rights that were parsed under the other variant.
-//
-// Both directions are pinned: a 960 board keeps its file-letter rights after the option is turned
-// OFF, and a standard board still reports KQkq. Expectations are LITERAL, each verified against
-// the pristine oracle -- a regenerable golden could be rewritten green over the defect.
+/// flip-chess960: `flip` re-sets the board from its own FEN, and must re-parse it under the
+/// variant the board already has. Upstream ends Position::flip with `set(f, is_chess960(), st)`
+/// (position.cpp:1626), so toggling UCI_Chess960 between `position` and `flip` cannot reinterpret
+/// castling rights that were parsed under the other variant.
+///
+/// Both directions are pinned: a 960 board keeps its file-letter rights after the option is turned
+/// OFF, and a standard board still reports KQkq. Expectations are LITERAL, each verified against
+/// the pristine oracle -- a regenerable golden could be rewritten green over the defect.
 const FlipCase = struct { setup: []const u8, want: []const u8 };
 const flip_cases = [_]FlipCase{
     .{
@@ -344,8 +344,8 @@ pub fn runSkill(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
 // well-formed, LEGAL move and the process must exit cleanly. Liveness + legality, not a snapshot
 // (the timing/exact move is wall-clock-dependent). Drive the interactive session like `stress`.
 
-// Copy the first `bestmove M [ponder P]` in `seg` into the caller's fixed buffers. Return
-// false if the segment has no bestmove line.
+/// Copy the first `bestmove M [ponder P]` in `seg` into the caller's fixed buffers. Return
+/// false if the segment has no bestmove line.
 fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *usize) bool {
     var li = lines(seg);
     while (li.next()) |raw| {
@@ -363,8 +363,8 @@ fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *u
     return false;
 }
 
-// Report whether `move` is in the legal-move list of `position` (a "position ..." command). Use
-// `go perft 1`, whose divide lines ("<move>: <count>") enumerate exactly the legal moves.
+/// Report whether `move` is in the legal-move list of `position` (a "position ..." command). Use
+/// `go perft 1`, whose divide lines ("<move>: <count>") enumerate exactly the legal moves.
 fn ponderMoveLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []const u8, move: []const u8) bool {
     const input = gpa.print("{s}\ngo perft 1\nquit\n", .{position}) catch return false;
     defer gpa.free(input);

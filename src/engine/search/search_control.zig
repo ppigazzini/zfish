@@ -65,12 +65,12 @@ pub fn checkTime(ctx: *const QCtx) void {
     }
 }
 
-// Do the per-move root bookkeeping. Find the
-// RootMove for `move` in [pvIdx, pvLast) (unique, guaranteed present by the
-// rootInList filter), update its effort / averageScore / meanSquaredScore, and
-// on a PV move store the score/inexact flags/PV. Use C truncating division
-// (@divTrunc) and i32 arithmetic (no overflow: both squared terms are
-// < VALUE_INFINITE^2, sum < INT_MAX).
+/// Do the per-move root bookkeeping. Find the
+/// RootMove for `move` in [pvIdx, pvLast) (unique, guaranteed present by the
+/// rootInList filter), update its effort / averageScore / meanSquaredScore, and
+/// on a PV move store the score/inexact flags/PV. Use C truncating division
+/// (@divTrunc) and i32 arithmetic (no overflow: both squared terms are
+/// < VALUE_INFINITE^2, sum < INT_MAX).
 const root_mean_sq_sentinel: i32 = -(q_value_inf * q_value_inf);
 pub fn rootUpdate(ctx: *const QCtx, move: u16, value: i32, nodes_delta: u64, move_count: i32, alpha: i32, beta: i32, child_pv: ?*const PVMoves) void {
     var idx: usize = ctx.pv_idx.*;
@@ -132,13 +132,13 @@ pub fn rootUpdate(ctx: *const QCtx, move: u16, value: i32, nodes_delta: u64, mov
     } else rm.score = -q_value_inf;
 }
 
-// Read the root TT move from the rootMoves array (a contiguous RootMove array)
-// handed over by worker_state.
+/// Read the root TT move from the rootMoves array (a contiguous RootMove array)
+/// handed over by worker_state.
 pub inline fn rootTtMove(ctx: *const QCtx) u16 {
     return ctx.root_moves[ctx.pv_idx.*].pv.at(0);
 }
 
-// Compare pv[0] against move over [pvIdx, pvLast).
+/// Compare pv[0] against move over [pvIdx, pvLast).
 pub inline fn rootInList(ctx: *const QCtx, move: u16) bool {
     var i: usize = ctx.pv_idx.*;
     const last = ctx.pv_last.*;
@@ -148,14 +148,14 @@ pub inline fn rootInList(ctx: *const QCtx, move: u16) bool {
     return false;
 }
 
-// Load the shared stop flag (monotonic atomic byte, relaxed ordering); the
-// search aborts when it is set.
+/// Load the shared stop flag (monotonic atomic byte, relaxed ordering); the
+/// search aborts when it is set.
 pub inline fn searchStopped(ctx: *const QCtx) bool {
     return @atomicLoad(u8, ctx.stop, .monotonic) != 0;
 }
 
-// Compare the move directly against lastIterationPV for the follow-pv test;
-// lastIterationPV is an inline PVMoves member (fixed Move array + length).
+/// Compare the move directly against lastIterationPV for the follow-pv test;
+/// lastIterationPV is an inline PVMoves member (fixed Move array + length).
 pub inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: i32, move: u16) bool {
     const pv = ctx.last_iter_pv;
     const idx: usize = @intCast(ply_minus_1);

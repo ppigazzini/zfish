@@ -51,10 +51,10 @@ pub fn searchClear(threads: *worker_layout.ThreadPool, tt: *worker_layout.Transp
     tbInit(syzygy_path);
 }
 
-// (Re)initialize the tablebases and report the discovery, as upstream's
-// Tablebases::init does through TBTables.info() (tbprobe.cpp:1558): the info
-// string fires on EVERY init with a usable path -- setoption, ucinewgame and
-// Clear Hash alike -- and only the empty-path early return stays silent.
+/// (Re)initialize the tablebases and report the discovery, as upstream's
+/// Tablebases::init does through TBTables.info() (tbprobe.cpp:1558): the info
+/// string fires on EVERY init with a usable path -- setoption, ucinewgame and
+/// Clear Hash alike -- and only the empty-path early return stays silent.
 pub fn tbInit(path: []const u8) void {
     tablebase.init(path.ptr, path.len);
     if (path.len == 0) return;
@@ -93,18 +93,18 @@ pub fn waitForSearchFinishedEngine(engine_ptr: *engine_object.EngineObject) void
     thread_port.waitThread(engine_ptr.threadsPtr(), 0);
 }
 
-// Report whether a search is running that will NEVER end on its own -- the exact predicate the
-// main worker busy-waits on, `ponder or limits.infinite` (search_id.ssShouldBusywait).
-//
-// This is the one distinction a "stop before you wait" policy needs, and getting it wrong costs
-// either a wedge or a truncated search. A depth-, node- or time-limited search terminates by
-// itself, so waiting for it is a wait; an infinite or pondering one terminates only when someone
-// sets `stop`, and if the thread that would set it is the thread doing the waiting, the wait is
-// a deadlock. Reading the flags rather than assuming keeps a mid-script `setoption` from cutting
-// a bounded search short, which is what a piped UCI session and every driver golden depend on.
-//
-// Null before the workers exist (startup option registration) and false between searches, both
-// of which mean "nothing to stop".
+/// Report whether a search is running that will NEVER end on its own -- the exact predicate the
+/// main worker busy-waits on, `ponder or limits.infinite` (search_id.ssShouldBusywait).
+///
+/// This is the one distinction a "stop before you wait" policy needs, and getting it wrong costs
+/// either a wedge or a truncated search. A depth-, node- or time-limited search terminates by
+/// itself, so waiting for it is a wait; an infinite or pondering one terminates only when someone
+/// sets `stop`, and if the thread that would set it is the thread doing the waiting, the wait is
+/// a deadlock. Reading the flags rather than assuming keeps a mid-script `setoption` from cutting
+/// a bounded search short, which is what a piped UCI session and every driver golden depend on.
+///
+/// Null before the workers exist (startup option registration) and false between searches, both
+/// of which mean "nothing to stop".
 pub fn searchIsUnbounded(engine_ptr: *engine_object.EngineObject) bool {
     const threads = engine_ptr.threadsPtr();
     if (threads.numThreads() == 0) return false;

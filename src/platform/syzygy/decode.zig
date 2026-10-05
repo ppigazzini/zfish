@@ -20,7 +20,7 @@ const probe = @import("probe.zig");
 const PairsData = probe.PairsData;
 const Sym = probe.Sym;
 
-// Define the SF TBFlag bits.
+/// Define the SF TBFlag bits.
 pub const flag_stm: u8 = 1;
 pub const flag_mapped: u8 = 2;
 pub const flag_win_plies: u8 = 4;
@@ -28,9 +28,9 @@ pub const flag_loss_plies: u8 = 8;
 pub const flag_wide: u8 = 16;
 pub const flag_single_value: u8 = 128;
 
-// Read unaligned little-/big-endian values off a file byte SLICE (SF `number<T, LE/BE>`). Take a
-// slice rather than a `[*]`: the width is then checked against a length the caller established,
-// which is the whole point of carving the file into bounded regions at load.
+/// Read unaligned little-/big-endian values off a file byte SLICE (SF `number<T, LE/BE>`). Take a
+/// slice rather than a `[*]`: the width is then checked against a length the caller established,
+/// which is the whole point of carving the file into bounded regions at load.
 pub inline fn rdU16(p: []const u8) u16 {
     return std.mem.readInt(u16, p[0..2], .little);
 }
@@ -47,16 +47,16 @@ inline fn rdU32be(p: []const u8) u32 {
     return std.mem.readInt(u32, p[0..4], .big);
 }
 
-// Read a big-endian window at `off` in the compressed data, ZERO-FILLING whatever falls past the
-// end of it.
-//
-// The RE-PAIR decoder pulls 64- and 32-bit windows ahead of the symbol it is decoding, so on the
-// final block of a table it reads a few bytes beyond the stored data. Upstream mmaps the file and
-// those reads land in the mapping's page padding; zfish loads into a buffer sized to the file, so
-// they used to land in the loader's 63-byte alignment slack -- reading whatever the arena happened
-// to hold, past the end of any length the file states. The bits are never load-bearing (a valid
-// table's symbol terminates before them), so define them as zero instead of leaving the answer to
-// heap contents. Refusing the read instead is NOT equivalent: it moved tb-cursed's node counts.
+/// Read a big-endian window at `off` in the compressed data, ZERO-FILLING whatever falls past the
+/// end of it.
+///
+/// The RE-PAIR decoder pulls 64- and 32-bit windows ahead of the symbol it is decoding, so on the
+/// final block of a table it reads a few bytes beyond the stored data. Upstream mmaps the file and
+/// those reads land in the mapping's page padding; zfish loads into a buffer sized to the file, so
+/// they used to land in the loader's 63-byte alignment slack -- reading whatever the arena happened
+/// to hold, past the end of any length the file states. The bits are never load-bearing (a valid
+/// table's symbol terminates before them), so define them as zero instead of leaving the answer to
+/// heap contents. Refusing the read instead is NOT equivalent: it moved tb-cursed's node counts.
 fn windowBe(comptime T: type, data: []const u8, off: usize) T {
     const n = @sizeOf(T);
     if (off + n <= data.len) return std.mem.readInt(T, data[off..][0..n], .big);
@@ -68,16 +68,16 @@ fn windowBe(comptime T: type, data: []const u8, off: usize) T {
     return std.mem.readInt(T, &tmp, .big);
 }
 
-// Port SF `decompress_pairs`: return the stored value at index `idx`.
-//
-// This is the one decoder path that runs per probe, inside the search, so it carries no blanket
-// `@setRuntimeSafety` -- setSizes validates at load everything that CAN be validated from the
-// header (every region fits the file, every btree child indexes the tree), leaving this walk
-// in-bounds by construction for a well-formed table. What the header cannot pin is the block
-// CONTENT: `block` and `sym` are decoded from the compressed bitstream, so a corrupt payload can
-// still drive them out of range. Those two are checked here and the probe refuses with 0 rather
-// than reading off the table; the checks are a handful of predictable branches on a path the
-// bench never takes (bench runs no tablebases).
+/// Port SF `decompress_pairs`: return the stored value at index `idx`.
+///
+/// This is the one decoder path that runs per probe, inside the search, so it carries no blanket
+/// `@setRuntimeSafety` -- setSizes validates at load everything that CAN be validated from the
+/// header (every region fits the file, every btree child indexes the tree), leaving this walk
+/// in-bounds by construction for a well-formed table. What the header cannot pin is the block
+/// CONTENT: `block` and `sym` are decoded from the compressed bitstream, so a corrupt payload can
+/// still drive them out of range. Those two are checked here and the probe refuses with 0 rather
+/// than reading off the table; the checks are a handful of predictable branches on a path the
+/// bench never takes (bench runs no tablebases).
 pub fn decompressPairs(d: *const PairsData, idx: u64) i32 {
     if (d.flags & flag_single_value != 0) return d.min_sym_len;
 
@@ -190,8 +190,8 @@ pub fn decompressPairs(d: *const PairsData, idx: u64) i32 {
     return d.btree[sym].left();
 }
 
-// Build a minimal non-SingleValue PairsData over caller-owned regions, so the decompressPairs
-// bounds below can be driven directly without a real table file.
+/// Build a minimal non-SingleValue PairsData over caller-owned regions, so the decompressPairs
+/// bounds below can be driven directly without a real table file.
 const StubTable = struct {
     sparse: [6]u8,
     bl: [4]u8 = @splat(0),

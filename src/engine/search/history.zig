@@ -36,8 +36,8 @@ const moveIsOk = search_common.moveIsOk;
 const sharedOf = shared_history.sharedOf;
 const fillI16Slice = shared_history.fillI16Slice;
 
-// Lane count for the main-history decay: 32 i16 in, two 512-bit i32 halves through the scale
-// and divide. Tuned for the tier it was measured on -- re-measure before changing it.
+/// Lane count for the main-history decay: 32 i16 in, two 512-bit i32 halves through the scale
+/// and divide. Tuned for the tier it was measured on -- re-measure before changing it.
 const age_lanes = 32;
 const pawnEntryRow = shared_history.pawnEntryRow;
 const pawnCorrEntry = shared_history.pawnCorrEntry;
@@ -50,7 +50,7 @@ const pieceTypeOn = board_core.pieceTypeOn;
 
 const sq_none = board_core.sq_none;
 
-// Upstream's NO_PIECE and SQ_A1, the two the base continuation plane is addressed by.
+/// Upstream's NO_PIECE and SQ_A1, the two the base continuation plane is addressed by.
 const no_piece: u8 = 0;
 const sq_a1: u8 = 0;
 
@@ -105,10 +105,10 @@ pub const WasCapture = enum(u8) {
     }
 };
 
-// Set up the do_move / do_null_move continuation-history pointer. Set the Stack's
-// continuation_history to &continuationHistory[in_check][capture][pc][to] (a
-// PieceToHistory page) and continuation_correction_history to
-// &continuationCorrectionHistory[pc][to].
+/// Set up the do_move / do_null_move continuation-history pointer. Set the Stack's
+/// continuation_history to &continuationHistory[in_check][capture][pc][to] (a
+/// PieceToHistory page) and continuation_correction_history to
+/// &continuationCorrectionHistory[pc][to].
 pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: InCheck, capture: WasCapture, pc: u8, to: u8) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const ss = ss_ptr;
@@ -138,16 +138,16 @@ pub fn setContHistBasePlane(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack) voi
     setContHist(worker_ptr, ss_ptr, .no, .no, no_piece, sq_a1);
 }
 
-// Decay the main history per iterative_deepening() iteration: v * 729 / 1024
-// toward zero over the whole table.
-//
-// Widen the decay by hand. This is a per-element integer loop over 131072 entries and the
-// toolchain will not auto-vectorize one (L13), so the scalar spelling stays one lane per
-// iteration for the life of the process. Sign-extend a block of i16 to i32, scale, and
-// truncate-divide in registers; @divTrunc by a power of two is the SAME rounding the scalar
-// form had (toward zero, not toward -inf), and LLVM lowers the constant divisor to the
-// bias-and-arithmetic-shift sequence rather than a real division. The written values are
-// bit-identical, so the bench signature holds.
+/// Decay the main history per iterative_deepening() iteration: v * 729 / 1024
+/// toward zero over the whole table.
+///
+/// Widen the decay by hand. This is a per-element integer loop over 131072 entries and the
+/// toolchain will not auto-vectorize one (L13), so the scalar spelling stays one lane per
+/// iteration for the life of the process. Sign-extend a block of i16 to i32, scale, and
+/// truncate-divide in registers; @divTrunc by a power of two is the SAME rounding the scalar
+/// form had (toward zero, not toward -inf), and LLVM lowers the constant divisor to the
+/// bias-and-arithmetic-shift sequence rather than a real division. The written values are
+/// bit-identical, so the bench signature holds.
 pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const V = age_lanes;
@@ -170,20 +170,20 @@ pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     }
 }
 
-// Reset lowPlyHistory per iterative_deepening() search: lowPlyHistory.fill(102)
-// over the whole [5][65536] table.
+/// Reset lowPlyHistory per iterative_deepening() search: lowPlyHistory.fill(102)
+/// over the whole [5][65536] table.
 pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     fillI16Slice(&w.low_ply_history, 102);
 }
 
-// Clear the Worker: reset the per-Worker histories (the shared correction/pawn/continuation
-// clear_range is handled separately by clearSharedHistory for its numa partitioning, and the
-// NNUE refreshTable is untouched). mainHistory=-5, captureHistory=-742, ttMoveHistory=0,
-// continuationCorrectionHistory=5. continuationHistory (=-586) is shared, cleared there.
-// Each table's default is a non-zero int16, so none of these is a byte-pattern @memset and a
-// scalar `e.* = v` loop stays scalar (L13) -- fillI16Slice broadcast-stores them instead. The
-// Worker owns these tables outright at clear time, so the stores need no atomics.
+/// Clear the Worker: reset the per-Worker histories (the shared correction/pawn/continuation
+/// clear_range is handled separately by clearSharedHistory for its numa partitioning, and the
+/// NNUE refreshTable is untouched). mainHistory=-5, captureHistory=-742, ttMoveHistory=0,
+/// continuationCorrectionHistory=5. continuationHistory (=-586) is shared, cleared there.
+/// Each table's default is a non-zero int16, so none of these is a byte-pattern @memset and a
+/// scalar `e.* = v` loop stays scalar (L13) -- fillI16Slice broadcast-stores them instead. The
+/// Worker owns these tables outright at clear time, so the stores need no atomics.
 pub fn clearWorkerHistories(wl: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(wl);
     fillI16Slice(&w.main_history, -5);
@@ -195,9 +195,9 @@ pub fn clearWorkerHistories(wl: *WorkerLayout) void {
 // Find captureStage / moveIsOk / statsUpdate / captVal / captEntry / workerHistories
 // in the search_common leaf, shared with the history-update code.
 
-// Own the bonus scaling + gravity update sequence; the caller resolves the table
-// lookups (mainHistory[us][move], lowPlyHistory, sharedHistory.pawn_entry) and hands
-// this the int16 entry pointers.
+/// Own the bonus scaling + gravity update sequence; the caller resolves the table
+/// lookups (mainHistory[us][move], lowPlyHistory, sharedHistory.pawn_entry) and hands
+/// this the int16 entry pointers.
 pub fn updateQuietHistories(
     main_entry: *i16,
     lowply_entry: ?*i16,
@@ -213,12 +213,12 @@ pub fn updateQuietHistories(
     statsUpdate(pawn_entry, search.quietPawnScale(bonus), pawn_history_limit);
 }
 
-// Split the walk on whether the bonus is small enough that the per-entry clamp cannot fire.
-// `conthistDelta` is `bonus * multiplier / 65536 + 73` with `multiplier` a u16, so a bonus
-// inside +/-(limit - 73) can never leave the limit -- and with that stated, the six inlined
-// `statsUpdateValue` clamps fold away instead of costing a @max/@min pair each. The wide arm
-// is the SAME loop, out of line: it is reachable (nothing bounds the bonus upstream either)
-// and it must stay bit-identical, which it is, being the same code.
+/// Split the walk on whether the bonus is small enough that the per-entry clamp cannot fire.
+/// `conthistDelta` is `bonus * multiplier / 65536 + 73` with `multiplier` a u16, so a bonus
+/// inside +/-(limit - 73) can never leave the limit -- and with that stated, the six inlined
+/// `statsUpdateValue` clamps fold away instead of costing a @max/@min pair each. The wide arm
+/// is the SAME loop, out of line: it is reachable (nothing bounds the bonus upstream either)
+/// and it must stay bit-identical, which it is, being the same code.
 pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: i32) void {
     const bound = continuation_history_limit.v - 73;
     if (bonus >= -bound and bonus <= bound) {
@@ -324,18 +324,18 @@ pub fn updateAllStats(
     }
 }
 
-// Single-source the entry bound with the bonus clamps that are meant to be a quarter of
-// it (search.zig owns both, being the std-only formula leaf this file already imports).
-// Keep the correction limit an `i32`: search.zig divides it by four to derive the two
-// bonus clamps, and a quantity that is computed with must not be wrapped. Type the
-// clamp VIEW of it instead -- which is the parameter statsUpdate can confuse.
+/// Single-source the entry bound with the bonus clamps that are meant to be a quarter of
+/// it (search.zig owns both, being the std-only formula leaf this file already imports).
+/// Keep the correction limit an `i32`: search.zig divides it by four to derive the two
+/// bonus clamps, and a quantity that is computed with must not be wrapped. Type the
+/// clamp VIEW of it instead -- which is the parameter statsUpdate can confuse.
 const correction_history_limit: search_common.HistLimit = .{ .v = search.correction_history_limit };
 
-// update_correction_history: nudge the four shared correction tables plus the
-// (ss-2)/(ss-4)/(ss-6) continuation correction entries toward the search/static-eval
-// delta. Resolve all four key-masked, color-indexed correction entries from
-// SharedHistories (the Worker pointer gives the shared block) and apply the
-// bonus weighting, gravity, and the stack-relative continuation correction writes.
+/// update_correction_history: nudge the four shared correction tables plus the
+/// (ss-2)/(ss-4)/(ss-6) continuation correction entries toward the search/static-eval
+/// delta. Resolve all four key-masked, color-indexed correction entries from
+/// SharedHistories (the Worker pointer gives the shared block) and apply the
+/// bonus weighting, gravity, and the stack-relative continuation correction writes.
 pub fn updateCorrectionHistory(
     worker_ptr: *WorkerLayout,
     pos_ptr: *const Position,

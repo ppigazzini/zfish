@@ -8,10 +8,10 @@ const option_port = @import("option");
 const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
 const engine_object = @import("engine_object");
-// Keep the bench / benchmark command runners in their own leaf (uci passes it a
-// void wrapper over dispatchCommand, so the leaf has no cycle back into the loop).
+/// Keep the bench / benchmark command runners in their own leaf (uci passes it a
+/// void wrapper over dispatchCommand, so the leaf has no cycle back into the loop).
 const uci_bench = @import("uci_bench.zig");
-// Own the critical-error termination path (currentCmd + terminate_on_critical_error).
+/// Own the critical-error termination path (currentCmd + terminate_on_critical_error).
 const uci_critical = @import("uci_critical.zig");
 const uci_input = @import("uci_input.zig");
 const terminateOnCriticalError = uci_critical.terminateOnCriticalError;
@@ -44,15 +44,15 @@ const CommandKind = enum {
     unknown,
 };
 
-// Match the engine module's ByteView layout; alias it so setPositionEngine takes our
-// move views directly rather than through a duplicate struct.
+/// Match the engine module's ByteView layout; alias it so setPositionEngine takes our
+/// move views directly rather than through a duplicate struct.
 const ByteView = engine_mod.ByteView;
 
-// Build the LimitsType from the parsed UCI `go` args (including the
-// searchmoves list, now Zig-owned worker_layout.SearchMoveText records) and
-// hand it to the engine go driver. Stamp startTime here (the earliest
-// point), so the info-line elapsed/nps are correct; free the
-// searchmoves element buffer after start_thinking has read it.
+/// Build the LimitsType from the parsed UCI `go` args (including the
+/// searchmoves list, now Zig-owned worker_layout.SearchMoveText records) and
+/// hand it to the engine go driver. Stamp startTime here (the earliest
+/// point), so the info-line elapsed/nps are correct; free the
+/// searchmoves element buffer after start_thinking has read it.
 fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void {
     var limits: worker_layout.LimitsType = std.mem.zeroes(worker_layout.LimitsType);
     limits.start_time = clock.now();
@@ -402,9 +402,9 @@ pub fn loopRuntime(e: *engine_object.EngineObject) void {
     }
 }
 
-// Keep the bench/benchmark runners in uci_bench.zig; let these thin wrappers hold the
-// public entry points and inject dispatchCommand (as a void wrapper) so the leaf carries
-// no import cycle back into the command loop.
+/// Keep the bench/benchmark runners in uci_bench.zig; let these thin wrappers hold the
+/// public entry points and inject dispatchCommand (as a void wrapper) so the leaf carries
+/// no import cycle back into the command loop.
 pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8) void {
     uci_bench.benchRuntime(uci_ptr, args, dispatchVoid);
 }
@@ -438,22 +438,22 @@ fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
     return views;
 }
 
-// Keep the string helpers in the uci_strings base leaf; alias them so the
-// bodies throughout this file stay unqualified.
+/// Keep the string helpers in the uci_strings base leaf; alias them so the
+/// bodies throughout this file stay unqualified.
 const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
 const asciiLower = uci_strings.asciiLower;
 const isSpaceByte = uci_strings.isSpaceByte;
 
-// Keep the live UCI output formatters in the uci_format leaf; alias them for the
-// dispatch code below.
+/// Keep the live UCI output formatters in the uci_format leaf; alias them for the
+/// dispatch code below.
 const uci_format = @import("uci_format");
 const formatInfoString = uci_format.formatInfoString;
 const helpText = uci_format.helpText;
 const formatUnknownCommand = uci_format.formatUnknownCommand;
 const formatCriticalError = uci_format.formatCriticalError;
 
-// Keep the UCI command parsers in the uci_parse leaf; alias them for the
-// dispatch/runtime code.
+/// Keep the UCI command parsers in the uci_parse leaf; alias them for the
+/// dispatch/runtime code.
 const uci_parse = @import("uci_parse");
 pub const ParsedSetOption = uci_parse.ParsedSetOption;
 pub const ParsedLimits = uci_parse.ParsedLimits;

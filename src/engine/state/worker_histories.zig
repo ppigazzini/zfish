@@ -12,7 +12,7 @@
 const std = @import("std");
 const shared_history_types = @import("shared_history_types");
 
-// Define the history-table dimensions.
+/// Define the history-table dimensions.
 pub const hist_color_nb: usize = 2;
 pub const hist_uint16: usize = 65536;
 pub const hist_low_ply: usize = 5;
@@ -21,17 +21,17 @@ pub const hist_square_nb: usize = 64;
 pub const hist_piece_type_nb: usize = 8;
 pub const hist_pieceto: usize = hist_piece_nb * hist_square_nb; // PieceToHistory page = [16][64]
 
-// Model one [16][64] continuation-history page: a stat_entry-per-(piece,to) table. The
-// search stack's continuation_history points at one such page (indexed pc*64+to).
+/// Model one [16][64] continuation-history page: a stat_entry-per-(piece,to) table. The
+/// search stack's continuation_history points at one such page (indexed pc*64+to).
 pub const PieceToHistory = [hist_pieceto]i16;
 
-// Fix the field order with `extern`: this file's contract is that the i16 tables form a
-// contiguous prefix with mainHistory at offset 0, and a plain Zig struct does not honour that --
-// it orders by descending alignment, so the 8-byte `shared_history` pointer is placed among the
-// tables and skews every one after it off the cache line. `extern` pins declaration order, so
-// the four tables sit back to back; each size is a multiple of 64, so all four stay line-aligned
-// behind main_history's align(64). Size is unchanged (3031104): the trailing pointer fits in the
-// padding the block already carried.
+/// Fix the field order with `extern`: this file's contract is that the i16 tables form a
+/// contiguous prefix with mainHistory at offset 0, and a plain Zig struct does not honour that --
+/// it orders by descending alignment, so the 8-byte `shared_history` pointer is placed among the
+/// tables and skews every one after it off the cache line. `extern` pins declaration order, so
+/// the four tables sit back to back; each size is a multiple of 64, so all four stay line-aligned
+/// behind main_history's align(64). Size is unchanged (3031104): the trailing pointer fits in the
+/// padding the block already carried.
 pub const WorkerHistories = extern struct {
     // Pin the first table to a cache line so the whole run of tables is line-aligned. This is a
     // plain Zig struct, so the layout is Zig's: it orders by descending alignment, which floats
@@ -49,14 +49,14 @@ pub const WorkerHistories = extern struct {
     shared_history: ?*shared_history_types.SharedHistories,
 };
 
-// Element count of the shared continuationHistory table: [2][2] of PieceToHistory pages.
-// Held in SharedHistories (shared per NUMA node, atomic entries) to match upstream
-// search.h:342 / history.h:244 -- not per-Worker, so lazy-SMP threads share the updates.
+/// Element count of the shared continuationHistory table: [2][2] of PieceToHistory pages.
+/// Held in SharedHistories (shared per NUMA node, atomic entries) to match upstream
+/// search.h:342 / history.h:244 -- not per-Worker, so lazy-SMP threads share the updates.
 pub const continuation_history_len: usize = 2 * 2 * hist_pieceto * hist_pieceto;
 
-// Compute the offset of the shared_history reference WITHIN WorkerHistories (a Zig-owned
-// struct, so Zig's choice); the constructor + clear path address it through the typed field,
-// and this offset survives only for the worker_construct address cross-check test.
+/// Compute the offset of the shared_history reference WITHIN WorkerHistories (a Zig-owned
+/// struct, so Zig's choice); the constructor + clear path address it through the typed field,
+/// and this offset survives only for the worker_construct address cross-check test.
 pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");
 
 test {

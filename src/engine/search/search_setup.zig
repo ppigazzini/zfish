@@ -15,9 +15,9 @@ const PVMoves = root_move.PVMoves;
 const QCtx = search_ctx.QCtx;
 const SearchTimeState = search_ctx.SearchTimeState;
 
-// Fetch the Worker state the inlined search needs one-shot, all stable for the
-// duration of one search tree. Keep live (mutable) fields as pointers into the Worker;
-// null the main-thread-only time-management fields on helper threads.
+/// Fetch the Worker state the inlined search needs one-shot, all stable for the
+/// duration of one search tree. Keep live (mutable) fields as pointers into the Worker;
+/// null the main-thread-only time-management fields on helper threads.
 fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]i32, out_nmp_min_ply: *?*i32, out_sel_depth: *?*i32, out_root_depth: *?*i32, out_reductions: *?[*]const u16, out_root_delta: *?*const i32, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 

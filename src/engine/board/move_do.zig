@@ -16,8 +16,8 @@ const zobrist = @import("zobrist");
 const state_setup = @import("state_setup");
 const legality = @import("legality");
 const move_do_threats = @import("move_do_threats.zig");
-// The board-mutation primitives (put/remove/move/swap, with and without the dirty-threat
-// recording) live in their own leaf; this file is the move logic built on top of them.
+/// The board-mutation primitives (put/remove/move/swap, with and without the dirty-threat
+/// recording) live in their own leaf; this file is the move logic built on top of them.
 const move_do_pieces = @import("move_do_pieces.zig");
 const removePieceDts = move_do_pieces.removePieceDts;
 const putPieceDts = move_do_pieces.putPieceDts;
@@ -122,35 +122,35 @@ fn doCastlingDo(pos: *Position, us: u8, from: u8, to_in: u8, dp: *DirtyPiece, dt
     return .{ .to = to, .rfrom = rfrom, .rto = rto };
 }
 
-// Compute the EXACT rule50-adjusted Zobrist key of the CURRENT position -- upstream's
-// `Position::key()`, which is `adjust_key50<AfterMove=false>(st->key)` (position.h:319).
-// The counter has already been incremented by the make, so the threshold is the unshifted
-// 14; prefetchKey below is the <true> instantiation, reading a pre-move counter against
-// 14-1=13. Naming them apart matters: this file carries both, and the citation here used
-// to claim <true> while implementing <false>.
-//
-// search_qsearch.adjustKey50 re-exports this so its existing callers (search_main.zig,
-// search_driver.zig) keep resolving unchanged. The formula itself lives on
-// position_types, the type that owns rule50, because `d`'s Key line needs the same one.
+/// Compute the EXACT rule50-adjusted Zobrist key of the CURRENT position -- upstream's
+/// `Position::key()`, which is `adjust_key50<AfterMove=false>(st->key)` (position.h:319).
+/// The counter has already been incremented by the make, so the threshold is the unshifted
+/// 14; prefetchKey below is the <true> instantiation, reading a pre-move counter against
+/// 14-1=13. Naming them apart matters: this file carries both, and the citation here used
+/// to claim <true> while implementing <false>.
+///
+/// search_qsearch.adjustKey50 re-exports this so its existing callers (search_main.zig,
+/// search_driver.zig) keep resolving unchanged. The formula itself lives on
+/// position_types, the type that owns rule50, because `d`'s Key line needs the same one.
 pub inline fn adjustKey50(pos: *const Position) u64 {
     return position_types.adjustKey50(pos.st.key, pos.st.rule50);
 }
 
-// Mirror tt.firstEntryIndex's mul-hi64 sharding without importing tt.zig itself: tt.zig
-// depends on worker_layout (for its resize/clear paths), so an import here would reach
-// back toward the board zone through it. The formula is one line and load-bearing only in
-// the sense that it must keep matching tt.zig's -- both are asserted bit-identical by the
-// bench signature, which reads the real probe through tt.firstEntryIndex.
+/// Mirror tt.firstEntryIndex's mul-hi64 sharding without importing tt.zig itself: tt.zig
+/// depends on worker_layout (for its resize/clear paths), so an import here would reach
+/// back toward the board zone through it. The formula is one line and load-bearing only in
+/// the sense that it must keep matching tt.zig's -- both are asserted bit-identical by the
+/// bench signature, which reads the real probe through tt.firstEntryIndex.
 inline fn ttFirstEntryIndex(key: u64, cluster_count: usize) usize {
     return @intCast((@as(u128, key) * @as(u128, cluster_count)) >> 64);
 }
 
-// Bundle the prefetch-only handles doMove issues from inside the make, mirroring upstream's
-// `Position::do_move(m, newSt, givesCheck, tt, historyBank)` (position.cpp:987). Null means
-// "not a search make": doMoveState (perft, the root builder, tablebase walks, tests) and the
-// qsearch TT-move verification make (search_acc.verifyDoMove, matching upstream's own
-// no-prefetch overload at search.cpp:882) all pass null and skip the six prefetches below.
-// Only the real search move-maker (search_acc.doMoveAcc) passes one.
+/// Bundle the prefetch-only handles doMove issues from inside the make, mirroring upstream's
+/// `Position::do_move(m, newSt, givesCheck, tt, historyBank)` (position.cpp:987). Null means
+/// "not a search make": doMoveState (perft, the root builder, tablebase walks, tests) and the
+/// qsearch TT-move verification make (search_acc.verifyDoMove, matching upstream's own
+/// no-prefetch overload at search.cpp:882) all pass null and skip the six prefetches below.
+/// Only the real search move-maker (search_acc.doMoveAcc) passes one.
 pub const PrefetchBank = struct {
     table: [*]tt_types.TtCluster,
     cluster_count: usize,
@@ -385,13 +385,13 @@ pub fn doMove(
     dts.pp_after[color_black] = black_pawns_after;
 }
 
-// Approximate the key the position would have AFTER M, cheaply enough to prefetch its TT
-// cluster before the make runs (upstream Position::prefetch_key). Model the from/to/captured
-// psq toggles and the side flip only: castling, en passant and promotion keys are left wrong,
-// so for those rare moves the prefetch lands on an unused line -- harmless, it is only a hint.
-// zob_psq[NO_PIECE] is all-zero, so the captured toggle is unconditional (a no-op on a quiet
-// move). Apply the rule50 key mix for the post-move counter (upstream adjust_key50<true>:
-// threshold 14-1=13, pre-move rule50), which pawn moves and captures zero and so skip.
+/// Approximate the key the position would have AFTER M, cheaply enough to prefetch its TT
+/// cluster before the make runs (upstream Position::prefetch_key). Model the from/to/captured
+/// psq toggles and the side flip only: castling, en passant and promotion keys are left wrong,
+/// so for those rare moves the prefetch lands on an unused line -- harmless, it is only a hint.
+/// zob_psq[NO_PIECE] is all-zero, so the captured toggle is unconditional (a no-op on a quiet
+/// move). Apply the rule50 key mix for the post-move counter (upstream adjust_key50<true>:
+/// threshold 14-1=13, pre-move rule50), which pawn moves and captures zero and so skip.
 pub inline fn prefetchKey(pos: *const Position, m: u16) u64 {
     const from = moveFrom(m);
     const to = moveTo(m);

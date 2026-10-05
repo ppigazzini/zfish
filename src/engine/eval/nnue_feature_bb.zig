@@ -68,10 +68,10 @@ pub fn pawnPushOrAttacks(color: u8, square: usize) u64 {
         shift(south, one) | shift(south_west, one) | shift(south_east, one);
 }
 
-// Diagonal pawn attacks only (no single push) -- upstream's PseudoAttacks[color][sq] after
-// the "Optimize attacks" refactor. The SFNNv16 threat feature set enumerates a pawn's
-// targets over these two squares, not the three of pawnPushOrAttacks: the pawn-in-front
-// (pusher) input was removed once pawn-pawn interactions moved to the PP_3Wide feature set.
+/// Diagonal pawn attacks only (no single push) -- upstream's PseudoAttacks[color][sq] after
+/// the "Optimize attacks" refactor. The SFNNv16 threat feature set enumerates a pawn's
+/// targets over these two squares, not the three of pawnPushOrAttacks: the pawn-in-front
+/// (pusher) input was removed once pawn-pawn interactions moved to the PP_3Wide feature set.
 pub fn pawnAttacksOnly(color: u8, square: usize) u64 {
     const one = squareBb(square);
     return if (color == white)
@@ -104,9 +104,9 @@ pub fn attacksBb(comptime piece_type: u8, square: usize, occupied: u64) u64 {
     };
 }
 
-// One empty-board ray per (direction, square), exclusive of the square itself; built at
-// comptime from the same step walk the comptime table generators use, so the runtime
-// classical lookup and the comptime pseudo-attack builders share one geometry.
+/// One empty-board ray per (direction, square), exclusive of the square itself; built at
+/// comptime from the same step walk the comptime table generators use, so the runtime
+/// classical lookup and the comptime pseudo-attack builders share one geometry.
 const ray_table: [8][64]u64 = blk: {
     @setEvalBranchQuota(200000);
     var out: [8][64]u64 = undefined;
@@ -133,13 +133,13 @@ const knight_attacks_table: [64]u64 = blk: {
     break :blk out;
 };
 
-// Compute a slider's attacks with the classical ray method instead of walking squares:
-// per direction, mask the empty-board ray with the occupancy and clear everything past
-// the first blocker by XORing the blocker square's own ray. Branch-free -- the square-walk
-// form mispredicts its bounds and first-blocker tests once per ray, per attacker, per
-// active-feature refresh. When a positive ray has no blocker, bit 63 backstops @ctz at
-// square 63, whose ray is empty for every positive direction (nothing lies north/east of
-// h8); bit 0 backstops @clz likewise for the negative directions.
+/// Compute a slider's attacks with the classical ray method instead of walking squares:
+/// per direction, mask the empty-board ray with the occupancy and clear everything past
+/// the first blocker by XORing the blocker square's own ray. Branch-free -- the square-walk
+/// form mispredicts its bounds and first-blocker tests once per ray, per attacker, per
+/// active-feature refresh. When a positive ray has no blocker, bit 63 backstops @ctz at
+/// square 63, whose ray is empty for every positive direction (nothing lies north/east of
+/// h8); bit 0 backstops @clz likewise for the negative directions.
 fn classicalAttack(comptime dirs: []const i8, square: usize, occupied: u64) u64 {
     var attacks: u64 = 0;
     inline for (dirs) |dir| {

@@ -9,34 +9,35 @@ const std = @import("std");
 const builtin = @import("builtin");
 const nnue_accumulator_port = @import("nnue_accumulator");
 
-// Alias the AVX-512 VNNI tier from its own leaf: the vpdpbusd kernel, its feature gate and the
-// dot helper the OUT==1 path shares with it.
+/// Alias the AVX-512 VNNI tier from its own leaf: the vpdpbusd kernel, its feature gate and the
+/// dot helper the OUT==1 path shares with it.
 const nnue_affine_vnni = @import("nnue_affine_vnni.zig");
 const has_vnni = nnue_affine_vnni.has_vnni;
 const vpdpbusd16 = nnue_affine_vnni.vpdpbusd16;
 const affineVnni = nnue_affine_vnni.affineVnni;
 const loadW = @import("nnue_affine_load.zig").loadW;
 
-// Handle the AVX2 tier (no VNNI): the same maddubs dot as SSSE3 but 256-bit, so 8 outputs per
-// step. Without it an AVX2 target with no VNNI falls to the portable vpmaddwd deinterleave, which
-// measured +32% instructions in evaluateBucketRaw over the SSSE3 maddubs path (the affine went
-// 2.55B sse41 -> 3.38B avx2). mcfish tiers the dot the same way: vpdpbusd / vpmaddubsw / pmaddubsw.
+/// Handle the AVX2 tier (no VNNI): the same maddubs dot as SSSE3 but 256-bit, so 8 outputs per
+/// step. Without it an AVX2 target with no VNNI falls to the portable vpmaddwd deinterleave, which
+/// measured +32% instructions in evaluateBucketRaw over the SSSE3 maddubs path (the affine went
+/// 2.55B sse41 -> 3.38B avx2). mcfish tiers the dot the same way: vpdpbusd / vpmaddubsw /
+/// pmaddubsw.
 const use_avx2_madd = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx2);
 
-// Handle the SSSE3 tier: the pmaddwd reduction is 128-bit and widens the u8 inputs to i16;
-// pmaddubsw multiplies u8*i8 directly, twice the lanes per register. Reach it through the
-// LLVM intrinsic rather than inline asm: asm is an optimization barrier LLVM cannot
-// schedule or reorder across, the intrinsic it can. Serves as the AVX2 fallback for an OUT the
-// 256-bit path cannot tile (OUT % 8 != 0 but OUT % 4 == 0); the dispatch prefers the wider path.
+/// Handle the SSSE3 tier: the pmaddwd reduction is 128-bit and widens the u8 inputs to i16;
+/// pmaddubsw multiplies u8*i8 directly, twice the lanes per register. Reach it through the
+/// LLVM intrinsic rather than inline asm: asm is an optimization barrier LLVM cannot
+/// schedule or reorder across, the intrinsic it can. Serves as the AVX2 fallback for an OUT the
+/// 256-bit path cannot tile (OUT % 8 != 0 but OUT % 4 == 0); the dispatch prefers the wider path.
 const use_maddubs = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .ssse3);
 
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 const pmaddubsw128 = struct {
     extern fn @"llvm.x86.ssse3.pmadd.ub.sw.128"(@Vector(16, i8), @Vector(16, i8)) callconv(.{ .x86_64_sysv = .{} }) @Vector(8, i16);
 }.@"llvm.x86.ssse3.pmadd.ub.sw.128";
@@ -45,7 +46,7 @@ const pmaddwd128 = struct {
     extern fn @"llvm.x86.sse2.pmadd.wd"(@Vector(8, i16), @Vector(8, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(4, i32);
 }.@"llvm.x86.sse2.pmadd.wd";
 
-// AVX2 widens the SSSE3 maddubs dot to 256 bits: 8 outputs per pmaddubsw+pmaddwd step, not 4.
+/// AVX2 widens the SSSE3 maddubs dot to 256 bits: 8 outputs per pmaddubsw+pmaddwd step, not 4.
 const pmaddubsw256 = struct {
     extern fn @"llvm.x86.avx2.pmadd.ub.sw"(@Vector(32, i8), @Vector(32, i8)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i16);
 }.@"llvm.x86.avx2.pmadd.ub.sw";
@@ -111,11 +112,11 @@ fn GroupIter(comptime sparse: bool) type {
     };
 }
 
-// Compute the SSSE3 affine via the LLVM pmaddubsw/pmaddwd intrinsics: each 128-bit weight chunk (16
-// bytes = 4 outputs' 4 sublanes) is one pmaddubsw of the group's 4 input bytes (broadcast
-// x4), then pmaddwd against ones folds each output's two i16 partials into its i32.
-// pmaddubsw saturates at i16, but our products span [-16256,16129] and a pair sums inside
-// i16, so it never saturates -- bit-identical to the pmaddwd path.
+/// Compute the SSSE3 affine via the LLVM pmaddubsw/pmaddwd intrinsics: each 128-bit weight chunk
+/// (16 bytes = 4 outputs' 4 sublanes) is one pmaddubsw of the group's 4 input bytes (broadcast x4),
+/// then pmaddwd against ones folds each output's two i16 partials into its i32. pmaddubsw saturates
+/// at i16, but our products span [-16256,16129] and a pair sums inside i16, so it never saturates
+/// -- bit-identical to the pmaddwd path.
 inline fn affineSsse3(
     comptime OUT: usize,
     comptime sparse: bool,
@@ -165,10 +166,10 @@ inline fn affineSsse3(
     out.* = acc;
 }
 
-// Widen affineSsse3 to 256 bits for the AVX2 tier: each chunk (32 weight bytes = 8 outputs' 4
-// sublanes) is one 256-bit pmaddubsw of the group's 4 input bytes (broadcast x8), then pmaddwd
-// against ones folds each output's two i16 partials into its i32. Same non-saturation argument
-// as the SSSE3 path (a pair sums inside i16), so it is bit-identical -- signature 2497913 holds.
+/// Widen affineSsse3 to 256 bits for the AVX2 tier: each chunk (32 weight bytes = 8 outputs' 4
+/// sublanes) is one 256-bit pmaddubsw of the group's 4 input bytes (broadcast x8), then pmaddwd
+/// against ones folds each output's two i16 partials into its i32. Same non-saturation argument
+/// as the SSSE3 path (a pair sums inside i16), so it is bit-identical -- signature 2497913 holds.
 inline fn affineAvx2(
     comptime OUT: usize,
     comptime sparse: bool,
@@ -241,13 +242,13 @@ inline fn affineAvx2(
     }
 }
 
-// Compute the OUT==1 affine as one contiguous int8 dot. For a single output the scrambled
-// weight layout is the identity (weight[i] pairs with input[i]), so fc_2 (128->1) is a plain
-// dot upstream vectorises with vpdpbusd/maddubs + a horizontal add -- zfish's OUT==1 otherwise
-// falls to the portable per-group deinterleave (measured ~116 M Ir at avx2, the 2nd-largest
-// affine cost). Dense only: fc_2 is the sole OUT==1 layer and always passes sparse=false. A pure
-// integer dot, so the reduction order is irrelevant and it stays bit-exact (signature 2497913);
-// pmaddubsw never saturates here (u8*i8 in [-16256,16129], a pair sums inside i16).
+/// Compute the OUT==1 affine as one contiguous int8 dot. For a single output the scrambled
+/// weight layout is the identity (weight[i] pairs with input[i]), so fc_2 (128->1) is a plain
+/// dot upstream vectorises with vpdpbusd/maddubs + a horizontal add -- zfish's OUT==1 otherwise
+/// falls to the portable per-group deinterleave (measured ~116 M Ir at avx2, the 2nd-largest
+/// affine cost). Dense only: fc_2 is the sole OUT==1 layer and always passes sparse=false. A pure
+/// integer dot, so the reduction order is irrelevant and it stays bit-exact (signature 2497913);
+/// pmaddubsw never saturates here (u8*i8 in [-16256,16129], a pair sums inside i16).
 inline fn affineOut1(
     out: *[1]i32,
     bias: i32,

@@ -21,12 +21,12 @@ const half_dimensions = layout.half_dimensions;
 pub const nnz_word_count: usize = half_dimensions / 4 / 64;
 pub const NnzBitset = [nnz_word_count]u64;
 
-// Store each transform step's non-zero mask with a plain byte-offset store, upstream's
-// bytewise NNZCursor (nnz_helper.h `*out++ = m1 + (m2 << 4)`): on a little-endian
-// target the GMask's bytes at offset bit/8 land exactly where the u64 word's bits
-// bit..bit+N-1 live, so the store IS the word-shift OR against a zero seed -- minus
-// the load, the variable-cl shift and the read-modify-write. Big-endian targets keep
-// the endian-independent word RMW (and the @memset seed it needs).
+/// Store each transform step's non-zero mask with a plain byte-offset store, upstream's
+/// bytewise NNZCursor (nnz_helper.h `*out++ = m1 + (m2 << 4)`): on a little-endian
+/// target the GMask's bytes at offset bit/8 land exactly where the u64 word's bits
+/// bit..bit+N-1 live, so the store IS the word-shift OR against a zero seed -- minus
+/// the load, the variable-cl shift and the read-modify-write. Big-endian targets keep
+/// the endian-independent word RMW (and the @memset seed it needs).
 const nnz_bytewise = @import("builtin").target.cpu.arch.endian() == .little;
 
 /// Emit an INDEX LIST rather than a bitset, which is upstream's shape: at USE_AVX512 NNZInfo
@@ -63,15 +63,15 @@ pub const NnzIndexList = struct {
 /// What the transform hands the affine: the tier's consumer decides the shape.
 pub const NnzOut = if (use_nnz_index_list) NnzIndexList else NnzBitset;
 
-// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
-// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
-// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
-// argument type") and the AVX-512 tiers stop building.
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
+/// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
+/// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
+/// argument type") and the AVX-512 tiers stop building.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 const compressw512 = struct {
     extern fn @"llvm.x86.avx512.mask.compress.v32i16"(@Vector(32, i16), @Vector(32, i16), @Vector(32, u1)) callconv(.{ .x86_64_sysv = .{} }) @Vector(32, i16);
 }.@"llvm.x86.avx512.mask.compress.v32i16";

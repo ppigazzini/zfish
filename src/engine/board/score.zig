@@ -1,5 +1,5 @@
-// Name the three outcomes the classifier distinguishes, so a consumer switches on them
-// exhaustively instead of on 0/1/2 with an `else`.
+/// Name the three outcomes the classifier distinguishes, so a consumer switches on them
+/// exhaustively instead of on 0/1/2 with an `else`.
 pub const ScoreKind = enum { non_decisive, mate, tablebase };
 
 pub const ScoreClass = struct {

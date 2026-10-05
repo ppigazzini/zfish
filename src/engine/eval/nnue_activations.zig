@@ -29,29 +29,29 @@ pub inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u
     }
 }
 
-// Run both activations of one layer on the AVX2 pair tier with upstream's
-// SqrClippedReLU::propagate_pair (sqr_clipped_relu.h): share the input loads and the
-// signed 32->16 saturating packs, compute the square via pmulhw and the clip via
-// max+shift at i16 width, then narrow each with one saturating vpacksswb. The packs
-// work per 128-bit lane, so the output bytes land interleaved by 4-byte chunk
-// (k -> (k%2)*4 + k/2 within each 32-byte block); the fc_1/fc_2 weight parse folds
-// that interleave into the weight index (nnue_parse.pair_activations -- the SAME
-// comptime condition, and the bench signature pins that the two agree), so no
-// lane-restoring permute is issued anywhere. Values are bit-identical to the split
-// sqrClippedReLU/clippedReLU pair: the saturating pack equals their i16-range clamp,
-// pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and vpacksswb's signed
-// saturation equals their min(127, .) on these non-negative inputs.
-// Take the AVX-512 arm of the paired activations when the tier has AVX512F. Upstream's
-// USE_PAIR_ACTIVATIONS covers both this and the AVX2 pair tier; the two differ only in
-// narrowing order, which is exactly what nnue_parse.scrambled_activations keys off.
+/// Run both activations of one layer on the AVX2 pair tier with upstream's
+/// SqrClippedReLU::propagate_pair (sqr_clipped_relu.h): share the input loads and the
+/// signed 32->16 saturating packs, compute the square via pmulhw and the clip via
+/// max+shift at i16 width, then narrow each with one saturating vpacksswb. The packs
+/// work per 128-bit lane, so the output bytes land interleaved by 4-byte chunk
+/// (k -> (k%2)*4 + k/2 within each 32-byte block); the fc_1/fc_2 weight parse folds
+/// that interleave into the weight index (nnue_parse.pair_activations -- the SAME
+/// comptime condition, and the bench signature pins that the two agree), so no
+/// lane-restoring permute is issued anywhere. Values are bit-identical to the split
+/// sqrClippedReLU/clippedReLU pair: the saturating pack equals their i16-range clamp,
+/// pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and vpacksswb's signed
+/// saturation equals their min(127, .) on these non-negative inputs.
+/// Take the AVX-512 arm of the paired activations when the tier has AVX512F. Upstream's
+/// USE_PAIR_ACTIVATIONS covers both this and the AVX2 pair tier; the two differ only in
+/// narrowing order, which is exactly what nnue_parse.scrambled_activations keys off.
 pub const avx512_pair_activations = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512f);
 
-// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
-// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
-// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
-// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
-// convention on Linux and macOS, where the declaration lowers exactly as before.
+/// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+/// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+/// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+/// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+/// convention on Linux and macOS, where the declaration lowers exactly as before.
 const packssdw512 = struct {
     extern fn @"llvm.x86.avx512.packssdw.512"(@Vector(16, i32), @Vector(16, i32)) callconv(.{ .x86_64_sysv = .{} }) @Vector(32, i16);
 }.@"llvm.x86.avx512.packssdw.512";
@@ -66,19 +66,19 @@ const pmulhw256 = struct {
     extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i16);
 }.@"llvm.x86.avx2.pmulh.w";
 
-// Run both activations of one layer on the 128-bit SSSE3-class tier with the same
-// packs+mulhi shape upstream emits there (sqr_clipped_relu.h / clipped_relu.h lower to
-// packssdw+pmulhw+psrlw+packsswb at SSE): share the input loads and the signed 32->16
-// saturating packs, square via pmulhw and clip via max+shift at i16 width, then narrow
-// each with one saturating packsswb. The 128-bit packs concatenate their two operands in
-// order -- no cross-lane interleave exists at this width -- so the bytes land in natural
-// order and the fc_1/fc_2 weight parse stays the identity (unlike the avx2 pair tier's
-// compensating scramble). The split sqrClippedReLU/clippedReLU pair instead runs the
-// square at i32 width: pmulld is 2 uops on this tier and every clamp/shift/pack step
-// pays 4 xmm ops per 16 outputs, ~3x the instructions of the pack shape for the same
-// values. Values are bit-identical by sqrClipPair's argument: the saturating pack equals
-// the i16-range clamp, pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and
-// packsswb's signed saturation equals min(127, .) on these non-negative inputs.
+/// Run both activations of one layer on the 128-bit SSSE3-class tier with the same
+/// packs+mulhi shape upstream emits there (sqr_clipped_relu.h / clipped_relu.h lower to
+/// packssdw+pmulhw+psrlw+packsswb at SSE): share the input loads and the signed 32->16
+/// saturating packs, square via pmulhw and clip via max+shift at i16 width, then narrow
+/// each with one saturating packsswb. The 128-bit packs concatenate their two operands in
+/// order -- no cross-lane interleave exists at this width -- so the bytes land in natural
+/// order and the fc_1/fc_2 weight parse stays the identity (unlike the avx2 pair tier's
+/// compensating scramble). The split sqrClippedReLU/clippedReLU pair instead runs the
+/// square at i32 width: pmulld is 2 uops on this tier and every clamp/shift/pack step
+/// pays 4 xmm ops per 16 outputs, ~3x the instructions of the pack shape for the same
+/// values. Values are bit-identical by sqrClipPair's argument: the saturating pack equals
+/// the i16-range clamp, pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and
+/// packsswb's signed saturation equals min(127, .) on these non-negative inputs.
 pub const sse_pair_activations = builtin.target.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.target.cpu.features, .ssse3) and
     !std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx2);

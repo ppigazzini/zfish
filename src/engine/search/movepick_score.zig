@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const board_core = @import("board_core");
-// Single-source the move-word decoders; legality.zig aliases the same set.
+/// Single-source the move-word decoders; legality.zig aliases the same set.
 const moveFrom = board_core.moveFrom;
 const moveTo = board_core.moveTo;
 const moveType = board_core.moveTypeOf;
@@ -112,12 +112,12 @@ pub const ScoreInput = struct {
     low_ply_bonus: i32,
 };
 
-// extern to pin declaration order: raw_move+reserved form the 4-byte "move" lane at
-// offset 0, value the 4-byte lane at offset 4 -- matching upstream's ExtMove{move,value}
-// and what movepick_sort_avx512's vectorized reassembly assumes. A plain struct sorts by
-// descending alignment (i32 before u16), which put value at offset 0 -- harmless while
-// every reader used named fields, but wrong for the SIMD path, which loads/stores the
-// two 4-byte halves by position.
+/// extern to pin declaration order: raw_move+reserved form the 4-byte "move" lane at
+/// offset 0, value the 4-byte lane at offset 4 -- matching upstream's ExtMove{move,value}
+/// and what movepick_sort_avx512's vectorized reassembly assumes. A plain struct sorts by
+/// descending alignment (i32 before u16), which put value at offset 0 -- harmless while
+/// every reader used named fields, but wrong for the SIMD path, which loads/stores the
+/// two 4-byte halves by position.
 pub const SortEntry = extern struct {
     raw_move: u16,
     reserved: u16,
@@ -154,9 +154,9 @@ pub const MovePickerContext = struct {
     ply: i32,
 };
 
-// Compute the per-move score. Upstream's MovePicker::score() computes this straight into the
-// move's value in a single pass; keeping it a leaf over ScoreInput lets scoreList do
-// the same without materialising the inputs.
+/// Compute the per-move score. Upstream's MovePicker::score() computes this straight into the
+/// move's value in a single pass; keeping it a leaf over ScoreInput lets scoreList do
+/// the same without materialising the inputs.
 fn scoreValue(comptime kind: u8, input: ScoreInput) i32 {
     return switch (kind) {
         captures => input.capture_history + 7 * input.captured_piece_value,

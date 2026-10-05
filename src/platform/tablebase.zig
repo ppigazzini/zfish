@@ -13,21 +13,21 @@ const table_load = @import("syzygy/table_load.zig"); // Load a table file and ru
 const probe_index = @import("syzygy/probe_index.zig"); // Position -> table index; test-referenced
 const wdl = @import("syzygy/wdl.zig"); // Probe WDL/DTZ
 
-// Re-export the probe result type -- a search-facing value owned by the engine tb_source seam --
-// so the shell inspection commands keep reaching it as tablebase.ProbeResult.
+/// Re-export the probe result type -- a search-facing value owned by the engine tb_source seam --
+/// so the shell inspection commands keep reaching it as tablebase.ProbeResult.
 pub const ProbeResult = @import("tb_source").ProbeResult;
 
-// Scan SyzygyPath, count `.rtbw`/`.rtbz` files, set maxCardinality.
+/// Scan SyzygyPath, count `.rtbw`/`.rtbz` files, set maxCardinality.
 pub const init = tables.init;
 pub const maxCardinality = tables.maxCardinality; // Search-facing: report 0 when no path is set
 pub const discoveredMax = tables.discoveredMax; // Disk discovery: supply the "up to N-man" message
 pub const foundWdl = tables.foundWdl;
 pub const foundDtz = tables.foundDtz;
 
-// WDL/DTZ probe: parse the position's FEN, look up its material key in the registry, and return
-// the Syzygy WDL + DTZ. Report `available == 0` when no table serves the position.
+/// WDL/DTZ probe: parse the position's FEN, look up its material key in the registry, and return
+/// the Syzygy WDL + DTZ. Report `available == 0` when no table serves the position.
 pub const probeFen = wdl.probeFen;
-// Probe WDL in-search on the live search Position (search Step 7).
+/// Probe WDL in-search on the live search Position (search Step 7).
 pub const probeWdlPos = wdl.probeWdlPos;
 
 test {

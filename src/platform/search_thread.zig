@@ -21,8 +21,8 @@ const rt = @import("thread_runtime");
 const worker_layout = @import("worker_layout");
 const runtime_hooks = @import("runtime_hooks");
 
-// Place a marker at offset 0 (no reader touches thread@0, so this just makes a
-// SearchThread identifiable in a dump and pads `worker` to offset 8).
+/// Place a marker at offset 0 (no reader touches thread@0, so this just makes a
+/// SearchThread identifiable in a dump and pads `worker` to offset 8).
 pub const thread_tag: u64 = 0x5a_46_49_53_48_54_48_31; // "ZFISHTH1"
 
 pub const SearchThread = struct {
@@ -31,13 +31,13 @@ pub const SearchThread = struct {
     runtime: ?*rt.ThreadRuntime = null, // @16
     idx: usize = 0, // @24
 
-    // Allocate + spawn the futex idle-loop runner. Attach the Worker later
-    // (setWorker) via the ThreadPool construction that builds the Worker block.
-    // Separate a failed SPAWN from a failed allocation, so the handling boundary can name
-    // which one happened. Upstream ignored pthread_create's return and then waited forever on
-    // a searching flag no thread would clear (3512dea6); Zig's spawn already returns the
-    // failure, so what is left to port is the diagnostic -- and an OutOfMemory that reached
-    // the caller unlabelled would be reported as an arena the engine could not allocate.
+    /// Allocate + spawn the futex idle-loop runner. Attach the Worker later
+    /// (setWorker) via the ThreadPool construction that builds the Worker block.
+    /// Separate a failed SPAWN from a failed allocation, so the handling boundary can name
+    /// which one happened. Upstream ignored pthread_create's return and then waited forever on
+    /// a searching flag no thread would clear (3512dea6); Zig's spawn already returns the
+    /// failure, so what is left to port is the diagnostic -- and an OutOfMemory that reached
+    /// the caller unlabelled would be reported as an arena the engine could not allocate.
     pub fn spawn(self: *SearchThread, allocator: std.mem.Allocator, idx: usize) !void {
         const runtime = try allocator.create(rt.ThreadRuntime);
         errdefer allocator.destroy(runtime);
@@ -50,7 +50,7 @@ pub const SearchThread = struct {
         self.worker = worker;
     }
 
-    // Submit a job to the idle loop and return immediately. Run the job on the thread.
+    /// Submit a job to the idle loop and return immediately. Run the job on the thread.
     pub fn startJob(self: *SearchThread, job: rt.ThreadJobFn, ctx: ?*anyopaque) void {
         self.runtime.?.runCustomJob(job, ctx);
     }
@@ -59,7 +59,7 @@ pub const SearchThread = struct {
         self.runtime.?.waitForSearchFinished();
     }
 
-    // Join the runner, then tear down the attached Worker. Keep it idempotent.
+    /// Join the runner, then tear down the attached Worker. Keep it idempotent.
     pub fn deinit(self: *SearchThread, allocator: std.mem.Allocator) void {
         if (self.runtime) |runtime| {
             runtime.deinit(); // join the idle loop first -- no thread uses worker after this
@@ -82,31 +82,31 @@ pub const SearchThread = struct {
 // Attach only dummy workers (worker == 0) in the search_thread tests, so deinit's
 // runtime_hooks.worker_destroy call is never reached — no test stub needed.
 
-// Hold the search driver entry, injected by the thread module at search start.
-// search_thread must not import position (position imports the thread stack for its
-// pool ops, so the reverse would cycle), so register the driver as a function
-// pointer rather than call it by name.
+/// Hold the search driver entry, injected by the thread module at search start.
+/// search_thread must not import position (position imports the thread stack for its
+/// pool ops, so the reverse would cycle), so register the driver as a function
+/// pointer rather than call it by name.
 pub var searchEntry: ?*const fn (?*anyopaque) void = null;
 
-// Run the registered Zig search driver on this thread as the production search job,
-// with the Worker pointer as context.
+/// Run the registered Zig search driver on this thread as the production search job,
+/// with the Worker pointer as context.
 pub fn searchJob(ctx: ?*anyopaque) void {
     if (searchEntry) |f| f(ctx);
 }
 
-// Start this thread's search: run searchJob with the attached Worker as context.
+/// Start this thread's search: run searchJob with the attached Worker as context.
 pub fn startSearching(self: *SearchThread) void {
     self.startJob(searchJob, self.worker);
 }
 
-// Reinterpret a pool thread slot (a *SearchThread) for the pool-level sibling ops.
+/// Reinterpret a pool thread slot (a *SearchThread) for the pool-level sibling ops.
 inline fn asSearchThread(thread: *worker_layout.Thread) *SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
-// Start the sibling threads (index 1..) searching. Serve as the pool-level entry the search
-// driver (position.zig) calls -- pure graph iteration + the per-thread start, so it
-// needs no position import.
+/// Start the sibling threads (index 1..) searching. Serve as the pool-level entry the search
+/// driver (position.zig) calls -- pure graph iteration + the per-thread start, so it
+/// needs no position import.
 pub fn startPoolSiblings(pool: *worker_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();
@@ -114,7 +114,7 @@ pub fn startPoolSiblings(pool: *worker_layout.ThreadPool) void {
     while (i < n) : (i += 1) startSearching(asSearchThread(tp.threadTyped(i)));
 }
 
-// Wait for the sibling threads (index 1..) to finish their current search.
+/// Wait for the sibling threads (index 1..) to finish their current search.
 pub fn waitPoolSiblings(pool: *worker_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();

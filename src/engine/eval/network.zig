@@ -9,10 +9,10 @@ const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const network_parse = @import("network_parse.zig");
 
-// Take the .nnue READER from network_parse.zig, split off on the 500-line lint. The seam is
-// the file's own: everything that walks an untrusted file into the live weights lives there,
-// and what remains here is the option-facing face -- load / save / verify. The dependency runs
-// one way, network -> network_parse, so the pair is not a file cycle.
+/// Take the .nnue READER from network_parse.zig, split off on the 500-line lint. The seam is
+/// the file's own: everything that walks an untrusted file into the live weights lives there,
+/// and what remains here is the option-facing face -- load / save / verify. The dependency runs
+/// one way, network -> network_parse, so the pair is not a file cycle.
 const loadNetworkBytes = network_parse.loadNetworkBytes;
 const writeU32LeInto = network_parse.writeU32LeInto;
 const network_version = network_parse.network_version;
@@ -22,9 +22,9 @@ const Position = position_types.Position;
 const layer_stacks: usize = 8;
 const internal_dir = "<internal>";
 const none_name = "None";
-// Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
-// constant. Keep a single source of truth: engine.zig imports this via the
-// "network" module rather than re-declaring it (a net bump edits one line).
+/// Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
+/// constant. Keep a single source of truth: engine.zig imports this via the
+/// "network" module rather than re-declaring it (a net bump edits one line).
 pub const default_eval_file_name = "nn-252f33942263.nnue";
 
 /// Expose an opaque handle to the network subsystem. The NNUE weights live in this
@@ -34,9 +34,9 @@ pub const default_eval_file_name = "nn-252f33942263.nnue";
 /// fake layout; it is the same idiom the B4 arena handles use.
 pub const Network = opaque {};
 
-// Re-export the inference (forward pass) public entry points + result types from
-// the nnue_inference leaf so the engine, worker, and trace callers resolve them
-// through the network module.
+/// Re-export the inference (forward pass) public entry points + result types from
+/// the nnue_inference leaf so the engine, worker, and trace callers resolve them
+/// through the network module.
 pub const evaluate = nnue_inference.evaluate;
 pub const traceEvaluate = nnue_inference.traceEvaluate;
 pub const TraceOutput = nnue_inference.TraceOutput;
@@ -64,16 +64,16 @@ pub const VerifyInfo = struct {
     fc1_outputs: i32,
 };
 
-// Populate the Zig-owned inference storage from the NNUE parse, the sole source
-// of weights. The hooks below are no-op stubs, local to this module.
+/// Populate the Zig-owned inference storage from the NNUE parse, the sole source
+/// of weights. The hooks below are no-op stubs, local to this module.
 const embedded_nnue_stub = [_]u8{0};
 fn networkEmbeddedBytes() ByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
 }
 
-// Read the affine-layer byte sizes from the weight-storage owner, which lays the
-// per-bucket arena out from the same table -- one source, so the parse destination
-// and the arena layout cannot disagree.
+/// Read the affine-layer byte sizes from the weight-storage owner, which lays the
+/// per-bucket arena out from the same table -- one source, so the parse destination
+/// and the arena layout cannot disagree.
 fn layerBiasesBytes(idx: usize) usize {
     return weight_storage.layer_biases_bytes[idx];
 }
@@ -177,9 +177,9 @@ pub fn verify(requested_path: []const u8) VerifyResult {
     };
 }
 
-// Alias back the accessors for the Zig-owned EvalFile dynamic state + weight
-// storage, which live in the nnue_weight_storage leaf now (shared owner for the
-// inference and I/O paths), so the call sites here stay unqualified.
+/// Alias back the accessors for the Zig-owned EvalFile dynamic state + weight
+/// storage, which live in the nnue_weight_storage leaf now (shared owner for the
+/// inference and I/O paths), so the call sites here stay unqualified.
 const nnCurrent = weight_storage.nnCurrent;
 const nnDescription = weight_storage.nnDescription;
 const markInitialized = weight_storage.markInitialized;
@@ -236,7 +236,7 @@ fn loadInternal() void {
     _ = loadNetworkBytes(viewToSlice(networkEmbeddedBytes()), default_name);
 }
 
-// Gather one layer stack's biases/weights slices (fc_0/fc_1/fc_2).
+/// Gather one layer stack's biases/weights slices (fc_0/fc_1/fc_2).
 fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
     var b: [3][]const u8 = undefined;
     var w: [3][]const u8 = undefined;
@@ -249,8 +249,8 @@ fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
     return .{ .b = b, .w = w };
 }
 
-// Serialize the feature transformer into `out` (write_parameters blob,
-// including the leading component hash).
+/// Serialize the feature transformer into `out` (write_parameters blob,
+/// including the leading component hash).
 fn emitFt(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     const ft: [*]const u8 = @ptrCast(ftPtr() orelse return error.NoNetwork);
     try nnue_parse.serializeFeatureTransformer(
@@ -261,7 +261,7 @@ fn emitFt(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     );
 }
 
-// Serialize one layer stack into `out`.
+/// Serialize one layer stack into `out`.
 fn emitLayer(bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     const arr = layerArrays(bucket) orelse return error.NoNetwork;
     try nnue_parse.serializeLayer(nnue_hash.architectureHashValue(), arr.b, arr.w, out, a);

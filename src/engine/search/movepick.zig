@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const movepick_history = @import("movepick_history.zig");
-// Re-export for the search callers that build the contHist array and must keep its length.
+/// Re-export for the search callers that build the contHist array and must keep its length.
 pub const contHistSlice = movepick_history.contHistSlice;
 
 const seeGe = @import("legality").seeGe;
@@ -93,20 +93,20 @@ pub fn initProbcutStage(has_tt_move: bool) i32 {
     return probcut_tt + @as(i32, @intFromBool(!has_tt_move));
 }
 
-// Sort a list whose limit admits every move.
-//
-// Two of the three callers passed `minInt(i32)`, where no score can fail the scan: every
-// move qualifies, `sorted_end` advances on every iteration and therefore tracks `scan`
-// exactly -- which makes `entries[scan] = entries[sorted_end]` a copy of a slot onto
-// itself, and the test above it a constant. Naming that sort separately drops the limit,
-// the test, the copy and the second cursor; what is left is `scan` alone.
-//
-// The order out is the order in. The scalar ladder starts at `scan`, which is the slot
-// `sorted_end` named in the general form, and the vector prefix takes the same first
-// min(count, max) moves.
-//
-// `partialInsertionSort` survives for its one remaining caller, the quiet stage, which is
-// the only site that passes a real limit.
+/// Sort a list whose limit admits every move.
+///
+/// Two of the three callers passed `minInt(i32)`, where no score can fail the scan: every
+/// move qualifies, `sorted_end` advances on every iteration and therefore tracks `scan`
+/// exactly -- which makes `entries[scan] = entries[sorted_end]` a copy of a slot onto
+/// itself, and the test above it a constant. Naming that sort separately drops the limit,
+/// the test, the copy and the second cursor; what is left is `scan` alone.
+///
+/// The order out is the order in. The scalar ladder starts at `scan`, which is the slot
+/// `sorted_end` named in the general form, and the vector prefix takes the same first
+/// min(count, max) moves.
+///
+/// `partialInsertionSort` survives for its one remaining caller, the quiet stage, which is
+/// the only site that passes a real limit.
 pub fn sortAll(entries: [*]SortEntry, count: usize) void {
     if (count == 0)
         return;
@@ -338,19 +338,19 @@ fn selectGoodCapture(state: *MovePickerState, context: *const MovePickerContext)
     return null;
 }
 
-// Walk the good quiets. `bounded` decides whether the walk may stop at the first move that
-// fails the threshold instead of running to the end of the list.
-//
-// partialInsertionSort leaves the list in TWO pieces: a prefix that descends, and a tail
-// every member of which scores below the sort's own limit. So once the walk has seen one
-// move at or below the threshold, the rest of the prefix is at or below it by the ordering,
-// and the tail is below it by the limit -- there is nothing further to find.
-//
-// The tail half of that argument holds only while the LIMIT is at or below the THRESHOLD.
-// The limit is `-3560 * depth`, so below depth 4 it is above -14000 and a tail move can
-// still outscore the threshold; there the walk has to run to the end. The caller picks the
-// form on exactly that test rather than on a transcribed depth, so a change to either
-// constant moves the boundary with it.
+/// Walk the good quiets. `bounded` decides whether the walk may stop at the first move that
+/// fails the threshold instead of running to the end of the list.
+///
+/// partialInsertionSort leaves the list in TWO pieces: a prefix that descends, and a tail
+/// every member of which scores below the sort's own limit. So once the walk has seen one
+/// move at or below the threshold, the rest of the prefix is at or below it by the ordering,
+/// and the tail is below it by the limit -- there is nothing further to find.
+///
+/// The tail half of that argument holds only while the LIMIT is at or below the THRESHOLD.
+/// The limit is `-3560 * depth`, so below depth 4 it is above -14000 and a tail move can
+/// still outscore the threshold; there the walk has to run to the end. The caller picks the
+/// form on exactly that test rather than on a transcribed depth, so a change to either
+/// constant moves the boundary with it.
 fn selectGoodQuiet(state: *MovePickerState, comptime bounded: bool) ?u16 {
     while (state.cur < state.end_cur) {
         const entry = state.moves[state.cur];

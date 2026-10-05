@@ -9,7 +9,7 @@ const std = @import("std");
 
 const WinRateParams = struct { a: f64, b: f64 };
 
-// Return the UCI_WinRateModel params for the given non-pawn material (clamped 17..78).
+/// Return the UCI_WinRateModel params for the given non-pawn material (clamped 17..78).
 fn winRateParams(material: i32) WinRateParams {
     const clamped = std.math.clamp(material, 17, 78);
     const m = @as(f64, @floatFromInt(clamped)) / 58.0;
@@ -25,18 +25,18 @@ fn winRateModel(value: i32, material: i32) i32 {
     return @intFromFloat(0.5 + 1000.0 / (1.0 + std.math.exp((params.a - @as(f64, @floatFromInt(value))) / params.b)));
 }
 
-// Convert internal eval -> centipawns (UCI::to_cp): normalise value by the win-rate `a` param.
+/// Convert internal eval -> centipawns (UCI::to_cp): normalise value by the win-rate `a` param.
 pub fn toCp(value: i32, material: i32) i32 {
     const params = winRateParams(material);
     return @intFromFloat(@round(100.0 * @as(f64, @floatFromInt(value)) / params.a));
 }
 
-// Allocate the "win draw loss" permille triple (c_allocator; caller frees). null on OOM.
+/// Allocate the "win draw loss" permille triple (c_allocator; caller frees). null on OOM.
 pub fn wdl(value: i32, material: i32) ?[:0]u8 {
     return allocWdl(value, material) catch null;
 }
 
-// Allocate the UCI score text: kind 0 -> "mate N", kind 1 -> TB "cp N", else "cp N".
+/// Allocate the UCI score text: kind 0 -> "mate N", kind 1 -> TB "cp N", else "cp N".
 pub fn formatScore(kind: u8, value: i32, extra: i32) ?[:0]u8 {
     return allocScore(kind, value, extra) catch null;
 }
@@ -83,13 +83,13 @@ fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: a
     try buffer.appendSlice(allocator, formatted);
 }
 
-// Format "info depth D score S" for the no-legal-moves (mate/stalemate) case.
+/// Format "info depth D score S" for the no-legal-moves (mate/stalemate) case.
 pub fn formatInfoNoMoves(depth: i32, score_text: []const u8) ?[:0]u8 {
     return allocFormatted("info depth {d} score {s}", .{ depth, score_text }) catch null;
 }
 
-// Format the full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
-// hashfull/tbhits/time/pv).
+/// Format the full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
+/// hashfull/tbhits/time/pv).
 pub fn formatInfoFull(
     depth: i32,
     sel_depth: i32,
@@ -141,12 +141,12 @@ pub fn formatInfoFull(
     return allocCString(builder.items) catch null;
 }
 
-// Format "info depth D currmove M currmovenumber N".
+/// Format "info depth D currmove M currmovenumber N".
 pub fn formatInfoIter(depth: i32, currmove: []const u8, currmove_number: i32) ?[:0]u8 {
     return allocFormatted("info depth {d} currmove {s} currmovenumber {d}", .{ depth, currmove, currmove_number }) catch null;
 }
 
-// Format "bestmove M [ponder P]".
+/// Format "bestmove M [ponder P]".
 pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[:0]u8 {
     if (ponder.len == 0) return allocFormatted("bestmove {s}", .{bestmove}) catch null;
     return allocFormatted("bestmove {s} ponder {s}", .{ bestmove, ponder }) catch null;

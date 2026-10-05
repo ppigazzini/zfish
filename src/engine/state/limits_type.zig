@@ -5,20 +5,20 @@
 
 const std = @import("std");
 
-// Hold a Zig-owned UCI searchmove text record: a length byte plus up to 7 chars ("e2e4",
-// "e7e8q"). uci.goParsed writes these; the startThinking move filter reads them by plain
-// field access. Keep a plain Zig struct (not `extern`): the layout is not a C-ABI or byte-
-// serialization contract -- it is only ever a typed `[]SearchMoveText` element -- and
-// with two u8-based fields Zig lays it out as the same contiguous 8 bytes regardless.
+/// Hold a Zig-owned UCI searchmove text record: a length byte plus up to 7 chars ("e2e4",
+/// "e7e8q"). uci.goParsed writes these; the startThinking move filter reads them by plain
+/// field access. Keep a plain Zig struct (not `extern`): the layout is not a C-ABI or byte-
+/// serialization contract -- it is only ever a typed `[]SearchMoveText` element -- and
+/// with two u8-based fields Zig lays it out as the same contiguous 8 bytes regardless.
 pub const SearchMoveText = struct {
     len: u8,
     text: [7]u8,
 };
 
-// Hold the LimitsType object: the `searchmoves` list, seven TimePoints
-// (time[2]/inc[2]/npmsec/movetime/startTime), the search-mode ints
-// (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
-// copies the POD fields, so any layout error here breaks bench (gate-verified).
+/// Hold the LimitsType object: the `searchmoves` list, seven TimePoints
+/// (time[2]/inc[2]/npmsec/movetime/startTime), the search-mode ints
+/// (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
+/// copies the POD fields, so any layout error here breaks bench (gate-verified).
 pub const LimitsType = struct {
     searchmoves: []SearchMoveText, // the `go searchmoves` list
     time: [2]i64, // time[WHITE], time[BLACK]

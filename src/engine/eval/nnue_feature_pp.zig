@@ -21,12 +21,12 @@ const sq_a2 = luts.sq_a2;
 pub const FullAppendResult = luts.FullAppendResult;
 pub const FullAppendChangedLens = luts.FullAppendChangedLens;
 
-// make_pawn_id: 48*color + (square - SQ_A2). Pawns live on the 48 squares of ranks 2-7.
+/// make_pawn_id: 48*color + (square - SQ_A2). Pawns live on the 48 squares of ranks 2-7.
 fn makePawnId(color: u32, square: u32) u32 {
     return 48 * color + square - @as(u32, sq_a2);
 }
 
-// PP_3Wide::make_index -- the triangular index of the unordered pawn-id pair, plus the base.
+/// PP_3Wide::make_index -- the triangular index of the unordered pawn-id pair, plus the base.
 pub fn ppMakeIndex(perspective: u8, color: u8, from: u8, to: u8, paired_color: u8, king_square: u8) u32 {
     const orientation: u8 = @as(u8, @bitCast(orient_tbl_full[king_square])) ^ (56 *% @as(u8, perspective));
     const from_o: u32 = @as(u32, from ^ orientation);
@@ -40,7 +40,7 @@ pub fn ppMakeIndex(perspective: u8, color: u8, from: u8, to: u8, paired_color: u
     return hi * (hi - 1) / 2 + lo + pp_index_base;
 }
 
-// PP_3Wide::append_active_indices -- every pawn pair, once, into the shared active list.
+/// PP_3Wide::append_active_indices -- every pawn pair, once, into the shared active list.
 pub fn ppAppendActive(result: *FullAppendResult, perspective: u8, king_square: u8, white_pawns: u64, black_pawns: u64) void {
     var bb = white_pawns;
     while (bb != 0) {
@@ -77,9 +77,9 @@ pub fn ppAppendActive(result: *FullAppendResult, perspective: u8, king_square: u
     }
 }
 
-// The generate() lambda from PP_3Wide::append_changed_indices (non-AVX512 path): emit every
-// pair touching a changed pawn -- partners drawn from the unchanged pawns plus the not-yet-
-// processed changed pawns (so an updated-updated pair is emitted exactly once).
+/// The generate() lambda from PP_3Wide::append_changed_indices (non-AVX512 path): emit every
+/// pair touching a changed pawn -- partners drawn from the unchanged pawns plus the not-yet-
+/// processed changed pawns (so an updated-updated pair is emitted exactly once).
 fn ppGenerate(perspective: u8, king_square: u8, updated_w: u64, updated_b: u64, pawns_w: u64, pawns_b: u64, out: [*]u32, len_in: usize) usize {
     var len = len_in;
     const unchanged = (pawns_w | pawns_b) & ~(updated_w | updated_b);
@@ -107,11 +107,11 @@ fn ppGenerate(perspective: u8, king_square: u8, updated_w: u64, updated_b: u64, 
     return len;
 }
 
-// PP_3Wide::append_changed_indices -- append the pawn-pair delta onto the SAME removed/added
-// lists the threat delta already filled (both index the shared threatAndPp weight rows).
-// added <- pairs that appear (after&~before, drawn against the after pawns);
-// removed <- pairs that disappear (before&~after, against the before pawns). The caller
-// swaps the two out-lists for a backward walk, exactly as upstream swaps the arguments.
+/// PP_3Wide::append_changed_indices -- append the pawn-pair delta onto the SAME removed/added
+/// lists the threat delta already filled (both index the shared threatAndPp weight rows).
+/// added <- pairs that appear (after&~before, drawn against the after pawns);
+/// removed <- pairs that disappear (before&~after, against the before pawns). The caller
+/// swaps the two out-lists for a backward walk, exactly as upstream swaps the arguments.
 pub fn ppAppendChanged(
     perspective: u8,
     king_square: u8,
