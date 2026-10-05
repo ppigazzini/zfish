@@ -61,6 +61,7 @@ pub const Config = struct {
 };
 
 fn readGitInfo(b: *std.Build) GitInfo {
+    dependOnGitHead(b);
     const repo_root = repoPath(b, ".");
 
     return .{
@@ -79,6 +80,32 @@ fn readGitInfo(b: *std.Build) GitInfo {
             },
         ),
     };
+}
+
+/// Make the configure cache follow HEAD. Since 0.17 the configure phase is cached on its
+/// sources and flags, not on the processes it spawns, so the `git` calls above are otherwise
+/// served stale: after a commit the binary still named the previous sha. Every HEAD move
+/// appends to git's HEAD reflog, so depend on that file -- the signal Zig's own build.zig
+/// uses. A worktree's `.git` is a file naming the directory that holds its reflog.
+fn dependOnGitHead(b: *std.Build) void {
+    const io = b.graph.io;
+    const dot_git = b.root.openFile(io, ".git", .{ .allow_directory = false }) catch |err| switch (err) {
+        error.IsDir => return b.dependOnFileMetadata(b.path(".git/logs/HEAD")),
+        // Not a checkout, so there is no HEAD to follow, and readGitInfo finds none either.
+        else => return,
+    };
+    defer dot_git.close(io);
+    b.dependOnFileContents(b.path(".git"));
+
+    var buf: ["gitdir: ".len + std.Io.Dir.max_path_bytes + 1]u8 = undefined;
+    var reader = dot_git.reader(io, &buf);
+    const line = reader.interface.allocRemaining(b.allocator, .limited(buf.len + "\r\n".len)) catch return;
+    const git_dir = std.mem.cutPrefix(u8, std.mem.trimEnd(u8, line, "\r\n"), "gitdir: ") orelse return;
+    const head_log = b.pathJoin(&.{ git_dir, "logs", "HEAD" });
+    b.dependOnFileMetadata(if (std.Io.Dir.path.isAbsolute(head_log))
+        b.graph.cwdRelativePath(head_log)
+    else
+        b.path(head_log));
 }
 
 pub fn runAndTrimOrNull(b: *std.Build, argv: []const []const u8) ?[]const u8 {
