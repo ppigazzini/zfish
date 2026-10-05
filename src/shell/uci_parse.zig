@@ -122,8 +122,7 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
         fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64, lo: i64) !i64 {
             const bounded = std.math.clamp(given, lo, max_clock_ms);
             if (bounded != given) {
-                const line = try std.fmt.allocPrint(
-                    a,
+                const line = try a.print(
                     "{s} {d} is outside [{d}, {d}]; using {d}\n",
                     .{ what, given, lo, max_clock_ms, bounded },
                 );
@@ -145,8 +144,7 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
         fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64, hi: i64) !i32 {
             const bounded = std.math.clamp(given, 0, hi);
             if (bounded != given) {
-                const line = try std.fmt.allocPrint(
-                    a,
+                const line = try a.print(
                     "{s} {d} is outside [0, {d}]; using {d}\n",
                     .{ what, given, hi, bounded },
                 );
@@ -341,9 +339,9 @@ test "parseLimits bounds a clock the protocol had no right to send" {
         try testing.expectEqual(max_clock_ms, l.winc);
         try testing.expectEqual(@as(i64, 1000), l.btime); // in range, untouched
         const notice = l.clamp_notice orelse return error.TestExpectedClampNotice;
-        try testing.expect(std.mem.indexOf(u8, notice, "wtime 4000000000000000000 is outside") != null);
-        try testing.expect(std.mem.indexOf(u8, notice, "winc 4000000000000000000 is outside") != null);
-        try testing.expect(std.mem.indexOf(u8, notice, "btime") == null);
+        try testing.expect(std.mem.find(u8, notice, "wtime 4000000000000000000 is outside") != null);
+        try testing.expect(std.mem.find(u8, notice, "winc 4000000000000000000 is outside") != null);
+        try testing.expect(std.mem.find(u8, notice, "btime") == null);
     }
 
     // The same defect facing the other way: a negative clock underflows the same expression.
@@ -372,7 +370,7 @@ test "parseLimits bounds a clock the protocol had no right to send" {
         defer freeLimits(l);
         try testing.expectEqual(@as(i64, 1), l.movetime);
         const notice = l.clamp_notice orelse return error.TestExpectedClampNotice;
-        try testing.expect(std.mem.indexOf(u8, notice, "movetime 0 is outside [1,") != null);
+        try testing.expect(std.mem.find(u8, notice, "movetime 0 is outside [1,") != null);
     }
 
     // A clock of zero is NOT bounded up -- only movetime is. `go wtime 0` is a real thing to
@@ -406,7 +404,7 @@ test "parseLimits bounds movestogo and mate where they enter" {
         defer freeLimits(l);
         try testing.expectEqual(@as(i32, 0), l.movestogo);
         const notice = l.clamp_notice orelse return error.TestExpectedClampNotice;
-        try testing.expect(std.mem.indexOf(u8, notice, "movestogo -2147483648 is outside") != null);
+        try testing.expect(std.mem.find(u8, notice, "movestogo -2147483648 is outside") != null);
     }
 
     // `mate` is halved rather than merely floored, because the stop condition compares against

@@ -64,7 +64,7 @@ fn allocWdl(value: i32, material: i32) !?[:0]u8 {
 
 pub fn allocFormatted(comptime fmt: []const u8, args: anytype) !?[:0]u8 {
     const allocator = std.heap.c_allocator;
-    const formatted = try std.fmt.allocPrint(allocator, fmt, args);
+    const formatted = try allocator.print(fmt, args);
     defer allocator.free(formatted);
     return try allocCString(formatted);
 }
@@ -78,7 +78,7 @@ pub fn allocCString(value: []const u8) !?[:0]u8 {
 
 fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
     const allocator = std.heap.c_allocator;
-    const formatted = try std.fmt.allocPrint(allocator, fmt, args);
+    const formatted = try allocator.print(fmt, args);
     defer allocator.free(formatted);
     try buffer.appendSlice(allocator, formatted);
 }

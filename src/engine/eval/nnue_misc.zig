@@ -37,7 +37,7 @@ fn formatTraceAlloc(input: NnueTraceInput) ![]u8 {
         var bucket_buffer: [64]u8 = undefined;
         // Match `"|  " << bucket << "         |  "` (nnue_misc.cpp) byte-for-byte, and close
         // the cell with `"   |"`: THREE spaces before the pipe, not two.
-        const bucket_text = std.fmt.bufPrint(&bucket_buffer, "|  {d}         |  ", .{bucket}) catch unreachable;
+        const bucket_text = std.mem.print(&bucket_buffer, "|  {d}         |  ", .{bucket}) catch unreachable;
         try buffer.appendSlice(allocator, bucket_text);
         try appendAlignedDot(&buffer, input.positional_raw[bucket], input.positional_cp[bucket]);
         try buffer.appendSlice(allocator, "   |");
@@ -68,9 +68,9 @@ fn appendAlignedDot(buffer: *std.ArrayList(u8), sign_value: i32, cp_value: i32) 
     // disagree with std.fmt's round-half-away. Proven byte-exact for every cp in
     // [-2_000_000, 2_000_000].
     var digits: [32]u8 = undefined;
-    const body = std.fmt.bufPrint(&digits, "{d:.2}", .{pawns}) catch unreachable;
+    const body = std.mem.print(&digits, "{d:.2}", .{pawns}) catch unreachable;
     var numeric: [64]u8 = undefined;
-    const rendered = std.fmt.bufPrint(&numeric, "{c}{s: >6}", .{ sign, body }) catch unreachable;
+    const rendered = std.mem.print(&numeric, "{c}{s: >6}", .{ sign, body }) catch unreachable;
     try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 

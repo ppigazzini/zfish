@@ -93,7 +93,7 @@ pub fn main(init: std.process.Init) !void {
     while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".golden")) continue;
-        try found.append(arena, try std.fmt.allocPrint(arena, "tools/{s}", .{entry.path}));
+        try found.append(arena, try arena.print("tools/{s}", .{entry.path}));
     }
 
     if (found.items.len < golden_floor) {
@@ -122,8 +122,8 @@ pub fn main(init: std.process.Init) !void {
                 failures += 1;
                 break;
             };
-            const base = std.fs.path.basename(path);
-            if (std.mem.indexOf(u8, src, base) == null) {
+            const base = std.Io.Dir.path.basename(path);
+            if (std.mem.find(u8, src, base) == null) {
                 std.debug.print("golden-coverage: UNWITNESSED     `{s}` claims owner `{s}`, which never names it\n", .{ path, o.owner });
                 failures += 1;
             }

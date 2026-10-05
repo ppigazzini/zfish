@@ -83,9 +83,7 @@ fn median(values: []f64) f64 {
 }
 
 pub fn main(init: std.process.Init) !void {
-    var gpa_state = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa_state.deinit();
-    const gpa = gpa_state.allocator();
+    const gpa = init.gpa;
 
     var arg_it = try std.process.Args.Iterator.initAllocator(init.minimal.args, gpa);
     defer arg_it.deinit();
@@ -150,7 +148,7 @@ pub fn main(init: std.process.Init) !void {
         }
         const c = try runWrapped(av[first..], core);
         var buf: [256]u8 = undefined;
-        const line = try std.fmt.bufPrint(
+        const line = try std.mem.print(
             &buf,
             "counters instructions={d} cycles={d} cache_misses={d} branch_misses={d} branches={d}\n",
             .{ c.instructions, c.cycles, c.cache_misses, c.branch_misses, c.branches },

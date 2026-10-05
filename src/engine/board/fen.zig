@@ -236,7 +236,7 @@ fn appendSquare(builder: *std.ArrayList(u8), square: u8) !void {
 
 fn appendInt(builder: *std.ArrayList(u8), value: i32) !void {
     var buffer: [32]u8 = undefined;
-    const text = try std.fmt.bufPrint(&buffer, "{d}", .{value});
+    const text = try std.mem.print(&buffer, "{d}", .{value});
     try builder.appendSlice(std.heap.c_allocator, text);
 }
 

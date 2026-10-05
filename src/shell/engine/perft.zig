@@ -95,14 +95,14 @@ pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: i32) PerftRes
             position_port.undoMove(p, m);
         }
         const txt = uci_move.renderMoveText(&mbuf, m, chess960);
-        const out = std.fmt.bufPrint(&line, "{s}: {d}", .{ txt, cnt }) catch unreachable;
+        const out = std.mem.print(&line, "{s}: {d}", .{ txt, cnt }) catch unreachable;
         uci_output.printLine(out);
     }
 
     std.heap.c_allocator.free(fen_text);
 
     var nbuf: [64]u8 = undefined;
-    const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;
+    const nout = std.mem.print(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;
     uci_output.printLine(nout);
     return .{ .nodes = nodes };
 }

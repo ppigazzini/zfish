@@ -68,7 +68,7 @@ fn setErr(comptime msg: []const u8) ?[]u8 {
 // reports "Invalid piece: o" -- the message named the rule but not what broke it.
 fn setErrFmt(comptime fmt: []const u8, args: anytype) ?[]u8 {
     var buf: [160]u8 = undefined;
-    const rendered = std.fmt.bufPrint(&buf, fmt, args) catch return setErr("Invalid FEN.");
+    const rendered = std.mem.print(&buf, fmt, args) catch return setErr("Invalid FEN.");
     return std.heap.c_allocator.dupe(u8, rendered) catch null;
 }
 

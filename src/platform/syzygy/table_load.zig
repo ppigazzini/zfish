@@ -41,7 +41,7 @@ fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
     while (it.next()) |dir| {
         if (dir.len == 0) continue;
         var zbuf: [4097]u8 = undefined;
-        const full = std.fmt.bufPrint(&zbuf, "{s}/{s}{s}\x00", .{ dir, t.stem[0..t.stem_len], ext }) catch continue;
+        const full = std.mem.print(&zbuf, "{s}/{s}{s}\x00", .{ dir, t.stem[0..t.stem_len], ext }) catch continue;
         const z: [*:0]const u8 = @ptrCast(full.ptr);
         // Open close-on-exec (upstream 22dfb404), as std.Io.Dir.openFile already does for the
         // net: a table descriptor lives for the whole process, so anything this engine ever

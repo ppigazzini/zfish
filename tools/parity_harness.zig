@@ -54,14 +54,14 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
     // (every other gate keeps cwd = resources/), so a path relative to the harness's own cwd
     // would not resolve from there. Resolve a possibly-relative incoming arg against the
     // harness cwd.
-    const bin: []const u8 = if (std.fs.path.isAbsolute(bin_arg))
+    const bin: []const u8 = if (std.Io.Dir.path.isAbsolute(bin_arg))
         bin_arg
     else abs: {
-        var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var cwd_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
         var threaded = std.Io.Threaded.init_single_threaded;
         const n = std.process.currentPath(threaded.io(), &cwd_buf) catch
             fail("net-missing: cannot resolve cwd to absolutize the binary path", .{});
-        break :abs std.fs.path.resolve(gpa, &.{ cwd_buf[0..n], bin_arg }) catch
+        break :abs std.Io.Dir.path.resolveAlloc(gpa, &.{ cwd_buf[0..n], bin_arg }) catch
             fail("net-missing: cannot resolve the binary path", .{});
     };
 

@@ -99,8 +99,8 @@ pub fn main(init: std.process.Init) !void {
 
     // Match fetch_net.sh's download sources + order: the Fishtest API first, then the GitHub mirror.
     const urls = [_][]const u8{
-        try std.fmt.allocPrint(gpa, "https://tests.stockfishchess.org/api/nn/{s}", .{name}),
-        try std.fmt.allocPrint(gpa, "https://github.com/official-stockfish/networks/raw/master/{s}", .{name}),
+        try gpa.print("https://tests.stockfishchess.org/api/nn/{s}", .{name}),
+        try gpa.print("https://github.com/official-stockfish/networks/raw/master/{s}", .{name}),
     };
     defer for (urls) |u| gpa.free(u);
     for (urls) |url| {

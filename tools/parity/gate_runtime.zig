@@ -48,7 +48,7 @@ pub fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []co
     if (std.mem.eql(u8, mode, "update")) {
         var out: std.ArrayList(u8) = .empty;
         for (mt_positions) |p| {
-            const cmds = std.fmt.allocPrint(gpa, "setoption name Threads value 1\n{s}\ngo depth {d}\n", .{ p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
+            const cmds = gpa.print("setoption name Threads value 1\n{s}\ngo depth {d}\n", .{ p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
             defer gpa.free(cmds);
             const o = runSearch(io, gpa, bin, cmds) catch fail("mt-sanity: engine run failed", .{});
             if (!o.got_bestmove) fail("mt-sanity: {s} single-thread produced no bestmove", .{p.name});
@@ -86,7 +86,7 @@ pub fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []co
         // still lands inside the multi-thread band below would slip past the band check; this
         // exact floor under the band catches it.
         {
-            const cmds1 = std.fmt.allocPrint(gpa, "setoption name Threads value 1\n{s}\ngo depth {d}\n", .{ p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
+            const cmds1 = gpa.print("setoption name Threads value 1\n{s}\ngo depth {d}\n", .{ p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
             defer gpa.free(cmds1);
             const o1 = runSearch(io, gpa, bin, cmds1) catch fail("mt-sanity: engine run failed", .{});
             if (o1.kind != ref.kind or o1.val != ref.val or !optEql(o1.nodes, ref.nodes) or !std.mem.eql(u8, o1.bestmove(), ref.bestmove()))
@@ -94,7 +94,7 @@ pub fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []co
         }
 
         for ([_]u8{ 2, 4 }) |tc| {
-            const cmds = std.fmt.allocPrint(gpa, "setoption name Threads value {d}\n{s}\ngo depth {d}\n", .{ tc, p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
+            const cmds = gpa.print("setoption name Threads value {d}\n{s}\ngo depth {d}\n", .{ tc, p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
             defer gpa.free(cmds);
             const o = runSearch(io, gpa, bin, cmds) catch fail("mt-sanity: engine run failed", .{});
             if (!o.got_bestmove or !wellFormedMove(o.bestmove())) fail("mt-sanity: {s} Threads={d}: no/garbled bestmove", .{ p.name, tc });
@@ -133,7 +133,7 @@ pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     var buf: [128]u8 = undefined;
     for (0..stress_cycles) |i| {
         const tc = threads[i % threads.len];
-        s.send(std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\n", .{tc}) catch fail("gate_runtime: command buffer too small for the case table", .{}));
+        s.send(std.mem.print(&buf, "setoption name Threads value {d}\nucinewgame\n", .{tc}) catch fail("gate_runtime: command buffer too small for the case table", .{}));
         if (i % 3 == 0) {
             // stop-handshake path: start an unbounded search, wait for it to actually spin up,
             // then stop -- this is what exercises the sync-primitive wakeup under contention.
@@ -154,7 +154,7 @@ pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.debug.print("stress: phase B -- {d} construct/destroy iterations\n", .{stress_churn});
     for (0..stress_churn) |j| {
         const tc = threads[j % threads.len];
-        const cmds = std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\nposition startpos\ngo depth 8\n", .{tc}) catch fail("gate_runtime: command buffer too small for the case table", .{});
+        const cmds = std.mem.print(&buf, "setoption name Threads value {d}\nucinewgame\nposition startpos\ngo depth 8\n", .{tc}) catch fail("gate_runtime: command buffer too small for the case table", .{});
         const o = runSearch(io, gpa, bin, cmds) catch fail("stress: phase B iter {d} spawn/run failed", .{j});
         if (!o.got_bestmove) fail("stress: phase B iter {d} (Threads={d}) produced no bestmove", .{ j, tc });
         if (!o.exited_clean) fail("stress: phase B iter {d} (Threads={d}) did not exit cleanly", .{ j, tc });
@@ -276,7 +276,7 @@ pub fn runAsync(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
 // read from the engine's own `go perft 1` -- whose divide lines ("<move>: <count>") enumerate
 // exactly the legal moves. The gate then holds no move list of its own to go stale.
 fn moveIsLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []const u8, move: []const u8) bool {
-    const input = std.fmt.allocPrint(gpa, "{s}\ngo perft 1\nquit\n", .{position}) catch return false;
+    const input = gpa.print("{s}\ngo perft 1\nquit\n", .{position}) catch return false;
     defer gpa.free(input);
     var cap = runEngine(gpa, io, bin, &.{}, input) catch return false;
     defer cap.deinit(gpa);
@@ -318,7 +318,7 @@ pub fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     const budgets = [_]i64{ 300, 900 };
     for (budgets, 0..) |t, idx| {
         var cmdbuf: [64]u8 = undefined;
-        const cmds = std.fmt.bufPrint(&cmdbuf, "position startpos\ngo movetime {d}\n", .{t}) catch fail("gate_runtime: command buffer too small for the case table", .{});
+        const cmds = std.mem.print(&cmdbuf, "position startpos\ngo movetime {d}\n", .{t}) catch fail("gate_runtime: command buffer too small for the case table", .{});
         const o = runSearch(io, gpa, bin, cmds) catch fail("time-mgmt: engine run failed", .{});
         if (!o.got_bestmove or !wellFormedMove(o.bestmove())) fail("time-mgmt: movetime {d}: no legal bestmove", .{t});
         const n = o.time_ms orelse fail("time-mgmt: movetime {d}: engine reported no 'time' field", .{t});

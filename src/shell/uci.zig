@@ -140,8 +140,7 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             // Emit through the sink: the handshake is protocol and belongs on stdout.
             // std.debug.print went to stderr, skipping the log tee and write_mutex.
             // Build one block, as upstream's single sync_cout does.
-            const block = std.fmt.allocPrint(
-                std.heap.c_allocator,
+            const block = std.heap.c_allocator.print(
                 "id name {s}\n{s}\nuciok",
                 .{ info_line, options_text },
             ) catch return .{ .should_quit = 0 };
@@ -196,8 +195,7 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             defer std.heap.c_allocator.free(text);
             // Same as `uci`: route to stdout through the sink. Keep the leading blank
             // line (printLine adds the trailing one), so emitted bytes are unchanged.
-            const block = std.fmt.allocPrint(
-                std.heap.c_allocator,
+            const block = std.heap.c_allocator.print(
                 "\n{s}",
                 .{text},
             ) catch return .{ .should_quit = 0 };
@@ -329,7 +327,7 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     // previous value made `go depth abc` silently search at depth 0 instead of refusing.
     if (limits.bad_token) |bad| {
         var buf: [64]u8 = undefined; // longest keyword is "movestogo"
-        const msg = std.fmt.bufPrint(&buf, "Invalid argument for '{s}'", .{bad}) catch "Invalid argument";
+        const msg = std.mem.print(&buf, "Invalid argument for '{s}'", .{bad}) catch "Invalid argument";
         terminateOnCriticalError(msg);
     }
 

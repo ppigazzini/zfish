@@ -21,7 +21,7 @@ pub const CountPair = struct {
 
 /// Render `fmt` into an owned slice the caller frees with `gpa`.
 pub fn allocMessage(gpa: std.mem.Allocator, comptime fmt: []const u8, args: anytype) ?[]u8 {
-    return std.fmt.allocPrint(gpa, fmt, args) catch null;
+    return gpa.print(fmt, args) catch null;
 }
 
 pub fn appendFormat(
@@ -36,7 +36,7 @@ pub fn appendFormat(
 pub fn appendHexKey(buffer: *std.ArrayList(u8), key: u64) !void {
     // Match C `%016llX` byte-for-byte with `{X:0>16}` (uppercase hex, zero-padded to 16).
     var numeric: [32]u8 = undefined;
-    const rendered = std.fmt.bufPrint(&numeric, "{X:0>16}", .{key}) catch unreachable;
+    const rendered = std.mem.print(&numeric, "{X:0>16}", .{key}) catch unreachable;
     try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 
@@ -45,9 +45,9 @@ pub fn appendPaddedInt(buffer: *std.ArrayList(u8), value: i32) !void {
     // when a width is applied directly to a signed int (`{d:4}` -> "+5"), so render the
     // digits first, then pad the *string* -- string padding carries no sign semantics.
     var digits: [16]u8 = undefined;
-    const body = std.fmt.bufPrint(&digits, "{d}", .{value}) catch unreachable;
+    const body = std.mem.print(&digits, "{d}", .{value}) catch unreachable;
     var numeric: [32]u8 = undefined;
-    const rendered = std.fmt.bufPrint(&numeric, "{s: >4}", .{body}) catch unreachable;
+    const rendered = std.mem.print(&numeric, "{s: >4}", .{body}) catch unreachable;
     try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 

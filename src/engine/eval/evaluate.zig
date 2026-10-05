@@ -136,7 +136,7 @@ fn appendIntLine(
     //   zfish:    `NNUE evaluation                      +10`
     // std.fmt has no force-sign flag, so emit the sign explicitly.
     var signed: [32]u8 = undefined;
-    const body = std.fmt.bufPrint(&signed, "{c}{d}", .{
+    const body = std.mem.print(&signed, "{c}{d}", .{
         @as(u8, if (value < 0) '-' else '+'),
         @abs(value),
     }) catch unreachable;
@@ -159,7 +159,7 @@ fn appendFloatLine(
     // round-half-away. Proven byte-exact for every cp in [-2_000_000, 2_000_000] (60x the
     // mate-bounded eval range). std.fmt has no force-sign flag, so emit the sign explicitly.
     var digits: [32]u8 = undefined;
-    const body = std.fmt.bufPrint(&digits, "{c}{d:.2}", .{
+    const body = std.mem.print(&digits, "{c}{d:.2}", .{
         @as(u8, if (value < 0) '-' else '+'),
         @abs(value),
     }) catch unreachable;

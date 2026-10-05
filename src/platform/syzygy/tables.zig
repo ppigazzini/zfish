@@ -75,7 +75,7 @@ fn tbFileExists(stem: []const u8, ext: []const u8) bool {
     while (it.next()) |dir| {
         if (dir.len == 0) continue;
         var buf: [4096]u8 = undefined;
-        const full = std.fmt.bufPrint(&buf, "{s}/{s}{s}", .{ dir, stem, ext }) catch continue;
+        const full = std.mem.print(&buf, "{s}/{s}{s}", .{ dir, stem, ext }) catch continue;
         if (fileExists(full)) return true;
     }
     return false;
