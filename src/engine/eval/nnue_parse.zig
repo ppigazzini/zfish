@@ -50,15 +50,15 @@ pub fn permuteBlocks(data: []u8, block_size: usize, order: []const usize, scratc
     }
 }
 
-const avx512_activations = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f);
+const avx512_activations = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512f);
 
 /// Mirror upstream's USE_PAIR_ACTIVATIONS (simd.h, b52f0147) -- every AVX2-or-better x86
 /// tier, AVX-512 and AVXVNNI included, since all three pack their activations. This
 /// chooses the paired activation KERNEL in nnue_inference.zig, which produces the squared
 /// and linear activations together off shared loads.
-pub const pair_activations = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+pub const pair_activations = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx2);
 
 /// Scramble wherever the activations are paired: every packing kernel narrows per 128-bit
 /// LANE, so the output bytes land interleaved and the next layer's weights must be

@@ -41,7 +41,7 @@ pub const half_dimensions: usize = 1024;
 /// is tuned for the tier it was measured on, not a property of the algorithm.
 pub const transform_vec_width: usize = blk: {
     const b = @import("builtin");
-    if (b.cpu.arch == .x86_64) {
+    if (b.target.cpu.arch == .x86_64) {
         // 128 on avx512 (measured -1.1% cycles, IPC flat) and on AVX2; 64 on the rest of x86
         // (the {16,32,64} sweep's winner; 16 loses 4.1%). aarch64 keeps 32, unmeasured.
         //
@@ -54,7 +54,7 @@ pub const transform_vec_width: usize = blk: {
         // sse41 keeps 64: 128 has never been measured there, and a width is tuned for the tier
         // it was measured on.
         const has = @import("std").Target.x86.featureSetHas;
-        break :blk if (has(b.cpu.features, .avx512f) or has(b.cpu.features, .avx2)) 128 else 64;
+        break :blk if (has(b.target.cpu.features, .avx512f) or has(b.target.cpu.features, .avx2)) 128 else 64;
     }
     break :blk 32;
 };

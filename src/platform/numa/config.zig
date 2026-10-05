@@ -119,7 +119,7 @@ pub const NumaConfig = struct {
         var cfg = NumaConfig.empty(allocator);
         errdefer cfg.deinit();
 
-        if (builtin.os.tag == .linux) {
+        if (builtin.target.os.tag == .linux) {
             const linux = std.os.linux;
             var set: linux.cpu_set_t = undefined;
             @memset(std.mem.asBytes(&set), 0);

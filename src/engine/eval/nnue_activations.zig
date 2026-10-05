@@ -15,7 +15,7 @@ const builtin = @import("builtin");
 /// That is the same property upstream's saturating `packs_epi32` relies on before its
 /// `mulhi_epi16`.
 pub inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
-    const V = if (@import("builtin").cpu.arch == .x86_64) 16 else 8;
+    const V = if (@import("builtin").target.cpu.arch == .x86_64) 16 else 8;
     const lo: @Vector(V, i32) = @splat(-32768);
     const hi: @Vector(V, i32) = @splat(32767);
     const cap: @Vector(V, i32) = @splat(127);
@@ -44,8 +44,8 @@ pub inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u
 // Take the AVX-512 arm of the paired activations when the tier has AVX512F. Upstream's
 // USE_PAIR_ACTIVATIONS covers both this and the AVX2 pair tier; the two differ only in
 // narrowing order, which is exactly what nnue_parse.scrambled_activations keys off.
-pub const avx512_pair_activations = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f);
+pub const avx512_pair_activations = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512f);
 
 // Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
 // ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
@@ -79,9 +79,9 @@ const pmulhw256 = struct {
 // values. Values are bit-identical by sqrClipPair's argument: the saturating pack equals
 // the i16-range clamp, pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and
 // packsswb's signed saturation equals min(127, .) on these non-negative inputs.
-pub const sse_pair_activations = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3) and
-    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+pub const sse_pair_activations = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .ssse3) and
+    !std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx2);
 
 const packssdw128 = struct {
     extern fn @"llvm.x86.sse2.packssdw.128"(@Vector(4, i32), @Vector(4, i32)) callconv(.{ .x86_64_sysv = .{} }) @Vector(8, i16);
@@ -171,7 +171,7 @@ pub inline fn sqrClipPair512(comptime scale_bits: comptime_int, in: *const [32]i
 
 /// Compute upstream's ClippedReLU: clamp(x >> shift, 0, 127), over 32 outputs.
 pub inline fn clippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
-    const V = if (@import("builtin").cpu.arch == .x86_64) 16 else 8;
+    const V = if (@import("builtin").target.cpu.arch == .x86_64) 16 else 8;
     const zero: @Vector(V, i32) = @splat(0);
     const cap: @Vector(V, i32) = @splat(127);
     const sh: @Vector(V, u5) = @splat(shift);

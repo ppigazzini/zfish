@@ -27,9 +27,9 @@ const luts = @import("nnue_feature_luts.zig");
 // callers, which pass a *[psq_index_capacity]PsqIndex straight into these pointers.
 const PsqIndex = u16;
 
-pub const use_avx512_nnue_feature = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi) and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi2);
+pub const use_avx512_nnue_feature = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vbmi) and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vbmi2);
 
 const V64u8 = @Vector(64, u8);
 // Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,

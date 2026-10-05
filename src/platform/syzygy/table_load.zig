@@ -35,7 +35,7 @@ const pawn_pt = board_core.pawn_pt;
 // open/read); Windows file mapping (a distinct CreateFileMapping path) is not yet implemented, so on
 // Windows this yields null and the probe reports "unavailable" -- the graceful missing-file path.
 fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
-    if (builtin.os.tag == .windows) return null;
+    if (builtin.target.os.tag == .windows) return null;
 
     var it = std.mem.splitScalar(u8, registry.searchPath(), sep_char);
     while (it.next()) |dir| {

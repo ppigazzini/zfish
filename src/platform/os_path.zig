@@ -32,7 +32,7 @@ extern "kernel32" fn MultiByteToWideChar(
 /// code page, and only on Windows. A conversion that fails hands the original bytes back,
 /// which fails downstream exactly the way it did before -- never worse.
 pub fn toWtf8Alloc(gpa: std.mem.Allocator, path: []const u8) std.mem.Allocator.Error![]u8 {
-    if (builtin.os.tag != .windows or path.len == 0 or std.unicode.wtf8ValidateSlice(path))
+    if (builtin.target.os.tag != .windows or path.len == 0 or std.unicode.wtf8ValidateSlice(path))
         return gpa.dupe(u8, path);
 
     const len: i32 = std.math.cast(i32, path.len) orelse return gpa.dupe(u8, path);
@@ -59,7 +59,7 @@ test "a valid path is returned unchanged" {
 }
 
 test "an invalid sequence survives the round trip off Windows" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    if (builtin.target.os.tag == .windows) return error.SkipZigTest;
     const gpa = std.testing.allocator;
     // 0xE9 is 'e-acute' in CP-1252 and an invalid lead byte in UTF-8. Off Windows a path is
     // bytes, so it must pass through untouched -- converting it would break a legal filename.

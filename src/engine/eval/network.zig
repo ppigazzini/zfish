@@ -211,7 +211,7 @@ fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
     // in as the parse reaches them -- no transient heap buffer the size of the
     // net and no second full pass over its bytes. Windows and an unmappable
     // filesystem fall back to the buffered read below.
-    if (builtin.os.tag != .windows and stat.size > 0) {
+    if (builtin.target.os.tag != .windows and stat.size > 0) {
         const len: usize = @intCast(stat.size);
         const raw = std.c.mmap(null, len, .{ .READ = true }, .{ .TYPE = .PRIVATE }, file.handle, 0);
         if (raw != std.c.MAP_FAILED) {
@@ -225,7 +225,7 @@ fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
     var reader_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &reader_buffer);
 
-    const bytes = reader.interface.readAlloc(arena, stat.size) catch return;
+    const bytes = reader.interface.readAllocAll(arena, stat.size) catch return;
     _ = loadNetworkBytes(bytes, evalfile_path);
 }
 

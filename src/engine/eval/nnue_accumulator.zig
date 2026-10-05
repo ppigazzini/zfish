@@ -381,7 +381,7 @@ fn transformPerspective(
         // vextracti + vpshufd chain). Guarded to x86, where the i1-vector packing is
         // bit-per-lane; other backends keep the portable path (the layout note above). The
         // signature pins that the two produce the identical mask. Port of mcfish be1d576.
-        const mask: GMask = if (comptime @import("builtin").cpu.arch == .x86_64)
+        const mask: GMask = if (comptime @import("builtin").target.cpu.arch == .x86_64)
             @bitCast(nonzero)
         else
             @reduce(.Or, @select(GMask, nonzero, lane_bits, no_bits));

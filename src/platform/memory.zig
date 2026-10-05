@@ -22,7 +22,7 @@ extern "c" fn _aligned_free(ptr: ?*anyopaque) void;
 pub const poison_uninitialized = builtin.mode == .debug or builtin.mode == .safe;
 
 pub fn stdAlignedAlloc(alignment: usize, size: usize) ?*anyopaque {
-    if (builtin.os.tag == .windows) {
+    if (builtin.target.os.tag == .windows) {
         return _aligned_malloc(size, alignment);
     }
     var mem: ?*anyopaque = null;
@@ -33,7 +33,7 @@ pub fn stdAlignedAlloc(alignment: usize, size: usize) ?*anyopaque {
 }
 
 pub fn stdAlignedFree(ptr: ?*anyopaque) void {
-    if (builtin.os.tag == .windows) {
+    if (builtin.target.os.tag == .windows) {
         _aligned_free(ptr);
     } else {
         std.c.free(ptr);
@@ -71,7 +71,7 @@ pub const large_page_alignment: usize = 2 * 1024 * 1024;
 var large_map_mutex: thread_runtime.Mutex = .{};
 var large_map: std.AutoHashMapUnmanaged(usize, usize) = .empty;
 
-const use_mmap_large_pages = builtin.os.tag == .linux;
+const use_mmap_large_pages = builtin.target.os.tag == .linux;
 
 // Map `size` bytes aligned to 2 MiB, going STRAIGHT to the kernel rather than through the
 // libc allocator (upstream 7ab49b9b). glibc serves a posix_memalign of this size from an
@@ -190,7 +190,7 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
         // skipped where the kernel never backs it (thpHintUseful). macOS/Windows have no
         // equivalent call; the allocation is already 2 MiB-aligned, so the OS is free to
         // back it with large pages on its own.
-        if (builtin.os.tag == .linux and rounded_size != 0 and thpHintUseful()) {
+        if (builtin.target.os.tag == .linux and rounded_size != 0 and thpHintUseful()) {
             _ = std.c.madvise(@ptrCast(@alignCast(ptr)), rounded_size, std.c.MADV.HUGEPAGE);
         }
     }
@@ -207,7 +207,7 @@ pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {
 }
 
 pub fn hasLargePages() bool {
-    return builtin.os.tag == .linux;
+    return builtin.target.os.tag == .linux;
 }
 
 /// Count the large-page blocks the registry still holds -- zero once every allocation has been
