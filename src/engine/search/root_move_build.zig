@@ -241,7 +241,7 @@ fn rankRootMovesDtz(
     root_has_repeated: bool,
     ranked_moves: []RankedRootMove,
 ) !DtzRankResult {
-    var scratch = try ScratchPosition.init(root_fen, chess960);
+    var scratch: ScratchPosition = try .init(root_fen, chess960);
     defer scratch.deinit();
 
     const bound: i32 = if (rule50) @divTrunc(max_dtz, 2) - 100 else 1;
@@ -322,7 +322,7 @@ fn rankRootMovesWdl(
     rule50: bool,
     ranked_moves: []RankedRootMove,
 ) !bool {
-    var scratch = try ScratchPosition.init(root_fen, chess960);
+    var scratch: ScratchPosition = try .init(root_fen, chess960);
     defer scratch.deinit();
 
     for (ranked_moves) |*ranked_move| {

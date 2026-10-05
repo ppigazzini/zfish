@@ -56,7 +56,7 @@ const non_gate_owners = [_]Owner{
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
-    var arena_state = std.heap.ArenaAllocator.init(init.gpa);
+    var arena_state: std.heap.ArenaAllocator = .init(init.gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 

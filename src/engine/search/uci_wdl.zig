@@ -106,7 +106,7 @@ pub fn formatInfoFull(
     pv: []const u8,
 ) ?[:0]u8 {
     const ca = std.heap.c_allocator;
-    var builder = std.ArrayList(u8).empty;
+    var builder: std.ArrayList(u8) = .empty;
     defer builder.deinit(ca);
 
     builder.appendSlice(ca, "info depth ") catch return null;

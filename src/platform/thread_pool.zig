@@ -152,7 +152,7 @@ pub fn set(
     count: usize,
 ) !void {
     var bctx = WorkerBuildCtx{ .shared_state = shared_state, .update_context = update_context, .total = count };
-    var p = Pool.init(std.heap.c_allocator, @ptrCast(pool));
+    var p: Pool = .init(std.heap.c_allocator, @ptrCast(pool));
     // Propagate the OOM / thread-spawn error to the engine's resize boundary
     // instead of panicking here (the caller reconfigure -> resizeThreads is now !void).
     try p.set(count, .{ .ctx = &bctx, .build = runtime_hooks.worker_build });
@@ -161,7 +161,7 @@ pub fn set(
 // Join + free every thread and null the footprint slice. Serve the
 // reset_for_reconfigure and the engine teardown hook.
 pub fn clear(pool: *worker_layout.ThreadPool) void {
-    var p = Pool.init(std.heap.c_allocator, @ptrCast(pool));
+    var p: Pool = .init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }
 
@@ -215,7 +215,7 @@ const MockBuild = struct {
 test "Pool lays the ThreadPool footprint and reads back the thread vector" {
     var footprint: [64]u8 align(8) = @splat(0); // zeroed = default-constructed pool
     var mb = MockBuild{};
-    var pool = Pool.init(testing.allocator, &footprint);
+    var pool: Pool = .init(testing.allocator, &footprint);
     defer pool.clear();
 
     try pool.set(4, .{ .ctx = &mb, .build = MockBuild.build });
@@ -290,7 +290,7 @@ test "boundNodesAssign unwinds leak-free on allocation failure" {
 test "Pool set(0) clears the vector; resize re-lays it" {
     var footprint: [64]u8 align(8) = @splat(0);
     var mb = MockBuild{};
-    var pool = Pool.init(testing.allocator, &footprint);
+    var pool: Pool = .init(testing.allocator, &footprint);
     defer pool.clear();
 
     try pool.set(1, .{ .ctx = &mb, .build = MockBuild.build });

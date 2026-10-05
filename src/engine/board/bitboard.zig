@@ -223,7 +223,7 @@ pub fn pretty(bitboard: u64) ?[]u8 {
 
 fn prettyAlloc(bitboard: u64) ![]u8 {
     const allocator = std.heap.c_allocator;
-    var buffer = std.ArrayList(u8).empty;
+    var buffer: std.ArrayList(u8) = .empty;
     errdefer buffer.deinit(allocator);
 
     try buffer.appendSlice(allocator, "+---+---+---+---+---+---+---+---+\n");
@@ -300,7 +300,7 @@ fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
             }
         }
 
-        var rng = Prng.init(magic_seeds[1][rankOf(square)]);
+        var rng: Prng = .init(magic_seeds[1][rankOf(square)]);
         while (true) {
             magic_ref.magic = 0;
             while (@popCount((magic_ref.magic *% magic_ref.mask) >> 56) < 6) {
@@ -367,7 +367,7 @@ const Prng = struct {
 
 test "bothAttacksAvx2 matches the magic reference on every square, every rank/file/diagonal occupancy pattern, and 10000 random ones" {
     initSliderMagics();
-    var rng = Prng.init(0xD1A6_0E1D_A9A2_11C5);
+    var rng: Prng = .init(0xD1A6_0E1D_A9A2_11C5);
     for (0..64) |s| {
         const magic = bothAttacksMagic(s, 0);
         const avx2 = bothAttacksAvx2(s, 0);

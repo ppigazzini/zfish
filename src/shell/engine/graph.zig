@@ -147,16 +147,16 @@ fn testUpdateContext() UpdateContext {
 }
 
 test "EngineGraph hands a SharedState bound to its own subsystems" {
-    var options = OptionsModel.init(testing.allocator);
+    var options: OptionsModel = .init(testing.allocator);
     defer options.deinit();
     var network_storage: u32 = 0xBB;
     const network: *Network = @ptrCast(&network_storage);
     var position = PositionStorage.zeroed();
     var hists: SharedHistoriesMap = undefined; // identity-only: compared by address, never read
     var pool: ThreadPool = undefined;
-    var states = try StateList.init(testing.allocator);
+    var states: StateList = try .init(testing.allocator);
     defer states.deinit();
-    var numa = NumaReplicationContext.init(testing.allocator, NumaConfig.empty(testing.allocator));
+    var numa: NumaReplicationContext = .init(testing.allocator, NumaConfig.empty(testing.allocator));
     defer numa.deinit();
 
     var graph = EngineGraph{
@@ -184,7 +184,7 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
 
 test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
     var pool: ThreadPool = undefined;
-    var options = OptionsModel.init(testing.allocator);
+    var options: OptionsModel = .init(testing.allocator);
     defer options.deinit();
     var network_storage: u32 = 0;
     const network: *Network = @ptrCast(&network_storage);
@@ -192,7 +192,7 @@ test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
 
     // Rely on testing.allocator failing the test on any leak, so a clean deinit proves the
     // owned members are all freed.
-    var graph = try EngineGraph.init(
+    var graph: EngineGraph = try .init(
         testing.allocator,
         "/usr/bin",
         &options,

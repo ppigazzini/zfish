@@ -125,7 +125,7 @@ test "fuzz: a table built from arbitrary bytes probes without trapping" {
 // separately: they differ by two orders of magnitude, so one number cannot gate both.
 test "the parse-then-probe path is reached, not just the refusals" {
     position.initRuntime();
-    var prng = std.Random.DefaultPrng.init(0x5F17_D622);
+    var prng: std.Random.DefaultPrng = .init(0x5F17_D622);
     const rand = prng.random();
     var parsed: usize = 0;
     var probed: usize = 0;

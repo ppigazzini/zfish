@@ -92,7 +92,7 @@ const MockMap = SharedHistoriesMapOf(MockEntry);
 
 test "tryEmplace constructs once per node; at returns it; clear frees all" {
     live_entries = 0;
-    var map = MockMap.init(testing.allocator, mockConstruct, mockFree);
+    var map: MockMap = .init(testing.allocator, mockConstruct, mockFree);
     defer map.deinit();
 
     try map.tryEmplace(0, 8);
@@ -111,7 +111,7 @@ test "tryEmplace constructs once per node; at returns it; clear frees all" {
 
 test "deinit frees outstanding entries (no leak of element arrays)" {
     live_entries = 0;
-    var map = MockMap.init(testing.allocator, mockConstruct, mockFree);
+    var map: MockMap = .init(testing.allocator, mockConstruct, mockFree);
     try map.tryEmplace(0, 1);
     try map.tryEmplace(3, 2);
     try testing.expectEqual(@as(usize, 2), live_entries);
@@ -132,7 +132,7 @@ fn mockConstructFail(thread_count: usize) error{OutOfMemory}!MockEntry {
 
 test "tryEmplace rolls back the inserted slot when construct fails" {
     live_entries = 0;
-    var map = MockMap.init(testing.allocator, mockConstructFail, mockFree);
+    var map: MockMap = .init(testing.allocator, mockConstructFail, mockFree);
     defer map.deinit();
 
     try testing.expectError(error.OutOfMemory, map.tryEmplace(0, 8));
@@ -155,8 +155,8 @@ test "tryEmplace rolls back the inserted slot when construct fails" {
 // error.OutOfMemory to the engine's single reconfigure boundary instead of panicking.
 test "tryEmplace propagates OOM when the map-slot allocation fails" {
     live_entries = 0;
-    var failing = std.testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 0 });
-    var map = MockMap.init(failing.allocator(), mockConstruct, mockFree);
+    var failing: std.testing.FailingAllocator = .init(testing.allocator, .{ .fail_index = 0 });
+    var map: MockMap = .init(failing.allocator(), mockConstruct, mockFree);
     defer map.deinit();
 
     // getOrPut allocates the map's initial storage -> fails at index 0, before construct.

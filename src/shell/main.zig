@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) !void {
     var arg_iter = try std.process.Args.Iterator.initAllocator(init.minimal.args, init.gpa);
     defer arg_iter.deinit();
 
-    var argv_list = std.ArrayList([:0]const u8).empty;
+    var argv_list: std.ArrayList([:0]const u8) = .empty;
     defer argv_list.deinit(init.gpa);
     while (arg_iter.next()) |arg| {
         try argv_list.append(init.gpa, arg);

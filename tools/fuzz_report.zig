@@ -134,7 +134,7 @@ pub fn main(init: std.process.Init) !void {
     // Arena the whole run: this is a short-lived reporter, and freeing the entry ids and the
     // baseline body one by one buys nothing. init.gpa is a checking allocator, so the arena
     // must still be released -- it reports a leak otherwise, which is how this got written.
-    var arena_state = std.heap.ArenaAllocator.init(init.gpa);
+    var arena_state: std.heap.ArenaAllocator = .init(init.gpa);
     defer arena_state.deinit();
     const gpa = arena_state.allocator();
 

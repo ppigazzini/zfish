@@ -140,7 +140,7 @@ fn randomPosition(random: std.Random) Position {
 
 test "writeMultipleDirties matches a scalar reference over random boards/masks/shifts" {
     if (comptime !use_avx512_threats) return error.SkipZigTest;
-    var rng = std.Random.DefaultPrng.init(0xDEAD_BEEF_CAFE_F00D);
+    var rng: std.Random.DefaultPrng = .init(0xDEAD_BEEF_CAFE_F00D);
     const random = rng.random();
 
     const shift_pairs = [_][2]u5{ .{ 8, 16 }, .{ 0, 20 } };

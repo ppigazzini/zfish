@@ -79,7 +79,7 @@ fn getBinaryDirectoryAlloc(gpa: std.mem.Allocator, argv0: []const u8) ![]u8 {
 
     // Free on every exit, not only on error: the `./` branch below returns a second buffer and
     // must release this one, and toOwnedSlice empties the list on the path that returns it.
-    var binary_directory = std.ArrayList(u8).empty;
+    var binary_directory: std.ArrayList(u8) = .empty;
     defer binary_directory.deinit(allocator);
     try binary_directory.appendSlice(allocator, argv0);
 
@@ -93,7 +93,7 @@ fn getBinaryDirectoryAlloc(gpa: std.mem.Allocator, argv0: []const u8) ![]u8 {
     }
 
     if (std.mem.startsWith(u8, binary_directory.items, "." ++ path_separator)) {
-        var resolved = std.ArrayList(u8).empty;
+        var resolved: std.ArrayList(u8) = .empty;
         errdefer resolved.deinit(allocator);
         try resolved.appendSlice(allocator, working_directory);
         try resolved.appendSlice(allocator, binary_directory.items[1..]);
@@ -169,7 +169,7 @@ fn compilationArchText() []const u8 {
 }
 
 fn compilationSettingsOwned(allocator: std.mem.Allocator) ![]u8 {
-    var settings = std.ArrayList(u8).empty;
+    var settings: std.ArrayList(u8) = .empty;
     errdefer settings.deinit(allocator);
 
     try settings.appendSlice(allocator, if (builtin.target.ptrBitWidth() == 64) "64bit" else "32bit");

@@ -179,7 +179,7 @@ fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in:
 
 test "writeIndices matches an independent scalar reference over random boards/masks" {
     if (comptime !use_avx512_nnue_feature) return error.SkipZigTest;
-    var rng = std.Random.DefaultPrng.init(0xFEED_FACE_0BAD_C0DE);
+    var rng: std.Random.DefaultPrng = .init(0xFEED_FACE_0BAD_C0DE);
     const random = rng.random();
 
     for (0..20000) |trial| {

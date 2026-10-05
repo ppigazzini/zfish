@@ -306,7 +306,7 @@ test "thread runtime exits cleanly when idle" {
 }
 
 test "thread pool fans jobs across all threads" {
-    var pool = ThreadPool.init(std.testing.allocator);
+    var pool: ThreadPool = .init(std.testing.allocator);
     defer pool.clear();
     try pool.set(4);
     try std.testing.expectEqual(@as(usize, 4), pool.numThreads());
@@ -323,7 +323,7 @@ test "thread pool fans jobs across all threads" {
 }
 
 test "thread pool stop flag round-trips" {
-    var pool = ThreadPool.init(std.testing.allocator);
+    var pool: ThreadPool = .init(std.testing.allocator);
     defer pool.clear();
     try pool.set(2);
     try std.testing.expect(!pool.stopped());
@@ -334,7 +334,7 @@ test "thread pool stop flag round-trips" {
 }
 
 test "thread pool set resizes and re-spawns" {
-    var pool = ThreadPool.init(std.testing.allocator);
+    var pool: ThreadPool = .init(std.testing.allocator);
     defer pool.clear();
     try pool.set(1);
     try std.testing.expectEqual(@as(usize, 1), pool.numThreads());

@@ -22,7 +22,7 @@ pub fn formatThreadBinding(gpa: std.mem.Allocator, pairs: []const CountPair) ?[]
     if (pairs.len == 0)
         return allocMessage(gpa, "", .{});
 
-    var buffer = std.ArrayList(u8).empty;
+    var buffer: std.ArrayList(u8) = .empty;
     errdefer buffer.deinit(gpa);
 
     for (pairs, 0..) |pair, index| {

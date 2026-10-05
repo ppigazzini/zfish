@@ -60,7 +60,7 @@ pub fn build(b: *std.Build) void {
     // function, and two tools parse them as text (see that file's header before reshaping
     // either literal).
     const module_specs = graph.specs;
-    var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
+    var mods: std.StringHashMap(*std.Build.Module) = .init(b.allocator);
     for (module_specs) |spec| {
         mods.put(spec.name, b.createModule(.{
             .root_source_file = b.path(spec.path),

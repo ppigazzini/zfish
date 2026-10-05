@@ -40,7 +40,7 @@ fn flipFenAlloc(fen: []const u8) ![]u8 {
     const ep = it.next() orelse return error.BadFen;
     const rest = it.rest(); // half/full move counters
 
-    var out = std.ArrayList(u8).empty;
+    var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
 
     // Emit the piece placement with the rank order reversed (vertical mirror).
@@ -122,7 +122,7 @@ fn buildEndgameFenAlloc(code: []const u8, color: u8) ![]u8 {
     const weak_side = code[second_king..];
     const strong_side = code[0..strong_end];
 
-    var builder = std.ArrayList(u8).empty;
+    var builder: std.ArrayList(u8) = .empty;
     errdefer builder.deinit(std.heap.c_allocator);
 
     try builder.appendSlice(std.heap.c_allocator, "8/");
@@ -149,7 +149,7 @@ fn formatFenAlloc(
     rule50: i32,
     game_ply: i32,
 ) ![]u8 {
-    var builder = std.ArrayList(u8).empty;
+    var builder: std.ArrayList(u8) = .empty;
     errdefer builder.deinit(std.heap.c_allocator);
 
     var rank: i32 = 7;

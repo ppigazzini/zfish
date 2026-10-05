@@ -107,7 +107,7 @@ pub const Context = struct {
 
 /// Register each check's step; return check-name -> run for the aggregates to wire.
 pub fn register(ctx: Context) std.StringHashMap(*std.Build.Step.Run) {
-    var runs = std.StringHashMap(*std.Build.Step.Run).init(ctx.b.allocator);
+    var runs: std.StringHashMap(*std.Build.Step.Run) = .init(ctx.b.allocator);
     for (checks) |c| {
         // "-" stands in for the golden path: these gates carry their verdict in the harness,
         // so there is no file to diff and nothing to regenerate -- hence no update step.

@@ -261,7 +261,7 @@ test "PVMoves and RootMove keep the strided element size" {
 }
 
 test "RootMove(Move) seeds the pv and defaults" {
-    var rm = RootMove.init(0x1234);
+    var rm: RootMove = .init(0x1234);
     defer rm.deinit();
     try testing.expectEqual(@as(usize, 1), rm.pv.length);
     try testing.expectEqual(@as(Move, 0x1234), rm.pv.at(0));
@@ -280,7 +280,7 @@ test "the root pv grows past the fixed buffer, and PVMoves takes it truncated" {
     try testing.expectEqual(max_ply + 100, pv.length);
     try testing.expectEqual(@as(Move, max_ply + 99), pv.at(pv.length - 1));
 
-    var fixed = PVMoves.empty();
+    var fixed: PVMoves = .empty();
     fixed.assignTruncated(&pv);
     try testing.expectEqual(@as(usize, max_ply), fixed.length);
     try testing.expectEqual(@as(Move, 0), fixed.moves[0]);
@@ -301,10 +301,10 @@ test "the reserve the root list is built with covers the longest search PV" {
 }
 
 test "copyFrom deep-copies: the two lists never share a buffer" {
-    var a = RootMove.init(7);
+    var a: RootMove = .init(7);
     defer a.deinit();
     a.pv.pushBack(8);
-    var b = RootMove.init(1);
+    var b: RootMove = .init(1);
     defer b.deinit();
 
     b.copyFrom(&a);
@@ -332,7 +332,7 @@ test "RootMove sorts descending by score then previousScore" {
 }
 
 test "inexact flags" {
-    var rm = RootMove.init(0);
+    var rm: RootMove = .init(0);
     defer rm.deinit();
     rm.inexact_lower = true;
     try testing.expect(rm.isInexact());

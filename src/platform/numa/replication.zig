@@ -87,7 +87,7 @@ fn countingOnChange(_: *NumaReplicatedBase) void {
 }
 
 test "attach/detach manage the registry; setNumaConfig notifies each tracked object" {
-    var ctx = NumaReplicationContext.init(testing.allocator, try NumaConfig.fromSystem(testing.allocator));
+    var ctx: NumaReplicationContext = .init(testing.allocator, try NumaConfig.fromSystem(testing.allocator));
     defer ctx.deinit();
     try testing.expectEqual(@as(usize, 0), ctx.trackedCount());
 
@@ -108,7 +108,7 @@ test "attach/detach manage the registry; setNumaConfig notifies each tracked obj
 }
 
 test "moveAttached swaps an object in place keeping the registry size" {
-    var ctx = NumaReplicationContext.init(testing.allocator, try NumaConfig.fromSystem(testing.allocator));
+    var ctx: NumaReplicationContext = .init(testing.allocator, try NumaConfig.fromSystem(testing.allocator));
     defer ctx.deinit();
     var old = NumaReplicatedBase{ .on_config_changed = countingOnChange };
     try ctx.attach(&old);

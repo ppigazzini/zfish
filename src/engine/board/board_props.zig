@@ -337,7 +337,7 @@ const fen_alphabet = "PNBRQKpnbrqk12345678/ wb-KQkqabcdefgh36xz0";
 // also the natural seed corpus for a real `--fuzz` run.
 test "fuzz: setPosition tolerates arbitrary input without crashing" {
     position.initRuntime();
-    var prng = std.Random.DefaultPrng.init(0x5EED_F00D);
+    var prng: std.Random.DefaultPrng = .init(0x5EED_F00D);
     const rand = prng.random();
 
     for (0..50_000) |_| {

@@ -164,7 +164,7 @@ fn vectorSort(entries: []SortEntry, limit: i32) void {
     if (entries.len == 0) return;
     var sorted_end: usize = 0;
     var scan: usize = 1;
-    var sorter = MoveSorter.init(entries[0]);
+    var sorter: MoveSorter = .init(entries[0]);
     while (scan < entries.len) : (scan += 1) {
         if (entries[scan].value >= limit) {
             if (sorted_end + 1 >= max) break;
@@ -190,7 +190,7 @@ fn vectorSort(entries: []SortEntry, limit: i32) void {
 
 test "vectorSort matches referenceSort, random inputs up to and beyond the 16-move sorter cap" {
     if (comptime !use_avx512_sort) return error.SkipZigTest;
-    var rng = std.Random.DefaultPrng.init(0x5EED_C0FF_EE00_1234);
+    var rng: std.Random.DefaultPrng = .init(0x5EED_C0FF_EE00_1234);
     const random = rng.random();
     for (0..20000) |trial| {
         const count = 1 + random.uintLessThan(usize, 40); // exercise below, at, and above max=16

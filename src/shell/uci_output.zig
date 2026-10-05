@@ -46,7 +46,7 @@ fn resolveOut() std.Io.File {
 // Hold the latest whole-search node count, published by the search-driver info emit and read
 // by the uci layer's `nodes` accessor. Keep a shared leaf home so both sides reach it
 // without a cycle.
-var last_nodes_searched = std.atomic.Value(u64).init(0);
+var last_nodes_searched: std.atomic.Value(u64) = .init(0);
 pub fn setLastNodesSearched(nodes: u64) void {
     last_nodes_searched.store(nodes, .monotonic);
 }

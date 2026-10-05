@@ -116,7 +116,7 @@ pub const Context = struct {
 
 /// Register every script gate; return step-name -> its run, for the aggregates to wire.
 pub fn register(ctx: Context) std.StringHashMap(*std.Build.Step.Run) {
-    var runs = std.StringHashMap(*std.Build.Step.Run).init(ctx.b.allocator);
+    var runs: std.StringHashMap(*std.Build.Step.Run) = .init(ctx.b.allocator);
     for (script_gates) |g| {
         const cmd = ctx.b.addSystemCommand(&.{ "bash", ctx.repoPath(ctx.b, g.script) });
         if (g.needs_engine) {
@@ -173,7 +173,7 @@ pub const lint_tools = [_]LintTool{
 
 /// Register the Zig lint tools; return step-name -> run.
 pub fn registerLints(b: *std.Build) std.StringHashMap(*std.Build.Step.Run) {
-    var runs = std.StringHashMap(*std.Build.Step.Run).init(b.allocator);
+    var runs: std.StringHashMap(*std.Build.Step.Run) = .init(b.allocator);
     for (lint_tools) |t| {
         const exe = b.addExecutable(.{
             .name = std.Io.Dir.path.stem(t.source),

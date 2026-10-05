@@ -92,7 +92,7 @@ pub fn formatTrace(input: EvalTraceInput) ?[]u8 {
 
 fn formatTraceAlloc(input: EvalTraceInput) ![]u8 {
     const allocator = std.heap.c_allocator;
-    var buffer = std.ArrayList(u8).empty;
+    var buffer: std.ArrayList(u8) = .empty;
     errdefer buffer.deinit(allocator);
 
     try buffer.append(allocator, '\n');
