@@ -51,6 +51,9 @@ pub const TraceOutput = struct {
 // page_alloc block, >=64-aligned by contract): the affine kernels need the
 // alignment in the type so non-VEX SSE can fold weight loads into pmaddubsw's
 // m128 operand instead of paying a separate movdqu per chunk.
+//
+// Spell the unwrap `orelse unreachable`, not `.?`: the two lower differently, and `.?` here
+// reschedules aarch64's propagateBucket, a tier with no instruction lane to price it.
 fn layerBiases(bucket: usize, idx: usize) [*]align(cache_line_size) const i32 {
     return @ptrCast(@alignCast(layerPtr(bucket, idx, .biases) orelse unreachable));
 }

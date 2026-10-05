@@ -386,6 +386,16 @@ where it means something else:
   mechanical rewrite of `waitForSearchFinished`'s loop to `for (1..thread_count)`
   crashed every bench at startup, where it runs while the pool still has no threads.
 
+## Spell what the language already says
+
+A port carries its source language's longhand. Where Zig has a shorter form with the same
+meaning, write that:
+
+- Unwrap an optional you assume is set with `.?`, which is `orelse unreachable` in two
+  characters. The two lower differently all the same, and in `nnue_inference`'s layer
+  accessors `.?` reschedules aarch64's `propagateBucket`; with no instruction lane on that
+  tier to price it, those two keep the long form, and say so.
+
 ## Keep memory safety where the input is not yours
 
 Zig gives spatial safety through bounds-checked slices and temporal safety through a

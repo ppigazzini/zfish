@@ -49,13 +49,13 @@ pub const NumaReplicationContext = struct {
     }
 
     pub fn detach(self: *NumaReplicationContext, obj: *NumaReplicatedBase) void {
-        const i = self.indexOf(obj) orelse unreachable; // require obj tracked
+        const i = self.indexOf(obj).?; // require obj tracked
         _ = self.tracked.swapRemove(i);
     }
 
     /// Move a registration: oldObj (possibly invalid) → newObj, same registry slot.
     pub fn moveAttached(self: *NumaReplicationContext, old_obj: *NumaReplicatedBase, new_obj: *NumaReplicatedBase) void {
-        const i = self.indexOf(old_obj) orelse unreachable;
+        const i = self.indexOf(old_obj).?;
         std.debug.assert(self.indexOf(new_obj) == null);
         self.tracked.items[i] = new_obj;
         new_obj.context = self;
