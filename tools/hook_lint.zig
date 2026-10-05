@@ -61,10 +61,8 @@ const Hook = struct {
 /// Match a hook declaration: `pub var <name>: *const fn ...`. The type often wraps onto the
 /// next line, so match on the two anchors rather than the whole signature.
 fn hookNameOf(line: []const u8) ?[]const u8 {
-    const decl = "pub var ";
-    if (!std.mem.startsWith(u8, line, decl)) return null;
+    const rest = std.mem.cutPrefix(u8, line, "pub var ") orelse return null;
     if (std.mem.find(u8, line, ": *const fn") == null) return null;
-    const rest = line[decl.len..];
     const colon = std.mem.findScalar(u8, rest, ':') orelse return null;
     return std.mem.trim(u8, rest[0..colon], " ");
 }

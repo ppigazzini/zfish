@@ -405,6 +405,10 @@ meaning, write that:
 - Round up to a multiple with `@divCeil(x, a) * a`, new in 0.17. It neither overflows on
   the `+ a - 1` of the C form nor assumes a power of two, which `std.mem.alignForward`
   does — and in a fast build that assumption is unchecked.
+- Cut a known prefix with `std.mem.cutPrefix`, which returns what follows it or null,
+  rather than testing `startsWith` and slicing by hand. Keep `startsWith` where the test
+  is all there is, or where the rest must stay mutable: `cutPrefix` takes and returns a
+  `[]const` slice, and `arch_report`'s path rewrite edits its slice in place.
 
 ## Keep memory safety where the input is not yours
 
