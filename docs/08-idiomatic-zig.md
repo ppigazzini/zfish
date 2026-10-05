@@ -409,6 +409,8 @@ meaning, write that:
   rather than testing `startsWith` and slicing by hand. Keep `startsWith` where the test
   is all there is, or where the rest must stay mutable: `cutPrefix` takes and returns a
   `[]const` slice, and `arch_report`'s path rewrite edits its slice in place.
+- Name every field, a padding slot included: the language reference's style guide asks for
+  no underscore prefixes, since Zig has no private fields to mark.
 
 ## Keep memory safety where the input is not yours
 
