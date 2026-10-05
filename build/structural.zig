@@ -287,6 +287,11 @@ pub fn registerUpstreamParity(
     // Read the pin with std, not by spawning `cat`: there is no `cat` on Windows, and the read
     // FAILS SOFT to "" -- an empty base runs the differential against the wrong upstream and
     // still exits 0, the same silent-wrong-argument failure the note above records.
+    //
+    // Declare the read, or the configure cache keeps the previous base after a resync edits
+    // only this file: 0.17 caches the configure phase on its sources and flags, not on what
+    // it opens.
+    b.dependOnFileContents(b.path("tools/upstream/UPSTREAM_BASE"));
     const base_sha = blk: {
         const raw = config.repoDir(b).readFileAlloc(
             b.graph.io,
