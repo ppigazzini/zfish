@@ -158,7 +158,7 @@ pub const PrefetchBank = struct {
 };
 
 inline fn issuePrefetches(pos: *const Position, pc: u8, to: u8, bank: PrefetchBank) void {
-    const hint: std.builtin.PrefetchOptions = .{ .rw = .read, .locality = 3, .cache = .data };
+    const hint: std.lang.PrefetchOptions = .{ .rw = .read, .locality = 3, .cache = .data };
     @prefetch(&bank.table[ttFirstEntryIndex(adjustKey50(pos), bank.cluster_count)], hint);
     const mask = bank.shared.size_minus1;
     @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.pawn_key & mask))], hint);

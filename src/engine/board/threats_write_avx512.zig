@@ -26,9 +26,9 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 const DirtyThreats = position_types.DirtyThreats;
 
-pub const use_avx512_threats = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi) and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi2);
+pub const use_avx512_threats = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vbmi) and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vbmi2);
 
 const V64u8 = @Vector(64, u8);
 const V64mask = @Vector(64, bool);

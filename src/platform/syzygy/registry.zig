@@ -28,7 +28,7 @@ const king_pt = board_core.king_pt;
 // The file half (table_load.zig) reads these: it opens the files this registry named.
 pub const wdl_magic = [4]u8{ 0x71, 0xE8, 0x23, 0x5D };
 pub const dtz_magic = [4]u8{ 0xD7, 0x66, 0x0C, 0xA5 };
-pub const sep_char: u8 = if (builtin.os.tag == .windows) ';' else ':';
+pub const sep_char: u8 = if (builtin.target.os.tag == .windows) ';' else ':';
 
 // ---- TBTable + registry -----------------------------------------------------
 

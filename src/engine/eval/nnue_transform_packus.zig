@@ -18,9 +18,9 @@ const std = @import("std");
 // operation per pair"). One byte shuffle (vpermq) undoes the pack's 128-bit-lane
 // interleave, so the output bytes, the nnz bitset and everything downstream are
 // unchanged. Positive products never saturate: (255<<7)*255 >> 16 == 127.
-pub const use_packus_avx2 = @import("builtin").cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx2) and
-    !std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512bw);
+pub const use_packus_avx2 = @import("builtin").target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx2) and
+    !std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx512bw);
 
 // Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
 // ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
@@ -41,8 +41,8 @@ const transform_pmulhw256 = struct {
 // second half plus two vpmovwb and a vinserti64x4 to narrow, where packus narrows in one
 // op and its saturation supplies the max. vpmulhw and vpackuswb are AVX512BW, so gate on
 // that; a hypothetical avx512f-without-bw target keeps the generic path.
-pub const use_packus_avx512 = @import("builtin").cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512bw);
+pub const use_packus_avx512 = @import("builtin").target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx512bw);
 
 const packuswb512 = struct {
     extern fn @"llvm.x86.avx512.packuswb.512"(@Vector(32, i16), @Vector(32, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(64, u8);
@@ -55,8 +55,8 @@ const transform_pmulhw512 = struct {
 // transform shape). The saturation argument is width-independent, and the 128-bit
 // pack concatenates its operands' low bytes in order -- pa's 8 bytes then pb's 8
 // bytes ARE natural element order, so no lane fix is needed at all.
-pub const use_packus_sse = @import("builtin").cpu.arch == .x86_64 and
-    !std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx2);
+pub const use_packus_sse = @import("builtin").target.cpu.arch == .x86_64 and
+    !std.Target.x86.featureSetHas(@import("builtin").target.cpu.features, .avx2);
 
 const packuswb128 = struct {
     extern fn @"llvm.x86.sse2.packuswb.128"(@Vector(8, i16), @Vector(8, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, u8);

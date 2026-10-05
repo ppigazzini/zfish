@@ -69,7 +69,7 @@ pub fn entryDiffIndices(
         const old_v: @Vector(32, u8) = entry_pieces[off..][0..32].*;
         const new_v: @Vector(32, u8) = board[off..][0..32].*;
         const differs = old_v != new_v;
-        const mask: u32 = if (comptime @import("builtin").cpu.arch == .x86_64)
+        const mask: u32 = if (comptime @import("builtin").target.cpu.arch == .x86_64)
             @bitCast(differs)
         else blk: {
             const lane_bits: @Vector(32, u32) = comptime bits: {

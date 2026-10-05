@@ -45,9 +45,9 @@ const nnz_bytewise = @import("builtin").target.cpu.arch.endian() == .little;
 ///     1.003 AGAINST, against 0.998 for the same patch at avx512icl -- while branch misses gain
 ///     0.934 either way. Two tiers, opposite instruction verdicts, so the bitset stays on the
 ///     tier where the compress cannot be paid for.
-pub const use_nnz_index_list = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni) and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi2);
+pub const use_nnz_index_list = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vnni) and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vbmi2);
 
 /// One slot per 4-byte output chunk: the transform emits half_dimensions bytes, so this is the
 /// most indices that can exist and the list never needs a bound check.

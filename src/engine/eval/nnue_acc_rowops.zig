@@ -35,9 +35,9 @@ const half_dimensions: usize = 1024;
 // Distinct from the transform's width knob (nnue_acc_layout).
 const row_tile_width: usize = blk: {
     const b = @import("builtin");
-    if (b.cpu.arch == .x86_64) {
-        if (@import("std").Target.x86.featureSetHas(b.cpu.features, .avx512f)) break :blk 256;
-        if (@import("std").Target.x86.featureSetHas(b.cpu.features, .avx2)) break :blk 128;
+    if (b.target.cpu.arch == .x86_64) {
+        if (@import("std").Target.x86.featureSetHas(b.target.cpu.features, .avx512f)) break :blk 256;
+        if (@import("std").Target.x86.featureSetHas(b.target.cpu.features, .avx2)) break :blk 128;
     }
     break :blk 64;
 };
@@ -92,7 +92,7 @@ inline fn tileRows(
 /// reproduces it under qemu-aarch64; drop this once that repro passes on the pinned Zig.
 const apple_tuned = blk: {
     const b = @import("builtin");
-    break :blk b.cpu.arch == .aarch64 and std.mem.startsWith(u8, b.cpu.model.name, "apple_");
+    break :blk b.target.cpu.arch == .aarch64 and std.mem.startsWith(u8, b.target.cpu.model.name, "apple_");
 };
 
 /// Add or subtract ONE weight row into the tile -- the body of upstream's `apply<sign>`.

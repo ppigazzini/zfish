@@ -20,9 +20,9 @@ const movepick_score = @import("movepick_score.zig");
 
 const SortEntry = movepick_score.SortEntry;
 
-pub const use_avx512_sort = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f) and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512dq);
+pub const use_avx512_sort = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512f) and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512dq);
 
 pub const max: usize = 16;
 
@@ -58,7 +58,7 @@ extern fn @"llvm.x86.avx512.vpermi2var.d.512"(a: V16i32, idx: V16i32, b: V16i32)
 comptime {
     // The lane packing below is the little-endian byte order; every tier this file
     // gates on is x86-64, but assert it rather than leave it implied.
-    std.debug.assert(builtin.cpu.arch.endian() == .little);
+    std.debug.assert(builtin.target.cpu.arch.endian() == .little);
 }
 
 inline fn entryLanes(e: SortEntry) [2]i32 {

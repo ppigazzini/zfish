@@ -41,8 +41,8 @@ const north_west: i8 = north + west;
 // does not even compile the magic tables (attacks.cpp:28) -- a footprint win this port
 // does not take, since bitboard.zig's derived-table bootstrap (initDerivedTables) still
 // walks the magic path unconditionally and reworking that is a separate change.
-pub const use_avx2 = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+pub const use_avx2 = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx2);
 
 // Solve the RANK on the lane the other three rays leave empty, where the ISA can reverse
 // bits inside a byte. `vgf2p8affineqb` by 0x8040201008040201 reverses the bits within
@@ -54,7 +54,7 @@ pub const use_avx2 = builtin.cpu.arch == .x86_64 and
 // go. GFNI is enumerated at one tier here, x86-64-avx512icl (build/arch.zig); every other
 // tier keeps the table. No branch is added, so there is no taken-rate to predict.
 pub const use_gfni_rank = use_avx2 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .gfni);
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .gfni);
 
 pub const DualAttacks = struct { bishop: u64, rook: u64 };
 

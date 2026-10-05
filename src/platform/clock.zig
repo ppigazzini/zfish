@@ -12,7 +12,7 @@ extern "kernel32" fn QueryPerformanceFrequency(freq: *i64) callconv(.winapi) i32
 
 /// Return monotonic time in milliseconds.
 pub fn now() i64 {
-    switch (builtin.os.tag) {
+    switch (builtin.target.os.tag) {
         .windows => {
             var freq: i64 = 0;
             var count: i64 = 0;

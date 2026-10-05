@@ -23,7 +23,7 @@ const Atomic = std.atomic.Value(u32);
 
 // Block while *ptr == expect. Return on wake, on a value mismatch, or spuriously.
 fn futexWait(ptr: *const Atomic, expect: u32) void {
-    switch (builtin.os.tag) {
+    switch (builtin.target.os.tag) {
         .linux => {
             // Pass FUTEX_WAIT's 4th (timeout) syscall argument explicitly as NULL (wait
             // indefinitely) -- FUTEX_WAIT reads it, so it MUST be present. futex_3arg
@@ -48,7 +48,7 @@ fn futexWait(ptr: *const Atomic, expect: u32) void {
 }
 
 fn futexWakeOne(ptr: *const Atomic) void {
-    switch (builtin.os.tag) {
+    switch (builtin.target.os.tag) {
         .linux => _ = std.os.linux.futex_3arg(&ptr.raw, .{ .cmd = .WAKE, .private = true }, 1),
         .windows => std.os.windows.ntdll.RtlWakeAddressSingle(&ptr.raw),
         .macos, .ios, .tvos, .watchos, .visionos => {
@@ -59,7 +59,7 @@ fn futexWakeOne(ptr: *const Atomic) void {
 }
 
 fn futexWakeAll(ptr: *const Atomic) void {
-    switch (builtin.os.tag) {
+    switch (builtin.target.os.tag) {
         .linux => _ = std.os.linux.futex_3arg(&ptr.raw, .{ .cmd = .WAKE, .private = true }, std.math.maxInt(u32)),
         .windows => std.os.windows.ntdll.RtlWakeAddressAll(&ptr.raw),
         .macos, .ios, .tvos, .watchos, .visionos => {

@@ -15,7 +15,7 @@ const registry = @import("registry.zig");
 const piece_char = " PNBRQK"; // index by piece type; `code += PieceToChar[pt]`
 const king: u8 = 6;
 const pawn: u8 = 1;
-const sep_char: u8 = if (builtin.os.tag == .windows) ';' else ':';
+const sep_char: u8 = if (builtin.target.os.tag == .windows) ';' else ':';
 
 var found_wdl: usize = 0;
 var found_dtz: usize = 0;

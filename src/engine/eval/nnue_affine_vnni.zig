@@ -14,8 +14,8 @@ const loadW = @import("nnue_affine_load.zig").loadW;
 // on an AVX-512-VNNI target the affine reaches the instruction through the vpdpbusd512
 // LLVM intrinsic below. Every tier computes the same pure integer dot, so all paths are
 // bit-identical and the bench signature holds on each.
-pub const has_vnni = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
+pub const has_vnni = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx512vnni);
 
 // Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
 // ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects

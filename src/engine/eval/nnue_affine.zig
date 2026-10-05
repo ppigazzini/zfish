@@ -21,16 +21,16 @@ const loadW = @import("nnue_affine_load.zig").loadW;
 // step. Without it an AVX2 target with no VNNI falls to the portable vpmaddwd deinterleave, which
 // measured +32% instructions in evaluateBucketRaw over the SSSE3 maddubs path (the affine went
 // 2.55B sse41 -> 3.38B avx2). mcfish tiers the dot the same way: vpdpbusd / vpmaddubsw / pmaddubsw.
-const use_avx2_madd = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+const use_avx2_madd = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .avx2);
 
 // Handle the SSSE3 tier: the pmaddwd reduction is 128-bit and widens the u8 inputs to i16;
 // pmaddubsw multiplies u8*i8 directly, twice the lanes per register. Reach it through the
 // LLVM intrinsic rather than inline asm: asm is an optimization barrier LLVM cannot
 // schedule or reorder across, the intrinsic it can. Serves as the AVX2 fallback for an OUT the
 // 256-bit path cannot tile (OUT % 8 != 0 but OUT % 4 == 0); the dispatch prefers the wider path.
-const use_maddubs = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3);
+const use_maddubs = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .ssse3);
 
 // Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
 // ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects

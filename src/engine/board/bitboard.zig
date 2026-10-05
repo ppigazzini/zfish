@@ -5,8 +5,8 @@ const builtin = @import("builtin");
 // USE_PEXT macro 1:1 (every USE_PEXT tier sets .bmi2 in target_features and no other tier
 // does), and unlike @import("build_options") it is also visible when this file is compiled as
 // a standalone unit-test root -- matching how nnue_affine.zig gates its ISA kernels.
-const use_pext = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .bmi2);
+const use_pext = builtin.target.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.target.cpu.features, .bmi2);
 
 // Alias the dual hyperbola quintessence slider kernel from its own leaf. It owns the
 // AVX2/GFNI gates, the per-square masks and the vector pass; this file keeps the magic
