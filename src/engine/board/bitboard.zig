@@ -189,7 +189,7 @@ fn initDerivedTables() void {
 // The two are value-identical; upstream's form was ported, measured MORE instructions on
 // an identical tree at every AVX2+ tier, and reverted (tools/upstream/README.md, d8f77ce4).
 pub fn attacks(piece_type: u8, square: u8, occupied: u64) u64 {
-    const sq = @as(usize, @intCast(square));
+    const sq: usize = @intCast(square);
     return switch (piece_type) {
         knight_piece => knight_attacks_bb[sq],
         bishop_piece => attacksBb(PieceType.bishop, sq, occupied, &slider_magics),
@@ -231,7 +231,7 @@ fn prettyAlloc(bitboard: u64) ![]u8 {
     var rank: i32 = 7;
     while (true) : (rank -= 1) {
         for (0..8) |file| {
-            const square = @as(usize, @intCast(rank * 8 + @as(i32, @intCast(file))));
+            const square: usize = @intCast(rank * 8 + @as(i32, @intCast(file)));
             try buffer.appendSlice(allocator, if ((bitboard & squareBb(square)) != 0) "| X " else "|   ");
         }
 

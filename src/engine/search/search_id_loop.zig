@@ -349,13 +349,13 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 1.1 * @as(f64, @floatFromInt(id.iter_value.?[iter_idx] - best_value))) / 100.0;
             falling_eval = fclamp(falling_eval, 0.576, 1.728);
 
-            const tr_x = @as(f64, @floatFromInt(id.root_depth.* - last_best_move_depth));
+            const tr_x: f64 = @floatFromInt(id.root_depth.* - last_best_move_depth);
             time_reduction = fclamp(0.639 + (1.712 - 0.639) * (tr_x - 4.96) / (18.79 - 4.96), 0.629, 1.544);
 
             const reduction = (1.468 + id.previous_time_reduction.?.*) / (2.284 * time_reduction);
             const best_move_instability = 1.077 + 2.229 * tot_best_move_changes / @as(f64, @floatFromInt(id.threads_size));
 
-            const hbme_x = @as(f64, @floatFromInt(@as(i64, @intCast(nodes_effort))));
+            const hbme_x: f64 = @floatFromInt(@as(i64, @intCast(nodes_effort)));
             const high_best_move_effort = fclamp(0.969 + (0.714 - 0.969) * (hbme_x - 75800.0) / (104510.0 - 75800.0), 0.693, 0.838);
 
             var total_time = @as(f64, @floatFromInt(id.tm_optimum)) * falling_eval * reduction * best_move_instability * high_best_move_effort;
@@ -374,7 +374,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             const found_mate = id.root_moves[multi_pv - 1].score >= mate_in_3 or
                 id.root_moves[0].score == mated_in_2;
 
-            const elapsed_time = @as(f64, @floatFromInt(idElapsed(&id)));
+            const elapsed_time: f64 = @floatFromInt(idElapsed(&id));
             if (elapsed_time > @min(total_time, @as(f64, @floatFromInt(id.tm_maximum))) or found_mate) {
                 if (@atomicLoad(u8, id.ponder.?, .monotonic) != 0) id.stop_on_ponderhit.?.* = 1 else @atomicStore(u8, id.stop, 1, .monotonic);
             } else {
