@@ -22,7 +22,8 @@ BIN="${1:-$REPO/zig-out/bin/stockfish}"
 case "$BIN" in /*) ;; *) BIN="$PWD/$BIN" ;; esac
 RES="$REPO/resources"
 LOG="$(mktemp)"
-trap 'rm -f "$LOG"' EXIT
+OUT="$(mktemp)"
+trap 'rm -f "$LOG" "$OUT"' EXIT
 
 [ -x "$BIN" ] || { echo "tsan-race: no binary at $BIN (build with -Dtsan)" >&2; exit 2; }
 
@@ -31,13 +32,20 @@ run_case() {
     name="$1"; secs="$2"; script="$3"
     printf 'tsan-race: %s ...\n' "$name"
     # shellcheck disable=SC2059
-    { printf "$script"; sleep "$secs"; printf 'quit\n'; } | ( cd "$RES" && "$BIN" ) 2>"$LOG" >/dev/null || true
+    { printf "$script"; sleep "$secs"; printf 'quit\n'; } | ( cd "$RES" && "$BIN" ) 2>"$LOG" >"$OUT" || true
     n="$(grep -c 'WARNING: ThreadSanitizer' "$LOG" 2>/dev/null || true)"
     n="${n:-0}"
     total=$((total + n))
     if [ "$n" -ne 0 ]; then
         echo "tsan-race: $name -- $n report(s):" >&2
         grep -E 'WARNING: ThreadSanitizer|^    #0 ' "$LOG" | sed -E 's/ \(stockfish.*//' | head -20 >&2
+    fi
+    # An engine that never ran reports zero races too, so require its answer: every workload
+    # ends in a search, and a search stopped by `quit` still prints its bestmove.
+    if ! grep -q '^bestmove' "$OUT"; then
+        echo "tsan-race: $name -- the engine never answered (no bestmove); its stderr:" >&2
+        tail -5 "$LOG" >&2
+        exit 2
     fi
 }
 

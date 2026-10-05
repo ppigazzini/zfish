@@ -287,7 +287,9 @@ single-threaded and every one of these gates agrees with the oracle while the ra
 workloads chosen to reach different shared state — a deep search with a 1 MB hash and many threads
 (TT and history collisions), tablebases with MultiPV (the Syzygy registry and the PV emitter),
 `go`/`stop` churn across thread counts (pool lifecycle, and a TT clear racing a live search), and
-`ucinewgame` between searches — and requires **zero** reports.
+`ucinewgame` between searches — and requires **zero** reports, and a `bestmove` from every
+workload: an engine that never ran reports zero races too, and under Zig 0.17's relative
+artifact path the gate did exactly that, green, until it asked.
 
 `-Dtsan` forces LTO off, which ThreadSanitizer requires.
 
