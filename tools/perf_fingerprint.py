@@ -208,8 +208,10 @@ def main():
     for name, rx in groups:
         z, _ = _sum_group(zf, rx)
         s, _ = _sum_group(sf, rx)
+        # A row that matches nothing on EITHER side is dead, and a dead row reads as
+        # agreement forever: fail it the way a one-sided MISS fails.
         if z == 0 and s == 0:
-            print(f"{name:<22}{'-- no symbol matched either side --':>41}")
+            print(f"{name:<22}{'':>41}  <-- MISS: regex matched nothing on either side")
             continue
         # A one-sided zero is a ROW fault, not a call-sequence finding: the regex stopped
         # matching (a rename, or a compiler that inlined the symbol away on one side). Say
