@@ -51,7 +51,7 @@ pub fn SharedHistoriesMapOf(comptime Entry: type) type {
 
         /// Return the node's Entry (at(numa); must exist).
         pub fn at(self: *Self, numa: NumaIndex) *Entry {
-            return self.entries.getPtr(numa) orelse unreachable;
+            return self.entries.getPtr(numa).?;
         }
 
         pub fn contains(self: *const Self, numa: NumaIndex) bool {

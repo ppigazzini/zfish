@@ -193,21 +193,21 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
     // same loads via TBAA. Each kind unwraps only the tables it reads — ProbCut passes
     // null for everything but the capture history.
     const capture_base: [*]const CaptureHistoryRow = if (kind == captures)
-        (context.capture_history orelse unreachable)
+        context.capture_history.?
     else
         undefined;
 
     const need_main = kind == quiets or kind == evasions;
     const main_row: *const MainHistoryRow = if (need_main)
-        &(context.main_history orelse unreachable)[@as(usize, side_to_move)]
+        &context.main_history.?[@as(usize, side_to_move)]
     else
         undefined;
     const cont_slots: []const ContHistSlot = if (need_main)
-        (context.continuation_history orelse unreachable)
+        context.continuation_history.?
     else
         undefined;
     const cont0: [*]const PieceToHistoryRow = if (need_main)
-        (cont_slots[0] orelse unreachable)
+        cont_slots[0].?
     else
         undefined;
 
@@ -229,13 +229,13 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
     // move in it, and a quiet list is dozens of moves.
     var check_squares: [8]u64 = @splat(0);
     if (kind == quiets) {
-        cont1 = cont_slots[1] orelse unreachable;
-        cont2 = cont_slots[2] orelse unreachable;
-        cont3 = cont_slots[3] orelse unreachable;
-        cont5 = cont_slots[5] orelse unreachable;
+        cont1 = cont_slots[1].?;
+        cont2 = cont_slots[2].?;
+        cont3 = cont_slots[3].?;
+        cont5 = cont_slots[5].?;
         pawn_block = pawnHistoryBlock(context.shared_history, pos.st.pawn_key);
         if (ply < low_ply_history_size)
-            lowply_row = &(context.low_ply_history orelse unreachable)[@as(usize, @intCast(ply))];
+            lowply_row = &context.low_ply_history.?[@as(usize, @intCast(ply))];
 
         const them = otherColor(side_to_move);
         threat_by_lesser[pawn] = 0;
