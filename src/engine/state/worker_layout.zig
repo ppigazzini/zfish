@@ -292,7 +292,7 @@ comptime {
 // to the Worker base), so this partial view struct reinterprets a Thread pointer to
 // read that one slot. Keep `worker` as a raw address (the loaded pointer value).
 pub const Thread = struct {
-    _lo: usize, // @0 (idle-loop / vtable region; unused here)
+    idle_region: usize, // @0 (idle-loop / vtable region; unused here)
     worker: ?*WorkerLayout, // @8 (LargePagePtr<Worker>; a typed pointer, null == 0)
 
     pub inline fn fromPtr(p: *anyopaque) *Thread {

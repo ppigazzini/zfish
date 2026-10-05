@@ -77,7 +77,7 @@ fn ensureReady() bool {
     g_tt.generation8 = 0;
 
     // Build a one-thread pool whose sole Thread points at the Worker block.
-    g_thread = .{ ._lo = 0, .worker = WorkerLayout.fromPtr(&g_worker) };
+    g_thread = .{ .idle_region = 0, .worker = WorkerLayout.fromPtr(&g_worker) };
     g_thread_addr[0] = &g_thread;
     g_pool.threads = g_thread_addr[0..];
 
