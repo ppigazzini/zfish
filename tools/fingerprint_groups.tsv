@@ -15,7 +15,8 @@
 # proves that rather than the reading of two files.
 #
 # CHOOSE SYMBOLS THAT SURVIVE INLINING ON BOTH SIDES. A group whose regex matches nothing
-# on one side is a MISS and fails, because a silent zero would read as agreement forever.
+# on one side, or on both, is a MISS and fails, because a silent zero would read as
+# agreement forever.
 # If a compiler change inlines a symbol away, fix the row rather than deleting the check,
 # and prefer a callee too big to inline over its caller. `isDraw` has no row for exactly
 # this reason: zfish inlines it away entirely, so there is nothing to compare.
@@ -61,10 +62,12 @@ do_null_move	move_do\.doNullMove$|Position::do_null_move
 # read as an algorithm divergence that was never there. The suffix is Zig's name for a
 # generic instance: `__func_N` since 0.17, `__anon_N` before it.
 threats	move_do_threats\.updatePieceThreats__func_|update_piece_threats<true>
-# `applyCombinedDelta` still exists in nnue_acc_rowops.zig but LLVM inlines it away, so the
-# old row matched NOTHING here and read 0 against upstream's 150,323. Retargeted at the
-# callee that survives: `applyCombinedPsqtDelta` is called once beside it at both sites
-# (nnue_acc_update.zig, nnue_acc_both.zig), so it fires exactly once per upstream
-# `apply_combined` -- 150,323 == 150,323, verified per-symbol before this row was trusted.
-acc_apply	applyCombinedPsqtDelta$|namespace\)::apply_combined
+# NO `acc_apply` ROW, and nothing pairs to give it one. Both of its symbols went with the
+# SFNNv17 port (09864b37): zfish's `applyCombinedPsqtDelta` with the psqt half it applied,
+# and upstream's out-of-line `apply_combined`, which the oracle build now inlines. What
+# survives does not match: upstream keeps only `update_accumulator_incremental<true>` (the
+# forward steps; `<false>` and `_both` inline away), zfish only
+# `nnue_acc_update.applyCombined`, which takes both directions. `acc_side` still holds the
+# per-perspective update count; the number of steps each update walks is NOT covered --
+# named here, the way `isDraw` is.
 acc_side	nnue_acc_update\.evaluateSide$|AccumulatorStack::evaluate_side

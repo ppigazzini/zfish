@@ -82,7 +82,7 @@ if [ "$rc" -ne 0 ] || printf '%s' "$out" | grep -qE "DIFFERS|MISS"; then
     echo "fingerprint: FAIL -- zfish does not call what upstream calls, as often." >&2
     echo "fingerprint: A call-count divergence is an ALGORITHM bug: the two engines reach the" >&2
     echo "fingerprint: same node count by different means, and no value gate here can see it." >&2
-    echo "fingerprint: A MISS means the regex matched nothing on one side -- fix the row in" >&2
+    echo "fingerprint: A MISS means the regex matched nothing on a side, or on both -- fix the row in" >&2
     echo "fingerprint: $GROUPS_FILE, do not delete the check." >&2
     exit 1
 fi
