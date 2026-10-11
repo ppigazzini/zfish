@@ -13,6 +13,7 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 
 /// Define the piece types (low 3 bits of a piece code).
+pub const all_pieces: u8 = 0;
 pub const pawn_pt: u8 = 1;
 pub const knight_pt: u8 = 2;
 pub const bishop_pt: u8 = 3;

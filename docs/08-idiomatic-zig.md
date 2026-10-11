@@ -691,8 +691,8 @@ Two placement rules, both mirroring upstream's `position.cpp:1008,1014-1018`:
 
 - **Issue it where the address becomes final, not where the consumer sits.** The hints
   live *inside* `doMove` (`move_do.zig`), at the point the child's keys are final —
-  between there and the end of the make there is still the checkers scan, `setCheckInfo`
-  and the repetition walk to cover. A hint issued after the make returns has none of that
+  between there and the end of the make there is still the checkers scan,
+  `setExtraBitboards` and the repetition walk to cover. A hint issued after the make returns has none of that
   lead time, which is the whole value of the hint.
 - **Hint the slot the consumer indexes, not the row base.** A pawn-history row is 2 KiB,
   32 cache lines, so hinting `&row[0]` lands on the wrong line for every `(pc, to)`

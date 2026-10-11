@@ -67,7 +67,6 @@ const upcomingRepetition = repetition.upcomingRepetition;
 const isDraw = repetition.isDraw;
 const legal = legality.legal;
 const seeGe = legality.seeGe;
-const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
 const sq_none = board_core.sq_none;
 comptime {
@@ -274,7 +273,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                     updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2210);
             }
             if (pos.st.rule50 < 96) {
-                if (depth >= 7 and tt_move != 0 and pseudoLegal(pos_ptr, tt_move) and legal(pos_ptr, tt_move) and !qIsDecisive(tt_value)) {
+                if (depth >= 7 and tt_move != 0 and legal(pos_ptr, tt_move) and !qIsDecisive(tt_value)) {
                     verifyDoMove(pos_ptr, tt_move, &st);
                     const next_key = adjustKey50(pos);
                     const probe_next = tt.probeTable(ctx.table, ctx.cluster_count, next_key, ctx.generation, q_depth_none);
@@ -373,7 +372,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (depth >= 3 and !qIsDecisive(beta) and !(qIsValid(tt_value) and tt_value < probcut_beta)) {
             var pc_state = movepick.MovePickerState{
                 .tt_move_raw = tt_move,
-                .stage = movepick.initProbcutStage(tt_move != 0 and captureStage(pos, tt_move) and pseudoLegal(pos_ptr, tt_move)),
+                .stage = movepick.initProbcutStage(tt_move != 0 and captureStage(pos, tt_move) and legal(pos_ptr, tt_move)),
                 .threshold = probcut_beta - ss.static_eval,
                 .depth = 0,
                 .skip_quiets = 0,
@@ -397,7 +396,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             while (true) {
                 const move = movepick.nextMove(&pc_state, &pc_ctx);
                 if (move == 0) break;
-                if (move == excluded_move or !legal(pos_ptr, move)) continue;
+                if (move == excluded_move) continue;
                 // The probcut picker yields captures only (upstream asserts it at this site).
                 const capture = captureStage(pos, move);
                 std.debug.assert(capture);

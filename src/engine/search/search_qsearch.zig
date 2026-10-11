@@ -44,7 +44,6 @@ const upcomingRepetition = repetition.upcomingRepetition;
 const isDraw = repetition.isDraw;
 const legal = legality.legal;
 const seeGe = legality.seeGe;
-const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
 const sq_none = board_core.sq_none;
 comptime {
@@ -244,10 +243,10 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     // Step 5. Pick moves (captures, or evasions when in check).
     var mp_moves: [256]movepick.SortEntry = undefined;
     const has_checkers = pos.st.checkers_bb != 0;
-    const tt_pseudo = tt_move != 0 and pseudoLegal(pos_ptr, tt_move);
+    const tt_legal = tt_move != 0 and legal(pos_ptr, tt_move);
     var mp_state = movepick.MovePickerState{
         .tt_move_raw = tt_move,
-        .stage = movepick.initMainStage(has_checkers, tt_pseudo, q_depth_qs),
+        .stage = movepick.initMainStage(has_checkers, tt_legal, q_depth_qs),
         .threshold = 0,
         .depth = q_depth_qs,
         .skip_quiets = 0,
@@ -271,8 +270,6 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     while (true) {
         const move = movepick.nextMove(&mp_state, &mp_ctx);
         if (move == 0) break;
-
-        if (!legal(pos_ptr, move)) continue;
 
         const gc = givesCheck(pos_ptr, move);
         const capture = captureStage(pos, move);

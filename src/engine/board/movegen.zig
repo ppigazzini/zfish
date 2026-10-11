@@ -1,16 +1,14 @@
+// Generate LEGAL moves only (upstream 400c23f97): a pinned piece moves along its pin line,
+// the king steps only onto squares the other side does not threaten, and castling checks its
+// path while it is generated. Nothing downstream filters a list or re-tests a move it was
+// handed.
+
 const std = @import("std");
 const board_core = @import("board_core");
-/// Single-source the move-word decoders; legality.zig aliases the same set.
-const moveFrom = board_core.moveFrom;
-const moveType = board_core.moveTypeOf;
 const bitboard = @import("bitboard");
-const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const movegen_splat_avx512 = @import("movegen_splat_avx512.zig");
 
-/// Thread the board's typed Position as `pos` through every generator:
-/// each function hands it to position_snapshot.moveIsLegal(), which takes it as
-/// the concrete type now. position_types is a pure std leaf, so no import cycle.
 const Position = position_types.Position;
 
 const white: u8 = 0;
@@ -45,6 +43,10 @@ const promotion: u16 = 1 << 14;
 const en_passant: u16 = 2 << 14;
 const castling: u16 = 3 << 14;
 
+const all_pieces = board_core.all_pieces;
+const kingSquare = board_core.kingSquare;
+const relativeSquare = board_core.relativeSquare;
+
 const file_a_bb: u64 = 0x0101010101010101;
 const file_h_bb: u64 = file_a_bb << 7;
 const rank_2_bb: u64 = 0x000000000000ff00;
@@ -52,13 +54,10 @@ const rank_3_bb: u64 = 0x0000000000ff0000;
 const rank_6_bb: u64 = 0x0000ff0000000000;
 const rank_7_bb: u64 = 0x00ff000000000000;
 
-pub const PositionSnapshot = position_snapshot.PositionSnapshot;
-
 const GenType = enum {
     captures,
     quiets,
     evasions,
-    non_evasions,
 };
 
 const MoveWriter = struct {
@@ -86,17 +85,13 @@ pub fn generateEvasions(pos: *const Position, move_list: []u16) usize {
     return generate(.evasions, pos, move_list);
 }
 
-pub fn generateNonEvasions(pos: *const Position, move_list: []u16) usize {
-    return generate(.non_evasions, pos, move_list);
-}
-
+/// Generate every legal move: the evasions when in check, otherwise the captures followed by
+/// the quiets -- upstream's generate<ALL>. The ORDER is observable: root moves are built from
+/// this list, and its order is the tiebreak between equal-scoring moves.
 pub fn generateLegal(pos: *const Position, move_list: []u16) usize {
-    const count = if (pos.st.checkers_bb != 0)
-        generateFor(.evasions, pos, move_list)
-    else
-        generateFor(.non_evasions, pos, move_list);
-
-    return filterLegalMoves(pos, move_list, count);
+    if (pos.st.checkers_bb != 0) return generateFor(.evasions, pos, move_list);
+    const count = generateFor(.captures, pos, move_list);
+    return count + generateFor(.quiets, pos, move_list[count..]);
 }
 
 fn generate(comptime kind: GenType, pos: *const Position, move_list: []u16) usize {
@@ -125,36 +120,43 @@ fn generateAll(
     writer: *MoveWriter,
 ) void {
     const them = otherColor(us);
-    const ksq: u8 = @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king]));
+    const ksq = kingSquare(pos, us);
     var target: u64 = 0;
 
     if (kind != .evasions or !moreThanOne(pos.st.checkers_bb)) {
         target = switch (kind) {
             .evasions => bitboard.between(ksq, lsb(pos.st.checkers_bb)),
-            .non_evasions => ~piecesColor(pos, us),
             .captures => piecesColor(pos, them),
             .quiets => ~pos.by_type_bb[0],
         };
 
         generatePawnMoves(us, kind, pos, writer, target);
-        generateMoves(us, kind, knight, pos, writer, target);
-        generateMoves(us, kind, bishop, pos, writer, target);
-        generateMoves(us, kind, rook, pos, writer, target);
-        generateMoves(us, kind, queen, pos, writer, target);
+        generateMoves(us, knight, pos, writer, target);
+        generateMoves(us, bishop, pos, writer, target);
+        generateMoves(us, rook, pos, writer, target);
+        generateMoves(us, queen, pos, writer, target);
     }
 
-    const king_target = if (kind == .evasions) ~piecesColor(pos, us) else target;
-    splatMoves(writer, ksq, bitboard.attacks(king, ksq, 0) & king_target);
+    if (kind == .evasions) target = ~piecesColor(pos, us);
+    target &= ~pos.st.threats[all_pieces];
+    splatMoves(writer, ksq, bitboard.attacks(king, ksq, 0) & target);
 
-    if ((kind == .quiets or kind == .non_evasions) and canCastleAny(pos, us)) {
-        const king_side = kingSideRight(us);
-        if (!isCastlingImpeded(pos, king_side) and canCastle(pos, king_side)) {
-            writer.push(makeSpecialMove(castling, ksq, castlingRookSquare(pos, king_side), knight));
-        }
-
-        const queen_side = queenSideRight(us);
-        if (!isCastlingImpeded(pos, queen_side) and canCastle(pos, queen_side)) {
-            writer.push(makeSpecialMove(castling, ksq, castlingRookSquare(pos, queen_side), knight));
+    if (kind == .quiets and canCastleAny(pos, us)) {
+        inline for (.{ kingSideRight(us), queenSideRight(us) }) |right| {
+            const rook_square = castlingRookSquare(pos, right);
+            const to = relativeSquare(us, if (rook_square > ksq) 6 else 2); // SQ_G1 : SQ_C1
+            // Test the ROOK'S GEOMETRY, whatever UCI_Chess960 says: `set` adopts the first rook
+            // it meets for a `K`/`Q` token, so `... w Q ...` over a rook on b1 records a 960
+            // geometry under the standard option, and a castle screening an enemy slider on a1
+            // behind that rook would leave the king capturable. A corner rook in standard
+            // geometry lies on no line from its own king to a slider, so the test always passes
+            // there.
+            if (!isCastlingImpeded(pos, right) and canCastle(pos, right) and
+                (bitboard.between(ksq, to) & pos.st.threats[all_pieces]) == 0 and
+                (pos.st.blockers_for_king[us] & squareBb(rook_square)) == 0)
+            {
+                writer.push(makeSpecialMove(castling, ksq, rook_square, knight));
+            }
         }
     }
 }
@@ -175,11 +177,19 @@ fn generatePawnMoves(
     const up_right: i8 = if (us == white) north_east else south_west;
     const up_left: i8 = if (us == white) north_west else south_east;
 
+    const pinned = pos.st.blockers_for_king[us];
+    const ksq = kingSquare(pos, us);
+
     const pawns_on_7 = piecesColorType(pos, us, pawn) & t_rank_7;
     const pawns_not_on_7 = piecesColorType(pos, us, pawn) & ~t_rank_7;
+    // A pinned pawn moves only along its pin line: it pushes when pinned on the king's file,
+    // and captures toward one side when pinned on the diagonal running that way.
+    const pushable = ~pinned | (file_a_bb << @intCast(ksq % 8));
+    const can_capture_left = ~pinned | bitboard.antiDiag(ksq);
+    const can_capture_right = ~pinned | bitboard.diag(ksq);
 
     if (kind != .captures) {
-        var b1 = shift(up, pawns_not_on_7) & empty_squares;
+        var b1 = shift(up, pawns_not_on_7 & pushable) & empty_squares;
         var b2 = shift(up, b1 & t_rank_3) & empty_squares;
 
         if (kind == .evasions) {
@@ -192,9 +202,9 @@ fn generatePawnMoves(
     }
 
     if (pawns_on_7 != 0) {
-        var b1 = shift(up_right, pawns_on_7) & enemies;
-        var b2 = shift(up_left, pawns_on_7) & enemies;
-        var b3 = shift(up, pawns_on_7) & empty_squares;
+        var b1 = shift(up_right, pawns_on_7 & can_capture_right) & enemies;
+        var b2 = shift(up_left, pawns_on_7 & can_capture_left) & enemies;
+        var b3 = shift(up, pawns_on_7 & pushable) & empty_squares;
 
         if (kind == .evasions) {
             b3 &= target;
@@ -213,22 +223,24 @@ fn generatePawnMoves(
         }
     }
 
-    if (kind == .captures or kind == .evasions or kind == .non_evasions) {
-        const b1 = shift(up_right, pawns_not_on_7) & enemies;
-        const b2 = shift(up_left, pawns_not_on_7) & enemies;
+    if (kind == .captures or kind == .evasions) {
+        const b1 = shift(up_right, pawns_not_on_7 & can_capture_right) & enemies;
+        const b2 = shift(up_left, pawns_not_on_7 & can_capture_left) & enemies;
 
         splatPawnMoves(writer, up_right, b1);
         splatPawnMoves(writer, up_left, b2);
 
-        if (pos.st.ep_square != sq_none) {
-            if (kind == .evasions and (target & squareBb(addDirection(pos.st.ep_square, up))) != 0) {
-                return;
-            }
-
-            var ep_attackers = pawns_not_on_7 & pawnAttacksFromSquare(pos.st.ep_square, them);
+        const ep_square = pos.st.ep_square;
+        // An en passant capture cannot resolve a discovered check.
+        if (ep_square != sq_none and
+            !(kind == .evasions and (target & squareBb(addDirection(ep_square, up))) != 0))
+        {
+            const ep_bb = squareBb(ep_square);
+            var ep_attackers = pawns_not_on_7 &
+                ((can_capture_right & shift(-up_right, ep_bb)) | (can_capture_left & shift(-up_left, ep_bb)));
             while (ep_attackers != 0) {
                 const from = popLsb(&ep_attackers);
-                writer.push(makeSpecialMove(en_passant, from, pos.st.ep_square, knight));
+                writer.push(makeSpecialMove(en_passant, from, ep_square, knight));
             }
         }
     }
@@ -236,19 +248,32 @@ fn generatePawnMoves(
 
 fn generateMoves(
     comptime us: u8,
-    comptime kind: GenType,
     comptime piece_type: u8,
     pos: *const Position,
     writer: *MoveWriter,
     target: u64,
 ) void {
-    _ = kind;
+    const pinned = pos.st.blockers_for_king[us];
 
-    var pieces = piecesColorType(pos, us, piece_type);
+    // Emit every unpinned piece of the type before any pinned one, as upstream does: the
+    // order a list is generated in is the order equal-scoring moves are tried in.
+    var pieces = piecesColorType(pos, us, piece_type) & ~pinned;
     while (pieces != 0) {
         const from = popLsb(&pieces);
         const attacks = bitboard.attacks(piece_type, from, pos.by_type_bb[0]) & target;
         splatMoves(writer, from, attacks);
+    }
+
+    // A pinned knight cannot move; a pinned slider keeps to the line through its king.
+    if (piece_type != knight) {
+        const ksq = kingSquare(pos, us);
+        pieces = piecesColorType(pos, us, piece_type) & pinned;
+        while (pieces != 0) {
+            const from = popLsb(&pieces);
+            const attacks = bitboard.attacks(piece_type, from, pos.by_type_bb[0]) & target &
+                bitboard.line(ksq, from);
+            splatMoves(writer, from, attacks);
+        }
     }
 }
 
@@ -260,7 +285,7 @@ fn makePromotions(
     to: u8,
 ) void {
     const from = subtractDirection(to, offset);
-    const all = kind == .evasions or kind == .non_evasions;
+    const all = kind == .evasions;
 
     if (kind == .captures or all) {
         writer.push(makeSpecialMove(promotion, from, to, queen));
@@ -363,49 +388,6 @@ fn squareBb(square: u8) u64 {
     return @as(u64, 1) << @as(u6, @intCast(square));
 }
 
-fn filterLegalMoves(
-    pos: *const Position,
-    move_list: []u16,
-    count: usize,
-) usize {
-    const us = pos.side_to_move;
-    const pinned = pos.st.blockers_for_king[us] & piecesColor(pos, us);
-    const king_square: u8 = @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king]));
-
-    // Remove an illegal move by swapping the LAST move into its slot and shrinking, exactly
-    // as upstream's `*cur = *(--moveList)` (movegen.cpp:283). Do NOT advance `cur` on a
-    // removal: the move just swapped in has not been tested yet.
-    //
-    // This is an UNSTABLE removal, and the instability is the observable behaviour, not an
-    // implementation detail. Stable compaction keeps the same move SET (so perft, which
-    // only counts, agrees) but yields a different ORDER, and root-move order is the
-    // tiebreak between equal-scoring moves -- so the two orders play DIFFERENT moves. On
-    // `k3r3/8/8/8/8/8/4N3/4K2R w K - 0 1` upstream and stable-compaction zfish returned the
-    // same 14 moves in 14 different positions, and Threads=1 `go` picked e1d2 vs e1f2.
-    // Order only diverges where a move is actually removed, i.e. checks and pins; bench's
-    // roots never filter, which is why the anchor could not see this.
-    var cur: usize = 0;
-    var last: usize = count;
-    while (cur != last) {
-        const raw_move = move_list[cur];
-        if (requiresLegalCheck(raw_move, pinned, king_square) and
-            !position_snapshot.moveIsLegal(pos, raw_move))
-        {
-            last -= 1;
-            move_list[cur] = move_list[last];
-        } else {
-            cur += 1;
-        }
-    }
-
-    return last;
-}
-
-fn requiresLegalCheck(raw_move: u16, pinned: u64, king_square: u8) bool {
-    const from = moveFrom(raw_move);
-    return ((pinned & squareBb(from)) != 0) or from == king_square or moveType(raw_move) == en_passant;
-}
-
 fn lsb(bb: u64) u8 {
     return @intCast(@ctz(bb));
 }
@@ -430,14 +412,6 @@ fn shift(comptime dir: i8, bb: u64) u64 {
         south_west => (bb & ~file_a_bb) >> 9,
         else => unreachable,
     };
-}
-
-fn pawnAttacksFromSquare(square: u8, color: u8) u64 {
-    const bb = squareBb(square);
-    return if (color == white)
-        shift(north_west, bb) | shift(north_east, bb)
-    else
-        shift(south_west, bb) | shift(south_east, bb);
 }
 
 test {

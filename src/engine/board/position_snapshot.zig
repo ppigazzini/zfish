@@ -22,17 +22,17 @@ pub const PositionSnapshot = struct {
 };
 
 /// hook-class: service — a leaf answering a query it must not import the answer for.
-/// Own and self-register these 2 hooks in position.zig; every other hook in the tree is
+/// Own and self-register this hook in position.zig; every other hook in the tree is
 /// registered by the composition root (main.zig).
 ///
-/// Break the import cycle: position.zig can't be imported by movegen/movepick/
-/// nnue/uci_move (they are imported *by* position), so it registers these here — the
-/// shared leaf they all already import — instead of the old C-ABI exports.
-/// Install them via position.initRuntime() before any search runs.
+/// Break the import cycle: position.zig can't be imported by the modules that need a
+/// snapshot (they are imported *by* position), so it registers the filler here — the
+/// shared leaf they all already import — instead of the old C-ABI export.
+/// Install it via position.initRuntime() before any search runs.
 ///
-/// Make each NON-OPTIONAL, defaulting to a named panic stub (matching the
-/// runtime_hooks registry idiom), so fill()/moveIsLegal() invoke them directly with no
-/// `.?` null-unwrap. An unregistered hook fails fast with its own name instead of an
+/// Make it NON-OPTIONAL, defaulting to a named panic stub (matching the
+/// runtime_hooks registry idiom), so fill() invokes it directly with no `.?`
+/// null-unwrap. An unregistered hook fails fast with its own name instead of an
 /// opaque null-optional panic.
 fn hookPanic(comptime name: []const u8) noreturn {
     @panic(name ++ ": position snapshot hook not registered (initRuntime not run?)");
@@ -45,19 +45,9 @@ pub var fill_fn: *const fn (pos: *const position_types.Position, out: *PositionS
             hookPanic("fill_fn");
         }
     }.stub;
-/// failure: loud — hookPanic naming the hook. Install it via position.initRuntime() before any search runs.
-pub var move_is_legal_fn: *const fn (pos: *const position_types.Position, raw_move: u16) bool =
-    struct {
-        fn stub(_: *const position_types.Position, _: u16) bool {
-            hookPanic("move_is_legal_fn");
-        }
-    }.stub;
 
 pub inline fn fill(pos: *const position_types.Position, out: *PositionSnapshot) void {
     fill_fn(pos, out);
-}
-pub inline fn moveIsLegal(pos: *const position_types.Position, raw_move: u16) bool {
-    return move_is_legal_fn(pos, raw_move);
 }
 
 test {

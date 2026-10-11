@@ -106,12 +106,10 @@ pub const formatFen = fen.formatFen;
 pub const buildEndgameFen = fen.buildEndgameFen;
 
 /// Re-export the move legality / SEE queries from the legality leaf, so
-/// the search + movegen call sites and the move_is_legal_fn hook keep resolving.
+/// the search call sites keep resolving.
 pub const attackersTo = legality.attackersTo;
-pub const attackersToExist = legality.attackersToExist;
 pub const legal = legality.legal;
 pub const seeGe = legality.seeGe;
-pub const pseudoLegal = legality.pseudoLegal;
 pub const givesCheck = legality.givesCheck;
 
 comptime {
@@ -127,10 +125,8 @@ const sq_none_u8 = board_core.sq_none;
 /// Build the Zobrist + cuckoo tables in initRuntime with an xorshift64* PRNG seeded
 /// with 1070372.
 pub fn initRuntime() void {
-    // Register the cycle-break hooks movegen/movepick/nnue/uci_move call (they can't
-    // import position).
+    // Register the cycle-break hook uci_move calls (it can't import position).
     position_snapshot_port.fill_fn = &fillSnapshot;
-    position_snapshot_port.move_is_legal_fn = &legal;
 
     // Build the magic-bitboard slider attack tables first: zobrist.init() (cuckoo
     // tables) and every later position setup / search call bitboard.attacks(), which
@@ -172,7 +168,7 @@ pub const accumulatorSnapshot = position_query.accumulatorSnapshot;
 pub const setCastlingRight = state_setup.setCastlingRight;
 pub const updateSliderBlockers = state_setup.updateSliderBlockers;
 pub const setState = state_setup.setState;
-pub const setCheckInfo = state_setup.setCheckInfo;
+pub const setExtraBitboards = state_setup.setExtraBitboards;
 pub const computeMaterialKey = state_setup.computeMaterialKey;
 
 /// Re-export the FEN parsing (build a Position from a FEN) from the fen_parse leaf,

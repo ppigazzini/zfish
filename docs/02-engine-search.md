@@ -39,7 +39,6 @@ function-pointer seams. For the zones and the module graph, see
 | `movepick_score.zig` | `MovePickerState`/`MovePickerContext`/`SortEntry`, `scoreList`, `scoreValue` |
 | `movepick_sort_avx512.zig` | `MoveSorter` — the AVX512F+AVX512DQ vector fast path for `partialInsertionSort`'s leading run |
 | `movepick_history.zig` | The typed row/page views over the history tables and their read helpers |
-| `movepick_snapshot.zig` | The read-only board queries and SEE shared by scoring and pruning |
 | **Tables** | |
 | `history.zig` | The history *writers*: `updateAllStats`, `updateQuietHistories*`, `updateContinuationHistories`, `updateCorrectionHistory`, `setContHist`, and the per-iteration decay/clear |
 | `shared_history.zig` | The shared-history *storage*: large-page arena construct/free/clear/verify and the `sharedOf`/`pawnEntryRow` accessors and the four `*CorrEntry` ones (`pawnCorrEntry`, `minorCorrEntry`, `whiteNonPawnCorrEntry`, `blackNonPawnCorrEntry`) |
@@ -306,8 +305,10 @@ flowchart LR
     end
 ```
 
-The TT stage returns the TT move unchecked (the caller has already tested
-`pseudoLegal`). `capture_init` generates captures, scores them, and fully sorts them;
+The TT stage returns the TT move unchecked (the caller has already tested it with
+`legal`, and skips the stage when that fails). Every later stage emits only legal moves,
+so the search loops take what the picker hands them without re-testing a move.
+`capture_init` generates captures, scores them, and fully sorts them;
 `good_capture` re-tests each with `seeGe` against a threshold derived from its own
 score and demotes the failures into the bad-capture region in place. `quiet_init`
 generates quiets and *partially* sorts them — `partialInsertionSort` only inserts
@@ -342,7 +343,7 @@ comptime on the kind (`captures` / `quiets` / `evasions`):
 
 The quiet score reads the continuation history at slots 0, 1, 2, 3 and 5; the threat
 term uses per-piece-type "attacked by a lesser piece" bitboards built once per list
-from `attacksBy`; the check bonus requires both a check square and `seeGe`; the
+from the `threats` the make already left in `StateInfo`; the check bonus requires both a check square and `seeGe`; the
 low-ply bonus applies only below `low_ply_history_size` (the constant the scorer reads is
 `movepick_score.zig`'s; `movepick.zig` carries a second copy).
 
@@ -444,8 +445,8 @@ concurrent updates between threads are intended; relaxed is what makes that race
 instead of undefined, and it forbids the compiler tearing a field or rematerialising a
 load after the key comparison it was checked against. It is not ordering — no field is
 ordered against any other, exactly as upstream. A torn entry is therefore possible and
-harmless: the key check rejects it, and a wrong-but-legal move is filtered by
-`pseudoLegal` before it is ever played.
+harmless: the key check rejects it, and a move that is wrong for the position is refused
+by `legal` before it is ever played.
 
 `hashfull` samples the first 1000 clusters and counts entries that are occupied *and*
 within `max_age` generations, so the figure reports the table's useful occupancy rather
@@ -472,8 +473,8 @@ row (`pawn_key` into `SharedHistories.pawn_data`, then `pc * hist_square_nb + to
 that row — the exact slot `history.zig`'s quiet-history update reads, not the row base;
 `pc`/`to` are the mover's identity and destination, matching upstream's own locals at the
 same point, including their reassignment to the king's square for castling) — with the
-checkers scan, `setCheckInfo` and the repetition
-walk still to run as free lead time before any of these lines are read. This second round
+checkers scan, `setExtraBitboards` and the repetition walk still to run as free lead
+time before any of these lines are read. This second round
 takes an optional `move_do.PrefetchBank` (table + cluster count + the shared-history
 pointer): `null` for every non-search make (`doMoveState` — perft, root building,
 tablebase walks, tests — and `search_acc.verifyDoMove`'s TT-move verification make, which

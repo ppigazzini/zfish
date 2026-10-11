@@ -4,7 +4,7 @@
 // (pure string encoding), parsing writes a live Position -- it places pieces,
 // derives castling rights, and rebuilds the cached state -- so it depends on the
 // move/state leaves (move_do.putPiece, state_setup.setState/setCastlingRight,
-// legality.attackersTo(Exist)) plus board_core primitives. All of those are
+// legality.attackersTo) plus board_core primitives. All of those are
 // leaves, so fen_parse imports no position.zig -- no cycle. position.zig
 // re-exports setPosition so setPositionState and the engine/thread callers keep
 // resolving through the position surface.
@@ -41,7 +41,6 @@ const putPiece = move_do.putPiece;
 const setState = state_setup.setState;
 const setCastlingRight = state_setup.setCastlingRight;
 const attackersTo = legality.attackersTo;
-const attackersToExist = legality.attackersToExist;
 
 inline fn countPt(pos: *const Position, c: u8, pt: u8) i32 {
     return pos.piece_count[(c << 3) | pt];
@@ -281,7 +280,7 @@ pub fn setPosition(
     pos.chess960 = is_chess960 != 0;
     setState(pos_ptr);
 
-    if (attackersToExist(pos_ptr, kingSquare(pos, them), pos.by_type_bb[0], stm))
+    if ((attackersTo(pos_ptr, kingSquare(pos, them), pos.by_type_bb[0]) & pos.by_color_bb[stm]) != 0)
         return setErr("Unsupported position. King can be captured.");
 
     return null;

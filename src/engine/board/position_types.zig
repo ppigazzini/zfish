@@ -67,6 +67,11 @@ pub const StateInfo = struct {
     blockers_for_king: [2]u64,
     pinners: [2]u64,
     check_squares: [8]u64,
+    /// Hold the squares the side NOT to move attacks, indexed by piece type: [0] is every
+    /// piece's, then pawn through rook. Rays pass THROUGH the mover's own king, so a king
+    /// stepping back along a checking ray still reads as attacked (upstream threats[],
+    /// 400c23f97). Queen and king attacks reach [0] alone, so they take no slot.
+    threats: [5]u64,
     captured_piece: u8,
     repetition: i32,
 };
@@ -121,7 +126,7 @@ comptime {
     // its constants). Field order is Zig's to choose; only the sizes are contractual.
     std.debug.assert(@sizeOf(Position) == 1064);
     std.debug.assert(@alignOf(Position) == 8);
-    std.debug.assert(@sizeOf(StateInfo) == 192);
+    std.debug.assert(@sizeOf(StateInfo) == 232);
     std.debug.assert(@alignOf(StateInfo) == 8);
 }
 
@@ -131,7 +136,7 @@ const testing = std.testing;
 
 test "Position/StateInfo hold their contractual Worker-block slot widths" {
     try testing.expectEqual(@as(usize, 1064), @sizeOf(Position));
-    try testing.expectEqual(@as(usize, 192), @sizeOf(StateInfo));
+    try testing.expectEqual(@as(usize, 232), @sizeOf(StateInfo));
 }
 
 test "adjustKey50 is identity below 14 and mixes in steps of 8 above it" {

@@ -25,23 +25,23 @@ other leaves, so the board graph is a DAG with `position` at its root.
 | `score.zig` | `classify()` — score → non-decisive / tablebase / mate, in plies |
 | **Bitboards** | |
 | `bitboard_geom.zig` | pure square/file/rank math and the from-scratch attack generators used to build the tables |
-| `bitboard.zig` | the runtime magic-bitboard slider tables, the `bothAttacks` dispatch and `bothAttacksMagic`, leaper and pseudo-attack tables, `between` / `line` / `rayPass` |
+| `bitboard.zig` | the runtime magic-bitboard slider tables, the `bothAttacks` dispatch and `bothAttacksMagic`, leaper and pseudo-attack tables, `between` / `line` / `rayPass` / `diag` / `antiDiag` |
 | `bitboard_dual.zig` | the AVX2 dual-hyperbola-quintessence path: `DualMagic`, `dual_magics`, `rank_attacks`, `initDualMagics`, `bothAttacksAvx2`, and the `use_avx2` / `use_gfni_rank` tier gates |
 | `move_do_pieces.zig` | the board mutators — `putPiece` / `removePiece` / `movePieceQuiet` / `swapPiece` and their `*Dts` threat-recording forms, with all six `updatePieceThreats` call sites |
 | `threats_write_avx512.zig` | the AVX-512 threat writer: compress, `permutexvar` and the unmasked 16-word store |
 | **Position** | |
-| `position.zig` | the facade: re-exports, `initRuntime()`, self-registration of the two snapshot hooks |
+| `position.zig` | the facade: re-exports, `initRuntime()`, self-registration of the snapshot hook |
 | `position_query.zig` | read-only accessors (`sideToMove`, `gamePly`, `hasCheckers`, `wdlMaterial`) and the snapshot fills |
 | `position_lifecycle.zig` | `create` / `destroy` / `setPositionState` / `doMoveState` — the graph-sized wrappers |
-| `position_snapshot.zig` | `PositionSnapshot` plus the `fill_fn` / `move_is_legal_fn` hook seam |
-| `state_setup.zig` | derived-state (re)computation: `setState`, `setCheckInfo`, `updateSliderBlockers`, `setCastlingRight` |
+| `position_snapshot.zig` | `PositionSnapshot` plus the `fill_fn` hook seam |
+| `state_setup.zig` | derived-state (re)computation: `setState`, `setExtraBitboards`, `updateSliderBlockers`, `setCastlingRight` |
 | `state_list.zig` | `StateList` / `PendingStateStorage` — the pointer-stable `StateInfo` chain the engine holds |
 | **Moves** | |
 | `move_do.zig` | `doMove` / `undoMove` / `doNullMove` / `undoNullMove`, `adjustKey50`, `prefetchKey`; it re-exports `putPiece` from `move_do_pieces.zig` |
 | `move_do_threats.zig` | `updatePieceThreats` — the dirty-threat deltas the NNUE threat features consume |
-| `movegen.zig` | the staged pseudo-legal generators plus `generateLegal` |
+| `movegen.zig` | the staged legal generators plus `generateLegal` |
 | `movegen_splat_avx512.zig` | `splatPawnMoves`/`splatMoves` — the AVX512VBMI+VBMI2 vector fast path for packing a destination bitboard into move words |
-| `legality.zig` | `legal`, `pseudoLegal`, `givesCheck`, `seeGe`, `attackersTo`, `attackersToExist` |
+| `legality.zig` | `legal`, `givesCheck`, `seeGe`, `attackersTo` |
 | **Hashing and draws** | |
 | `zobrist.zig` | the process-global `zob_*` tables and the cuckoo tables, built by `init()` |
 | `repetition.zig` | `isDraw`, `isRepetition`, `hasRepeated`, `upcomingRepetition` |
@@ -98,13 +98,13 @@ contractual.
 `StateInfo` carries the per-ply state: the Zobrist keys (`key`, `pawn_key`,
 `material_key`, `minor_piece_key`, `non_pawn_key`), `non_pawn_material`,
 `castling_rights`, `rule50`, `plies_from_null`, `ep_square`, `checkers_bb`,
-`blockers_for_king`, `pinners`, `check_squares`, `captured_piece`, `repetition`,
-and `previous`.
+`blockers_for_king`, `pinners`, `check_squares`, `threats`, `captured_piece`,
+`repetition`, and `previous`.
 
 ### The pinned footprints
 
 `position_types.zig` asserts `@sizeOf(Position) == 1064`, `@alignOf(Position) == 8`,
-`@sizeOf(StateInfo) == 192`, `@alignOf(StateInfo) == 8`. These are not cosmetic:
+`@sizeOf(StateInfo) == 232`, `@alignOf(StateInfo) == 8`. These are not cosmetic:
 `src/engine/state/worker_layout.zig` pins the two widths as `position_size` /
 `state_info_size` — the slot widths `setPosition` is handed — and embeds `root_pos` /
 `root_state` as typed fields in the `Worker` block. `src/engine/state/position_storage.zig`
@@ -144,8 +144,8 @@ and walks the `previous` chain to fill `st.repetition`. The trailing block
 recomputed, never copied.
 
 The optional `bank: ?PrefetchBank` is issued right after every key this move touches
-is final, before the checkers scan / `setCheckInfo` / repetition walk that follow it —
-so those give the six prefetch lines (the exact-key TT cluster, the four correction
+is final, before the checkers scan / `setExtraBitboards` / repetition walk that follow
+it — so those give the six prefetch lines (the exact-key TT cluster, the four correction
 bundles, and the pawn-history entry) free lead time before anything reads them. The
 pawn-history line is the specific `[pc][to]` **slot** the next node's quiet-history
 update reads, not the row base: a row is 1024 entries (2 KiB, 32 lines), so prefetching
@@ -270,11 +270,11 @@ candidate, so it costs almost nothing at startup.
 
 `bothAttacks(sq, occupied)` returns a `DualAttacks{ bishop, rook }` in one call, for
 the five sites that want both ray sets from the same square/occupancy: `attackersTo`
-(board), `setCheckInfo` (board), `updatePieceThreats` (board), `givesCheck`'s
+(board), `setExtraBitboards` (board), `updatePieceThreats` (board), `givesCheck`'s
 en-passant case and `seeGe`'s queen branch (both legality). Sites that want only one
-ray — `attackersToExist`'s short-circuit, `seeGe`'s pawn/bishop/rook branches, movegen's
-slider loop, `pseudoLegal` — call plain `attacks()`, as upstream's
-`Position::attackers_to_exist` / `see_ge` call a single `attacks_bb`. That call is a
+ray — `seeGe`'s pawn/bishop/rook branches, movegen's slider loop, `legal`'s slider test,
+`setExtraBitboards`' threat walk — call plain `attacks()`, as upstream's `see_ge` and
+its threat bitboards call a single `attacks_bb`. That call is a
 magic/PEXT lookup on EVERY tier, and at `use_avx2` this is a deliberate divergence:
 upstream's `attacks_bb(pt, s, occupied)` runs the dual pass there too and keeps the lane
 asked for. The two are value-identical, and upstream's form measured more instructions
@@ -356,13 +356,15 @@ bits 12–13, the move type in bits 14–15 (`normal` / `promotion` / `en_passan
 | `generateCaptures` | enemy pieces |
 | `generateQuiets` | empty squares |
 | `generateEvasions` | the squares between the king and the single checker (king moves only, under double check) |
-| `generateNonEvasions` | everything not occupied by us |
-| `generateLegal` | evasions or non-evasions by `checkers_bb`, then filtered to legal |
+| `generateLegal` | the evasions in check, otherwise the captures followed by the quiets — upstream's `generate<ALL>` |
 
-`generateAll` is instantiated per color and per `GenType` at comptime, so the
-color and kind branches vanish. It emits pawn moves, then knight/bishop/rook/queen
-moves, then king moves, then castling (quiets and non-evasions only, gated on
-`castling_rights` and an unimpeded `castling_path`).
+Every generator emits LEGAL moves only (upstream `400c23f97`); nothing filters a list
+afterwards. `generateAll` is instantiated per color and per `GenType` at comptime, so
+the color and kind branches vanish. It emits pawn moves, then knight/bishop/rook/queen
+moves, then king moves, then castling (quiets only). The order is observable — root
+moves are built from `generateLegal`'s list, and list order is the tiebreak between
+equal-scoring moves — so it follows upstream's exactly, down to emitting each piece
+type's unpinned pieces before its pinned ones.
 
 `splatPawnMoves`/`splatMoves` pack a destination bitboard into move words. At
 `use_avx512_movegen` (AVX512VBMI + AVX512VBMI2 — `movegen_splat_avx512.zig`) both do
@@ -378,36 +380,45 @@ loop, upstream's own non-vector path.
 
 ### Legality
 
-The generators are pseudo-legal. `generateLegal` post-filters with
-`requiresLegalCheck`: a move needs the full `legal()` test only if it starts from
-a pinned square (`blockers_for_king[us] & pieces(us)`), moves the king, or is an
-en-passant capture. Everything else is legal by construction.
+The generators build legality in, from three things the make already derived:
 
-`legal(pos, m)` then decides:
+- **pins** — a pinned knight does not move, a pinned slider keeps to `line(ksq, from)`,
+  and a pinned pawn pushes only when pinned on the king's file and captures only along
+  the king's `diag` / `antiDiag`;
+- **king safety** — the king steps only onto squares outside `threats[0]`, the squares
+  the other side attacks with rays running THROUGH our king, so stepping back along a
+  checking line is refused;
+- **castling** — every square between the king and its destination must be outside
+  `threats[0]`, and the castling rook must not be one of our king's blockers. The rook
+  test runs whatever `UCI_Chess960` says: a `K`/`Q` token adopts the first rook it meets,
+  so a standard-option game can still hold a 960 geometry, and a corner rook in standard
+  geometry is never a blocker, so the test always passes there.
 
-- **castling** — every square the king traverses must be unattacked; under
-  Chess960, the rook's square must additionally not be a blocker;
-- **king moves** — the destination must be unattacked with the king's own square
-  removed from the occupancy;
-- **everything else** — the origin is not a blocker, or the move stays on the line
-  through our king.
+En passant needs nothing extra: `doMove` and the FEN parser set `ep_square` only when the
+capture is legal.
+
+`legal(pos, m)` answers the same question for a move the generators did not hand over —
+a TT move, which SMP races or key aliasing can corrupt, or a ponder candidate. A
+non-normal move falls back to `generateLegal` membership; otherwise it checks the piece,
+its geometry and, for a king, `threats[0]`, and for anything else the check and the pin.
+`board_props` holds the two answers together in both directions on every child of five
+positions.
 
 The other predicates in `legality.zig`:
 
 | Function | Answers |
 | --- | --- |
-| `pseudoLegal(pos, m)` | is `m` playable at all — used to validate a TT/killer move; non-normal move types fall back to generator membership |
 | `givesCheck(pos, m)` | does `m` check, without playing it: direct via `check_squares[pt]`, discovered via `blockers_for_king[them]`, plus the promotion / en-passant / castling special cases |
 | `seeGe(pos, m, t)` | is the static exchange evaluation of `m` at least `t` — the swap-off loop, skipping attackers pinned against their own king |
 | `attackersTo(pos, s, occ)` | the bitboard of all pieces attacking `s` |
-| `attackersToExist(pos, s, occ, c)` | does color `c` attack `s` — short-circuits, no set built |
 
 `state_setup.updateSliderBlockers` maintains the pin data both sides read: for
 each enemy sniper aligned with our king, if exactly one piece stands between, that
-piece is a blocker, and if it is ours the sniper is a pinner. `setCheckInfo` runs
-it for both colors and refills `check_squares[pt]` — the squares from which each
-piece type would check the side not to move. Both run on every `doMove` and
-`doNullMove`, and on `setState` after a FEN parse.
+piece is a blocker, and if it is ours the sniper is a pinner. `setExtraBitboards` runs
+it for both colors, refills `check_squares[pt]` — the squares from which each piece
+type would check the side not to move — and refills `threats`: what the side not to
+move attacks, by piece type through rook, and all of it in `threats[0]`. All of it runs
+on every `doMove` and `doNullMove`, and on `setState` after a FEN parse.
 
 ## Zobrist, repetition, FEN
 
@@ -449,32 +460,29 @@ rook files when enabled), en passant, and the counters; `flipFen` mirrors ranks
 and swaps all case, an involution; `buildEndgameFen` synthesizes a board from an
 endgame code such as `KQvK`.
 
-## The snapshot hooks
+## The snapshot hook
 
-`movegen.zig`, `uci_move.zig`, the NNUE (`nnue_accumulator.zig`,
-`nnue_acc_update.zig`), and `root_move_build.zig` all need to ask the board a
-question — *fill me a snapshot*, *is this move legal*. `position.zig` imports
-`movegen`, so importing back would cycle; the others sit in zones above `board/`
-that the board does not import downward.
+`uci_move.zig` asks the board to *fill me a snapshot* of the position it parses a move
+against. `position.zig` reaches `uci_move` through `search_driver`, so importing the
+facade back would cycle.
 
-`position_snapshot.zig` is the shared leaf they all already import, so it declares
-the seam:
+`position_snapshot.zig` is a shared leaf both already import, so it declares the seam:
 
 ```zig
 pub var fill_fn: *const fn (pos: *const Position, out: *PositionSnapshot) void = …stub;
-pub var move_is_legal_fn: *const fn (pos: *const Position, raw_move: u16) bool = …stub;
 ```
 
-`position.initRuntime()` registers the real implementations
-(`position_query.fillSnapshot` and `legality.legal`) before anything else runs.
-These are the **only two hooks in the tree not registered by the composition
-root** — every other one is installed by `main.zig`; see
+`position.initRuntime()` registers the real implementation
+(`position_query.fillSnapshot`) before anything else runs. It is the **only hook in the
+tree not registered by the composition root** — every other one is installed by
+`main.zig`; see
 [the composition root and the cycle-break hooks](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+Until `400c23f97` a second hook sat beside it, so movegen could filter its lists through
+`legal()`; the generators emit legal moves now, and it went.
 
-Both hooks are non-optional and default to a named panic stub rather than `null`,
-so an unregistered hook fails fast naming itself instead of tripping an opaque
-null-unwrap. Their declared failure mode is *loud*, which is what `zig build
-hook-lint` checks.
+The hook is non-optional and defaults to a named panic stub rather than `null`, so an
+unregistered hook fails fast naming itself instead of tripping an opaque null-unwrap.
+Its declared failure mode is *loud*, which is what `zig build hook-lint` checks.
 
 ## Invariants
 
@@ -489,7 +497,7 @@ just the board path (`initRuntime` → `setPosition` → `generateLegal` →
 | **Null-move round-trip** | side and key change, then both restore exactly |
 | **FEN round-trip** | `setPosition` then `formatFen` returns the input string |
 | **FEN rejection** | malformed input is rejected with a message, never accepted or crashed |
-| **movegen ↔ legality** | every move `generateLegal` emits must also satisfy the standalone `legal()` and `pseudoLegal()` — catches drift perft can hide when two errors cancel in the count |
+| **movegen ↔ legality** | at the root and every child, every move `generateLegal` emits satisfies the standalone `legal()`, and every normal from-to move `legal()` accepts is in the list — catches drift perft can hide when two errors cancel in the count |
 | **givesCheck** | the prediction must match ground truth (play the move, ask `hasCheckers`, undo) for every legal move |
 | **SEE** | `seeGe` classifies a pawn taking an undefended queen as winning at increasing thresholds, and a queen taking a pawn-defended pawn as losing |
 | **Repetition** | a knights-out-and-back line returns to the start key and `hasRepeated` fires exactly when the cycle closes |

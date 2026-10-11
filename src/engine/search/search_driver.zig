@@ -231,7 +231,6 @@ const QCtx = search_ctx.QCtx;
 /// recursion call sites are unchanged; they live in the search_acc leaf.
 const verifyDoMove = search_acc.verifyDoMove;
 const verifyUndoMove = search_acc.verifyUndoMove;
-const legalContains = search_acc.legalContains;
 
 /// extractPonderFromTt: make the best move, probe the TT for a reply
 /// stored there, append it to the PV if it is a legal move, unmake. Return
@@ -246,9 +245,9 @@ pub fn extractPonderFromTt(pv: *RootPVMoves, table: [*]tt.TtCluster, cluster_cou
         const key = adjustKey50(pos);
         const probe = tt.probeTable(table, cluster_count, key, generation, q_depth_none);
         const ttm = probe.data.move16;
-        // No `ttm != 0` short-cut: upstream generates the legal list on every hit, and the
-        // call-count fingerprint holds zfish to the same work, not just the same answer.
-        if (probe.found != 0 and legalContains(pos_ptr, ttm)) {
+        // Test the stored move itself rather than search the legal list for it (upstream
+        // 400c23f97), so a hit with no move costs nothing.
+        if (probe.found != 0 and ttm != 0 and legal(pos_ptr, ttm)) {
             pv.pushBack(ttm);
         }
     }

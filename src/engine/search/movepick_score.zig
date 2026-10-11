@@ -27,10 +27,7 @@ const historyElemIndex = movepick_history.historyElemIndex;
 const pawnHistoryReadAt = movepick_history.pawnHistoryReadAt;
 const continuationHistoryReadAt = movepick_history.continuationHistoryReadAt;
 
-const movepick_snapshot = @import("movepick_snapshot.zig");
 const seeGe = @import("legality").seeGe;
-const pieceAt = movepick_snapshot.pieceAt;
-const attacksBy = movepick_snapshot.attacksBy;
 const bitboard = @import("bitboard");
 const position_types = @import("position_types");
 const Position = position_types.Position;
@@ -39,8 +36,6 @@ const movegen = @import("movegen");
 const captures: u8 = 0;
 const quiets: u8 = 1;
 const evasions: u8 = 2;
-const white: u8 = 0;
-const black: u8 = 1;
 
 const file_a_bb: u64 = 0x0101010101010101;
 const file_h_bb: u64 = file_a_bb << 7;
@@ -237,15 +232,15 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
         if (ply < low_ply_history_size)
             lowply_row = &context.low_ply_history.?[@as(usize, @intCast(ply))];
 
-        const them = otherColor(side_to_move);
+        // Read the threats the make already derived (upstream 400c23f97). They ray through
+        // our own king, which changes nothing here: a quiet list is never generated in check,
+        // so no enemy ray reaches that king.
+        const threats = &pos.st.threats;
         threat_by_lesser[pawn] = 0;
-        threat_by_lesser[knight] = attacksBy(pos, them, pawn);
+        threat_by_lesser[knight] = threats[pawn];
         threat_by_lesser[bishop] = threat_by_lesser[knight];
-        threat_by_lesser[rook] = attacksBy(pos, them, knight) |
-            attacksBy(pos, them, bishop) |
-            threat_by_lesser[knight];
-        threat_by_lesser[queen] = attacksBy(pos, them, rook) |
-            threat_by_lesser[rook];
+        threat_by_lesser[rook] = threats[knight] | threats[bishop] | threat_by_lesser[knight];
+        threat_by_lesser[queen] = threats[rook] | threat_by_lesser[rook];
         threat_by_lesser[king] = 0;
         check_squares = pos.st.check_squares;
     }
@@ -293,7 +288,7 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
                     continuationHistoryReadAt(cont3, hi) +
                     continuationHistoryReadAt(cont5, hi);
                 input.check_bonus = @intFromBool(
-                    // Read the cached enemy-king check rings (set_check_info, state_setup.zig:141)
+                    // Read the cached enemy-king check rings (state_setup.setExtraBitboards)
                     // instead of rebuilding the slider rings from magics on every quiet move --
                     // the recompute also carried a per-type switch (an indirect-branch mispredictor).
                     (check_squares[piece_type] & squareMask(to)) != 0 and
@@ -350,8 +345,8 @@ fn isCapture(pos: *const Position, raw_move: u16) bool {
         moveType(raw_move) == en_passant_move;
 }
 
-fn otherColor(color: u8) u8 {
-    return if (color == white) black else white;
+fn pieceAt(pos: *const Position, square: u8) u8 {
+    return pos.board[@as(usize, square)];
 }
 
 fn promotionType(raw_move: u16) u8 {
