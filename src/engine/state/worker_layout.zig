@@ -22,7 +22,7 @@ pub const worker_align: usize = 64;
 /// takes them as explicit slot widths, and the comptime block below asserts each
 /// against the type that fills it.
 pub const position_size: usize = 1064;
-pub const state_info_size: usize = 192;
+pub const state_info_size: usize = 232;
 /// Pin the ThreadPool footprint the pool buffer is calloc'd to; asserted below.
 pub const thread_pool_size: usize = 48;
 /// Equal nnue_acc_layout.arena_bytes (both state arrays + the trailing size field,

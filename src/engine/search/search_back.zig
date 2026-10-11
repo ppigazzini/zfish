@@ -45,7 +45,6 @@ const moveTypeOf = board_core.moveTypeOf;
 const hist_uint16 = worker_histories.hist_uint16;
 const legal = legality.legal;
 const seeGe = legality.seeGe;
-const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
 const sq_none = board_core.sq_none;
 comptime {
@@ -121,7 +120,7 @@ pub inline fn runBack(nd: anytype) i32 {
 
     var mp_state = movepick.MovePickerState{
         .tt_move_raw = nd.tt_move,
-        .stage = movepick.initMainStage(nd.pos.st.checkers_bb != 0, nd.tt_move != 0 and pseudoLegal(nd.pos_ptr, nd.tt_move), depth),
+        .stage = movepick.initMainStage(nd.pos.st.checkers_bb != 0, nd.tt_move != 0 and legal(nd.pos_ptr, nd.tt_move), depth),
         .threshold = 0,
         .depth = depth,
         .skip_quiets = 0,
@@ -154,12 +153,11 @@ pub inline fn runBack(nd: anytype) i32 {
     var captures_searched: [32]u16 = undefined;
     var n_captures: usize = 0;
 
-    // Step 14. Loop over moves.
+    // Step 14. Loop over the legal moves until none remain or one cuts off.
     while (true) {
         const move = movepick.nextMove(&mp_state, &mp_ctx);
         if (move == 0) break;
         if (move == nd.excluded_move) continue;
-        if (!legal(nd.pos_ptr, move)) continue;
         if (nd.root_node and !rootInList(nd.ctx, move)) continue;
 
         move_count += 1;

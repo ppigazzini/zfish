@@ -3,7 +3,7 @@
 // Own the mutating side of the board: applying and reverting moves on a live
 // Position -- do/undo-null, doMove/undoMove, the board+DirtyThreats mutators, and
 // putPiece. Every dependency is a leaf (board_core primitives, the zobrist keys,
-// state_setup.setCheckInfo, legality.attackersTo, plus the tt_types/shared_history_types/
+// state_setup.setExtraBitboards, legality.attackersTo, plus the tt_types/shared_history_types/
 // worker_histories POD leaves doMove's optional PrefetchBank reads), so move_do imports no
 // position.zig -- no cycle. position.zig re-exports the public entry points
 // (doMove/undoMove/doNullMove/undoNullMove/putPiece) so the search + FEN-setup
@@ -62,7 +62,7 @@ const pawnAttacks = board_core.pawnAttacks;
 const kingSquare = board_core.kingSquare;
 const fileOf = board_core.fileOf;
 const psqIdx = zobrist.psqIdx;
-const setCheckInfo = state_setup.setCheckInfo;
+const setExtraBitboards = state_setup.setExtraBitboards;
 const attackersTo = legality.attackersTo;
 
 inline fn pawnPush(c: u8) i16 {
@@ -89,7 +89,7 @@ pub fn doNullMove(pos_ptr: *Position, new_st_ptr: *StateInfo) void {
     pos.st.captured_piece = 0; // NO_PIECE
 
     pos.side_to_move ^= 1;
-    setCheckInfo(pos_ptr);
+    setExtraBitboards(pos_ptr);
     pos.st.repetition = 0;
 }
 
@@ -343,7 +343,7 @@ pub fn doMove(
     // key this move touches (material_key, pawn_key, minor_piece_key, non_pawn_key are
     // all already final above) is settled --
     // mirroring upstream's do_move (position.cpp:1006-1010). The checkers scan,
-    // setCheckInfo and the repetition walk still run below, which is free lead time for
+    // setExtraBitboards and the repetition walk still run below, which is free lead time for
     // these lines to arrive by the time the next node's probe/eval reads them. The
     // pre-make APPROXIMATE-key TT hint (search_acc.doMoveAcc, upstream search.cpp:642) is
     // issued separately and earlier, and is deliberately wrong for castling/en passant/
@@ -356,7 +356,7 @@ pub fn doMove(
     else
         0;
     pos.side_to_move ^= 1;
-    setCheckInfo(pos_ptr);
+    setExtraBitboards(pos_ptr);
 
     new_st.repetition = 0;
     const end = @min(new_st.rule50, new_st.plies_from_null);

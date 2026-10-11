@@ -168,11 +168,13 @@ test "FEN parse -> format round-trips" {
     try checkFenRoundTrip(kiwipete_fen);
 }
 
-/// Cross-check the movegen and legality leaves against each other: every move the
-/// generator emits as legal must also be accepted by the standalone legal() and
-/// pseudoLegal() predicates. A disagreement means the extracted legality leaf
-/// drifted from the generator's own legality filter (or vice versa) -- a class of
-/// bug perft can hide when two errors cancel in the count.
+/// Cross-check the movegen and legality leaves in BOTH directions: every move the generator
+/// emits must satisfy legal(), and every normal from-to move legal() accepts must be in the
+/// generated list. No list is filtered after generation, so the generator's pin, check and
+/// king-safety masks ARE the legality test, while legal() answers the same question for a TT
+/// move by a separate path -- a drift between the two is a bug perft can hide when two errors
+/// cancel in the count. Check the root and every child, so the masks also meet positions in
+/// check and with fresh pins.
 fn checkMoveGenLegalityAgree(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -180,17 +182,33 @@ fn checkMoveGenLegalityAgree(fen: []const u8) !void {
         std.heap.c_allocator.free(err);
         @panic("checkMoveGenLegalityAgree: setPosition failed on a known-legal FEN");
     }
-    const pp = &p;
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
     try std.testing.expect(n > 0);
-    for (0..n) |i| {
-        try std.testing.expect(position.legal(pp, moves[i]));
-        try std.testing.expect(position.pseudoLegal(pp, moves[i]));
+    try checkLegalityAgreesAt(&p);
+    for (moves[0..n]) |m| {
+        var new_st: position.StateInfo align(16) = undefined;
+        position.doMoveState(&p, m, &new_st);
+        try checkLegalityAgreesAt(&p);
+        position.undoMove(&p, m);
     }
 }
 
-test "generated legal moves satisfy legal() and pseudoLegal()" {
+fn checkLegalityAgreesAt(p: *const position.Position) !void {
+    var moves: [256]u16 = undefined;
+    const list = moves[0..movegen.generateLegal(p, &moves)];
+    for (list) |m| try std.testing.expect(position.legal(p, m));
+    for (0..64) |from| {
+        for (0..64) |to| {
+            if (from == to) continue;
+            const m: u16 = @intCast((from << 6) | to);
+            const generated = std.mem.findScalar(u16, list, m) != null;
+            try std.testing.expectEqual(generated, position.legal(p, m));
+        }
+    }
+}
+
+test "generated legal moves and legal() agree in both directions" {
     position.initRuntime();
     try checkMoveGenLegalityAgree(start_fen);
     try checkMoveGenLegalityAgree(kiwipete_fen);

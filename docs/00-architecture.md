@@ -195,7 +195,7 @@ time_source.now = &clock.now;
 This is dependency injection through function pointers — the reason the graph below
 `main` is acyclic by construction, and how `engine/` reaches an OS clock while
 importing no platform module. `main.zig` registers most hooks; `position.zig`
-self-registers the two it owns. `zig build hook-lint` bounds them: it ratchets the
+self-registers the one it owns. `zig build hook-lint` bounds them: it ratchets the
 count and requires each to declare its failure mode when unregistered. See
 `src/platform/runtime_hooks.zig` and the `//! hook-class:` headers.
 

@@ -211,6 +211,22 @@ pub fn line(s1: u8, s2: u8) u64 {
     return line_bb[s1][s2];
 }
 
+/// Hold the two diagonals through each square, the square included -- upstream's DiagBB
+/// (north-east to south-west) and AntiDiagBB (north-west to south-east). Legal move
+/// generation reads them to let a pawn pinned along one of them capture along it.
+const diag_bb = bitboard_geom.diagonalTable(.diag);
+const anti_diag_bb = bitboard_geom.diagonalTable(.anti_diag);
+
+/// Return the north-east/south-west diagonal through `s`, `s` included.
+pub fn diag(s: u8) u64 {
+    return diag_bb[s];
+}
+
+/// Return the north-west/south-east diagonal through `s`, `s` included.
+pub fn antiDiag(s: u8) u64 {
+    return anti_diag_bb[s];
+}
+
 /// Return RayPassBB[s1][s2]: from s1's attacks along the s1-s2 line, the squares at or
 /// beyond s2 (s1 removed from the occupancy). Mirrors the upstream init formula.
 pub fn rayPass(s1: u8, s2: u8) u64 {

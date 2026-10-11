@@ -10,9 +10,9 @@
 # and each one passes over a state divergence that happens not to move a node count on the
 # positions it drives. The sibling C port had two real defects living behind that all-green
 # wall (a `ucinewgame` that discarded the position, and a mate/stalemate root that skipped
-# the per-worker reset), and BOTH surfaced here as one call of difference in set_check_info.
-# zfish reads 165,082 -- upstream's value, so it has neither -- but the check is what
-# proves that rather than the reading of two files.
+# the per-worker reset), and BOTH surfaced here as one call of difference in set_check_info
+# (set_extra_bitboards since 400c23f97). zfish read 165,082 -- upstream's value, so it has
+# neither -- but the check is what proves that rather than the reading of two files.
 #
 # CHOOSE SYMBOLS THAT SURVIVE INLINING ON BOTH SIDES. A group whose regex matches nothing
 # on one side, or on both, is a MISS and fails, because a silent zero would read as
@@ -25,7 +25,7 @@
 # has, and then the row is comparing the harness rather than the component. The optional
 # third field is a regex subtracted from that row on each side, so each engine nets out its
 # OWN count -- never a hard-coded difference, which would rot the moment the bench list
-# changed length. `set_check_info` is the case: see its row.
+# changed length. `set_extra_bitboards` is the case: see its row.
 #
 # NARROWING A ROW IS ALLOWED; SILENTLY SUMMING IS NOT. Where a compiler inlines one
 # instantiation away on one side only, the row must not go on adding the surviving symbols
@@ -44,13 +44,13 @@ gives_check	legality\.givesCheck$|Position::gives_check
 see_ge	legality\.seeGe$|Position::see_ge
 # Upstream hands each worker its root by round-tripping the FEN -- `rootPos.set(pos.fen(), ..)`
 # (thread.cpp) -- so every `go` costs an extra `Position::set` -> `set_state` ->
-# `set_check_info`. zfish copies the Position struct and repoints `st` instead
+# `set_extra_bitboards`. zfish copies the Position struct and repoints `st` instead
 # (platform/thread.zig), which is why its own comment records the bug that re-parsing
 # caused. Same root, one fewer derivation: 103 setups against 52 at bench 16 1 8, and the
 # row read 172,552 vs 172,501 for that reason alone. Subtracting each side's OWN setup
 # count leaves the IN-SEARCH derivations, which is what this row is the canary for, and
 # they agree exactly: 172,449 == 172,449 (do_move 170,508 + do_null_move 1,941).
-set_check_info	state_setup\.setCheckInfo$|Position::set_check_info	state_setup\.setState$|Position::set_state
+set_extra_bitboards	state_setup\.setExtraBitboards$|Position::set_extra_bitboards	state_setup\.setState$|Position::set_state
 do_move	move_do\.doMove$|Position::do_move\(Stockfish::Move, Stockfish::StateInfo&, bool
 undo_move	move_do\.undoMove$|Position::undo_move
 do_null_move	move_do\.doNullMove$|Position::do_null_move

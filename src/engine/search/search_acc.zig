@@ -1,9 +1,8 @@
 // Provide node-level accumulator / do-move / eval helpers. The small QCtx-carrying
 // primitives the qsearch/search recursion calls per node: the seldepth read, the NNUE
-// evaluate, the accumulator-slot do_move/undo_move, the verify
-// make/unmake, and the legal-move membership test. None call back into the
-// recursion, so this is a std-free leaf over the board/eval leaves + the search_ctx
-// QCtx; search_driver imports it one-way.
+// evaluate, the accumulator-slot do_move/undo_move, and the verify make/unmake. None call
+// back into the recursion, so this is a std-free leaf over the board/eval leaves + the
+// search_ctx QCtx; search_driver imports it one-way.
 
 const build_options = @import("build_options");
 const network_port = @import("network");
@@ -14,7 +13,6 @@ const legality = @import("legality");
 const search_common = @import("search_common");
 const history_mod = @import("history");
 const board_core = @import("board_core");
-const movegen = @import("movegen");
 const position_types = @import("position_types");
 const search_types = @import("search_types");
 const search_ctx = @import("search_ctx");
@@ -150,14 +148,4 @@ pub inline fn verifyDoMove(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) vo
 
 pub inline fn verifyUndoMove(pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
-}
-
-/// Test whether `move` is in the legal move list of the current position.
-pub fn legalContains(pos_ptr: *const Position, move: u16) bool {
-    var buf: [256]u16 = undefined;
-    const n = movegen.generateLegal(pos_ptr, &buf);
-    for (0..n) |i| {
-        if (buf[i] == move) return true;
-    }
-    return false;
 }

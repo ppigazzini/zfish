@@ -181,6 +181,39 @@ pub fn lsb(bitboard: u64) usize {
     return @ctz(bitboard);
 }
 
+pub const Diagonal = enum { diag, anti_diag };
+
+/// Build, at comptime, the diagonal of `kind` through every square, the square included:
+/// `.diag` runs north-east to south-west (file - rank constant), `.anti_diag` north-west to
+/// south-east (file + rank constant).
+pub fn diagonalTable(comptime kind: Diagonal) [64]u64 {
+    @setEvalBranchQuota(100_000);
+    var table: [64]u64 = undefined;
+    for (0..64) |s| {
+        var b: u64 = 0;
+        for (0..64) |q| {
+            const on = switch (kind) {
+                .diag => fileOf(q) + rankOf(s) == fileOf(s) + rankOf(q),
+                .anti_diag => fileOf(q) + rankOf(q) == fileOf(s) + rankOf(s),
+            };
+            if (on) b |= squareBb(q);
+        }
+        table[s] = b;
+    }
+    return table;
+}
+
+test "diagonalTable: the two diagonals cross only at their square and span the bishop's reach" {
+    const d = comptime diagonalTable(.diag);
+    const a = comptime diagonalTable(.anti_diag);
+    for (0..64) |s| {
+        try std.testing.expectEqual(squareBb(s), d[s] & a[s]);
+        try std.testing.expectEqual(slidingAttack(.bishop, s, 0) | squareBb(s), d[s] | a[s]);
+    }
+    try std.testing.expectEqual(@as(u64, 0x8040201008040201), d[0]); // a1-h8
+    try std.testing.expectEqual(@as(u64, 0x0102040810204080), a[7]); // h1-a8
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }

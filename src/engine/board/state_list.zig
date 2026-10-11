@@ -11,7 +11,7 @@
 //     must never change once handed out. Here every StateInfo is its own heap
 //     allocation, which is strictly pointer-stable.
 //
-// Treat StateInfo as an opaque 192-byte POD block (worker_layout.state_info_size);
+// Treat StateInfo as an opaque 232-byte POD block (worker_layout.state_info_size);
 // the runtime memsets/fills it via Position, so this module owns lifetime +
 // ordering only, not StateInfo's internals.
 
@@ -20,12 +20,12 @@ const position_types = @import("position_types");
 
 /// Alias the typed StateInfo the engine fills through Position. This module owns
 /// its lifetime + ordering only, not its internals, but the handles it hands out are
-/// now typed `*StateInfo` rather than `*anyopaque`. @sizeOf(StateInfo) == 192, pinned
+/// now typed `*StateInfo` rather than `*anyopaque`. @sizeOf(StateInfo) == 232, pinned
 /// in position_types + worker_layout, so the per-record heap block is exactly one.
 pub const StateInfo = position_types.StateInfo;
 
-/// Define the StateInfo block size. Pinned by worker_layout.zig (state_info_size = 192).
-pub const state_info_size: usize = 192;
+/// Define the StateInfo block size. Pinned by worker_layout.zig (state_info_size = 232).
+pub const state_info_size: usize = 232;
 pub const state_info_align: usize = 8;
 
 comptime {
@@ -271,8 +271,8 @@ test "reset drops to a single fresh root and zeroes it" {
 }
 
 test "state_info_size matches the pinned StateInfo footprint" {
-    // Check state_info_size is pinned to 192 by worker_layout.zig.
-    try testing.expectEqual(@as(usize, 192), state_info_size);
+    // Check state_info_size is pinned to 232 by worker_layout.zig.
+    try testing.expectEqual(@as(usize, 232), state_info_size);
 }
 
 // Prove the allocation error paths actually unwind. std.testing

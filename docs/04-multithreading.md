@@ -205,7 +205,7 @@ nothing against anything else. Reaching for a stronger order would buy no correc
 would cost the sharing its point.
 
 What makes that safe is that **no relaxed reader trusts what it reads**. A TT entry is
-validated by its `key16`; a TT move is re-checked with `pseudoLegal` before it is played;
+validated by its `key16`; a TT move is re-checked with `legal` before it is played;
 a history value is a heuristic score with no legality meaning. The invariant to preserve
 when adding shared state is that one, not the ordering: a relaxed read must be checkable
 by the reader, or it needs a different mechanism.
