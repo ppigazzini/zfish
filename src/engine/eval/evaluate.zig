@@ -67,17 +67,19 @@ pub fn scaleEvaluation(input: EvalInput) i32 {
     // Normalize both to [-1024, 1024] to measure their correlation.
     const se_norm = @divTrunc(se * 1024, absInt(se) + 1024);
     const nnue_norm = @divTrunc(nnue * 1024, absInt(nnue) + 1024);
-    // Agreement means a straightforward position, disagreement a complex compensation.
-    const alignment = @divTrunc(se_norm * nnue_norm, 512);
+    // Agreement (positive correlation) means a straightforward position, disagreement
+    // (negative) a complex compensation.
+    const correl = @divTrunc(se_norm * nnue_norm, 512);
 
-    // When winning, favor easy positions, and vice versa.
-    const base_eval = nnue + @divTrunc(nnue * alignment, 65536) +
-        @divTrunc(input.optimism * alignment, 16384);
+    // When winning, boost easy positions, and vice versa.
+    var v = nnue + @divTrunc(nnue * correl, 65536) + @divTrunc(input.optimism * correl, 16384);
 
-    // Scale the combined evaluation by total material.
+    // Scale the combined evaluation by total material. `v * (90649 + material) / 90649` is the
+    // same integer: material is never negative, so `v * material` shares v's sign and the
+    // truncation toward zero cannot round the two terms apart.
     const material = 521 * (input.pawn_count[0] + input.pawn_count[1]) +
         input.non_pawn_material[0] + input.non_pawn_material[1];
-    var v: i32 = @intCast(@divTrunc(@as(i64, base_eval) * (90649 + material), 90649));
+    v += @intCast(@divTrunc(@as(i64, material) * v, 90649));
 
     // Damp the evaluation down linearly when shuffling.
     v -= @divTrunc(v * input.rule50_count, 189);

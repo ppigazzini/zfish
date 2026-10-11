@@ -284,7 +284,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         // Case B: the depth was deep enough, so the bound points the wrong way -- Case A
         // failed on its bound test alone, since depth > 5 already clears its `depth > 4`.
         // upstream 319d61eff: if that mismatch is the only reason the cutoff failed,
-        // penalize the now-useless tte (decrement its stored depth).
+        // penalize the now-useless tte (decrement its stored depth). (*Scaler) This is very
+        // close to secondary aging, a known antiscaler; the depth and window conditions seem
+        // to be what keeps it scaling.
         else if (depth > 5) {
             std.debug.assert((tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) == 0);
             tt.entryPenalize(writer, 1);

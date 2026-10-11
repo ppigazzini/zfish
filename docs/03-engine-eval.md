@@ -515,12 +515,13 @@ no longer depends on the bucket.
 `evaluate.zig` turns it into the final score. `scaleEvaluation` is upstream's
 `scale_evaluation`. It normalises the net value and `simpleEval` (the side to move's material
 balance, `208 * pawn difference + non-pawn difference`) each into [-1024, 1024] with
-`x * 1024 / (|x| + 1024)`, takes their product over 512 as the ALIGNMENT, and adds
-`nnue * alignment / 65536 + optimism * alignment / 16384` to the net value — agreement
+`x * 1024 / (|x| + 1024)`, takes their product over 512 as the CORRELATION, and adds
+`nnue * correl / 65536 + optimism * correl / 16384` to the net value — agreement
 between the net and material favours the side that is winning, disagreement the one
-that is not. That sum is scaled by `(90649 + material) / 90649`, with material
-`521 * pawns + non-pawn material` over both colours, damped by `rule50 / 189`, and
-clamped inside the TB bounds. Every step is C++ `int` arithmetic with truncating
+that is not. That sum `v` grows by `material * v / 90649`, with material
+`521 * pawns + non-pawn material` over both colours — the same integer as scaling by
+`(90649 + material) / 90649`, since material is never negative — then is damped by
+`rule50 / 189` and clamped inside the TB bounds. Every step is C++ `int` arithmetic with truncating
 division, `i64` only for the material product where upstream casts to it. The search
 calls it through `search_acc.evaluateAcc`, and the `eval` trace with zero optimism;
 both hand it the position's pawn counts and non-pawn material rather than a
