@@ -102,7 +102,7 @@ emits the final PV and `bestmove`.
 `iterativeDeepening` allocates the `SearchStack` array on the Zig stack — sized
 `max_ply + 10`, with the root at index 7 and **seven sentinel frames beneath it** — then
 loops on depth. The sentinels are not padding: a node reads its ancestors unconditionally,
-without a ply test. `updateContinuationHistories` walks `ss-1 … ss-6`, and the correction
+without a ply test. `updateContinuationHistories` reaches back to `ss-6`, and the correction
 path reads `ss-2`, `ss-4` and `ss-6`, so a node at ply 0 or 1 would index below the array if
 the frames were not there. Each sentinel is initialized the way a real frame would be if
 nothing had been played — `setContHist` with all-`NO_PIECE` indices, which resolves to the
@@ -395,8 +395,9 @@ All history entries update by the same gravity rule, `search_common.statsUpdate`
 `v += clamped - v * |clamped| / D`, which pulls the entry toward `[-D, D]`.
 `history.zig` owns every write. `updateAllStats` credits the best move and debits the
 searched-but-rejected quiets and captures, with a running malus decay;
-`updateContinuationHistories` walks the `ss-1 .. ss-6` pages with per-distance
-weights, stopping after `ss-2` when in check.
+`updateContinuationHistories` walks the `ss-1 .. ss-4` and `ss-6` pages with
+per-distance weights, stopping after `ss-2` when in check. `ss-5` is not walked: move
+ordering stopped reading it first, and the update followed.
 
 **Correction history** adjusts the raw NNUE eval into `ss.static_eval`.
 `qCorrectionValue` gathers the four shared correction values plus the `ss-2`, `ss-4` and

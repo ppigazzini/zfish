@@ -117,12 +117,13 @@ pub fn quietPawnScale(bonus: i32) i32 {
 
 /// Index the continuation-history positive-consistency multipliers by the
 /// running positiveCount in update_continuation_histories.
-const cmhc_multipliers = [_]i32{ 94, 103, 110, 106, 119, 126, 121 };
+const cmhc_multipliers = [_]i32{ 94, 103, 110, 106, 119, 126 };
 
-/// Ply offsets and per-step weights of update_continuation_histories' six steps -- the
-/// source of truth a tuner edits. history.zig walks them.
-pub const conthist_steps = [6]u8{ 1, 2, 3, 4, 5, 6 };
-const conthist_weights = [6]i32{ 520, 390, 145, 251, 66, 209 };
+/// Ply offsets and per-step weights of update_continuation_histories' five steps -- the
+/// source of truth a tuner edits. history.zig walks them. Ply 5 is not one: its read left
+/// move ordering first, and its update followed (upstream a43f36824).
+pub const conthist_steps = [5]u8{ 1, 2, 3, 4, 6 };
+const conthist_weights = [conthist_steps.len]i32{ 520, 390, 145, 251, 209 };
 
 /// The step's WEIGHT and the consistency MULTIPLIER are ONE table, folded here at
 /// comptime. The weight is a constant of the step and the multiplier a runtime index, so
@@ -140,8 +141,8 @@ const conthist_weights = [6]i32{ 520, 390, 145, 251, 66, 209 };
 /// below), and SAYING so is what lets the caller's clamp fold: with `multiplier < 65536`
 /// and a bounded bonus, `bonus * multiplier / 65536` provably cannot leave the history
 /// limit, so `statsUpdateValue`'s @max/@min collapse in the hot arm.
-const conthist_scale: [6][cmhc_multipliers.len]u16 = blk: {
-    var table: [6][cmhc_multipliers.len]u16 = undefined;
+const conthist_scale: [conthist_steps.len][cmhc_multipliers.len]u16 = blk: {
+    var table: [conthist_steps.len][cmhc_multipliers.len]u16 = undefined;
     for (conthist_weights, 0..) |weight, step| {
         for (cmhc_multipliers, 0..) |multiplier, count| {
             const folded = weight * multiplier;

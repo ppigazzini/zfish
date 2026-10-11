@@ -215,7 +215,7 @@ pub fn updateQuietHistories(
 
 /// Split the walk on whether the bonus is small enough that the per-entry clamp cannot fire.
 /// `conthistDelta` is `bonus * multiplier / 65536 + 73` with `multiplier` a u16, so a bonus
-/// inside +/-(limit - 73) can never leave the limit -- and with that stated, the six inlined
+/// inside +/-(limit - 73) can never leave the limit -- and with that stated, the five inlined
 /// `statsUpdateValue` clamps fold away instead of costing a @max/@min pair each. The wide arm
 /// is the SAME loop, out of line: it is reachable (nothing bounds the bonus upstream either)
 /// and it must stay bit-identical, which it is, being the same code.
