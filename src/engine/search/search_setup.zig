@@ -18,7 +18,7 @@ const SearchTimeState = search_ctx.SearchTimeState;
 /// Fetch the Worker state the inlined search needs one-shot, all stable for the
 /// duration of one search tree. Keep live (mutable) fields as pointers into the Worker;
 /// null the main-thread-only time-management fields on helper threads.
-fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]i32, out_nmp_min_ply: *?*i32, out_sel_depth: *?*i32, out_root_depth: *?*i32, out_reductions: *?[*]const u16, out_root_delta: *?*const i32, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
+fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]i32, out_nmp_min_ply: *?*i32, out_sel_depth: *?*i32, out_root_depth: *?*i32, out_reductions: *?[*]const u16, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
     // Erase the NNUE arenas here -- raw byte buffers embedded in the worker; this is their
@@ -31,7 +31,6 @@ fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_a
     out_sel_depth.* = &wl.sel_depth;
     out_root_depth.* = &wl.root_depth;
     out_reductions.* = &wl.reductions;
-    out_root_delta.* = &wl.root_delta;
     // Coerce mut->const with no cast -- one canonical PVMoves now.
     out_last_iter_pv.* = &wl.last_iteration_pv;
     out_stop.* = stop;
@@ -71,7 +70,6 @@ pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: [*]tt_types.TtCluste
     var sel_depth: ?*i32 = null;
     var root_depth: ?*i32 = null;
     var reductions: ?[*]const u16 = null;
-    var root_delta: ?*const i32 = null;
     var last_iter_pv: ?*const PVMoves = null;
     var stop: ?*const u8 = null;
     var pv_idx: ?*const usize = null;
@@ -79,7 +77,7 @@ pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: [*]tt_types.TtCluste
     var pv_last: ?*const usize = null;
     var best_move_changes: ?*u64 = null;
     var time_state: SearchTimeState = undefined;
-    searchCbWorkerState(worker, &acc_stack, &nodes, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
+    searchCbWorkerState(worker, &acc_stack, &nodes, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
     return .{
         .worker = worker,
         .table = table,
@@ -93,7 +91,6 @@ pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: [*]tt_types.TtCluste
         .sel_depth = sel_depth.?,
         .root_depth = root_depth.?,
         .reductions = reductions.?,
-        .root_delta = root_delta.?,
         .last_iter_pv = last_iter_pv.?,
         .stop = stop.?,
         .pv_idx = pv_idx.?,

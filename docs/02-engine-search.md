@@ -146,7 +146,7 @@ relative to the current ply through `ssAdd`/`ssSub` (`search_qsearch.zig`):
 It is built once per search by `search_setup.buildCtx`, which snapshots the worker's
 live member pointers — the accumulator stack, the node counter, the refresh cache,
 `optimism`, `nmp_min_ply`, `sel_depth`, `root_depth`, the reductions table,
-`root_delta`, the last-iteration PV, the shared stop flag, the root-move array — plus
+the last-iteration PV, the shared stop flag, the root-move array — plus
 a `SearchTimeState`, whose main-thread-only fields are null on helper threads. Nothing
 in the recursion re-walks the worker graph.
 
@@ -242,8 +242,9 @@ depth. That shortening outlives the iteration: `fail_high_recovery` is set from 
 fail-high count when the first PV line finishes and sheds two plies per later iteration,
 so the depth climbs back gradually instead of snapping to full. Both the set and the decay
 are gated on `pv_idx == 0`, so the later MultiPV lines neither pay it nor reset it.
-`aspirationDeltaGrow` widens `delta` each time round. `root_delta` is republished
-every iteration because Step 15's pruning margins scale with the window width.
+`aspirationDeltaGrow` widens `delta` each time round. The window's width reaches no
+node: LMR discounts a PV node by a flat 512 instead of scaling with it, so a failing
+aspiration no longer shrinks the search effort beneath it.
 
 ## Quiescence
 

@@ -190,7 +190,6 @@ pub fn searchIdState(wl: *worker_layout.WorkerLayout, out: *ZfishIdState) void {
     out.pv_last = &wl.pv_last;
     out.sel_depth = &wl.sel_depth;
     out.root_depth = &wl.root_depth;
-    out.root_delta = &wl.root_delta;
     out.optimism = &wl.optimism;
     out.nodes = &wl.nodes;
     out.threads = tp;

@@ -83,7 +83,6 @@ pub const WorkerLayout = struct {
     nmp_min_ply: i32,
     optimism: [2]i32,
     root_depth: i32,
-    root_delta: i32,
     thread_idx: usize,
     numa_thread_idx: usize,
     numa_total: usize,
@@ -99,7 +98,7 @@ pub const WorkerLayout = struct {
     // its per-node scalars (nodes, sel_depth, optimism, ...) adjacent; a plain Zig struct
     // sorted these four in among the scalars by their own natural alignment, splitting
     // nodes/tb_hits/best_move_changes (needed every node) from sel_depth/optimism/root_depth/
-    // root_delta/reductions (also needed every node) by ~1.8 KB -- root_pos (1064B) and
+    // reductions (also needed every node) by ~1.8 KB -- root_pos (1064B) and
     // root_state (192B) alone sat between them. align(64) opts each field out of its natural
     // class instead, so the scalar fields above and below this block close the gap. Costs
     // nothing: none of these four is read inside the node recursion (root_pos/root_state are
@@ -148,7 +147,6 @@ pub const worker_off = struct {
     pub const root_state = @offsetOf(WorkerLayout, "root_state");
     pub const root_moves = @offsetOf(WorkerLayout, "root_moves");
     pub const root_depth = @offsetOf(WorkerLayout, "root_depth");
-    pub const root_delta = @offsetOf(WorkerLayout, "root_delta");
     pub const last_iteration_pv = @offsetOf(WorkerLayout, "last_iteration_pv");
     pub const thread_idx = @offsetOf(WorkerLayout, "thread_idx");
     pub const numa_thread_idx = @offsetOf(WorkerLayout, "numa_thread_idx");

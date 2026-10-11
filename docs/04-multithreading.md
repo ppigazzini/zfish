@@ -177,7 +177,7 @@ binding, not a design.
 | Accumulator stack, refresh table | Per-worker | `WorkerLayout.accumulator_stack`, `.refresh_table` |
 | Reductions table | Per-worker | `WorkerLayout.reductions` |
 | Root position, root state, root moves, PV, `last_iteration_pv` | Per-worker | `WorkerLayout.root_pos` / `.root_state` / `.root_moves` / `.last_iteration_pv` |
-| `nodes`, `tb_hits`, `best_move_changes`, `sel_depth`, `root_depth`, `root_delta`, `optimism`, `nmp_min_ply` | Per-worker (read across threads only for aggregation) | `WorkerLayout` |
+| `nodes`, `tb_hits`, `best_move_changes`, `sel_depth`, `root_depth`, `optimism`, `nmp_min_ply` | Per-worker (read across threads only for aggregation) | `WorkerLayout` |
 | `limits`, `tb_config` | Per-worker copy, written identically by `applyRootSetup` | `WorkerLayout.limits`, `.tb_config` |
 | `SearchManager` (time management, `ponder`, `stop_on_ponderhit`) | Per-worker, meaningful only on thread 0 | `WorkerLayout.manager` |
 | `thread_idx`, `numa_thread_idx`, `numa_total`, `numa_access_token` | Per-worker identity | `WorkerLayout`, written by `worker_construct` |
