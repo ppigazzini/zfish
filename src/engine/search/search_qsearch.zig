@@ -225,9 +225,11 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
             best_value = ss.static_eval;
         }
 
-        // Stand pat.
+        // Stand pat. best_value is the clamped static eval or a TT value that passed
+        // !qIsDecisive above, so it is never decisive here.
         if (best_value >= beta) {
-            if (!qIsDecisive(best_value)) best_value = search.qsearchStandPatBlend(best_value, beta);
+            std.debug.assert(!qIsDecisive(best_value));
+            best_value = search.qsearchStandPatBlend(best_value, beta);
             if (!ss.tt_hit)
                 tt.entrySave(writer, pos_key, q_value_none, 0, q_bound_lower, q_depth_unsearched, q_depth_none, 0, unadjusted_static_eval, ctx.generation);
             return best_value;

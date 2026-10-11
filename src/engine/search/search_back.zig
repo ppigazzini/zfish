@@ -377,7 +377,8 @@ pub inline fn runBack(nd: anytype) i32 {
             const row = pawnEntryRow(sharedOf(nd.w), nd.pos);
             statsUpdate(&row[@as(usize, nd.pos.board[psq]) * 64 + psq], search.priorPawnhistScale(scaled_bonus), pawn_history_limit);
         }
-    } else if (nd.prior_capture and nd.prev_sq != @as(i32, sq_none)) {
+    } else if (nd.prev_sq != @as(i32, sq_none)) {
+        std.debug.assert(nd.prior_capture);
         const psq: u8 = @intCast(nd.prev_sq);
         statsUpdate(captEntry(nd.w, nd.pos.board[psq], psq, nd.pos.st.captured_piece & 7), 892, capture_history_limit);
     }

@@ -286,12 +286,12 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 } else return tt_value;
             }
         }
-        // Case B: the depth was deep enough but the bound was not. upstream 319d61eff: if a
-        // window-bound mismatch is the only reason the cutoff failed, penalize the now-useless
-        // tte (decrement its stored depth).
-        else if (tt_bound != (q_bound_lower | q_bound_upper) and
-            (tt_bound & (if (tt_value >= beta) q_bound_upper else q_bound_lower)) != 0 and depth > 5)
-        {
+        // Case B: the depth was deep enough, so the bound points the wrong way -- Case A
+        // failed on its bound test alone, since depth > 5 already clears its `depth > 4`.
+        // upstream 319d61eff: if that mismatch is the only reason the cutoff failed,
+        // penalize the now-useless tte (decrement its stored depth).
+        else if (depth > 5) {
+            std.debug.assert((tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) == 0);
             tt.entryPenalize(writer, 1);
         }
     }

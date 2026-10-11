@@ -263,8 +263,9 @@ that matter:
   early return, which searched nothing at all.
 - **Stand pat.** Not in check, the static eval is a lower bound on the node — the side to
   move may simply decline every capture. If it already clears `beta` the node returns
-  immediately, blended by `qsearchStandPatBlend` when the value is not decisive, and stores
-  a lower-bound entry when the probe missed. Otherwise it raises `alpha`. **In check there
+  immediately, blended by `qsearchStandPatBlend` — the value is the clamped static eval or a
+  TT value already refused when decisive, so the blend always applies — and stores a
+  lower-bound entry when the probe missed. Otherwise it raises `alpha`. **In check there
   is no stand pat**: `best_value` starts at `-value_inf`, because declining is not legal
   and every evasion must be searched or the node would claim a bound it has not proved.
 - **Captures only, evasions when in check.** `initMainStage` is handed `depth_qs`, which
