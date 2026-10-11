@@ -75,7 +75,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     // (options Hash default / headless setup), and an unsized table could not
     // complete a single node anyway (the first entrySave writes through the
     // probe's writer pointer). This trap fires at setup instead.
-    const ctx = buildCtx(wl, table.?, cc, gen);
+    var ctx = buildCtx(wl, table.?, cc, gen);
 
     var pv: PVMoves = undefined;
     pv.length = 0;
@@ -187,6 +187,11 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             const avg = id.root_moves[id.pv_idx.*].average_score;
             var alpha = @max(avg - delta, -q_value_inf);
             var beta = @min(avg + delta, q_value_inf);
+
+            // Ask once per root line, not per node, whether this line is hunting a mate
+            // (upstream 513ce0752): the answer holds through every aspiration re-search.
+            ctx.seek_mate = search.seekMate(id.root_depth.*, id.root_moves[id.pv_idx.*].score);
+
             id.optimism[us] = search.optimism(avg);
             id.optimism[us ^ 1] = -id.optimism[us];
 

@@ -193,25 +193,29 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 | 7 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
 | 8 | **Razoring**: an allNode whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch — a fail-low cutoff, so it is taken at the node type opposite to null-move pruning's cutNode — stood down while `seekMate` holds, so a mate hunt is not razored away |
 | 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(seek_mate)` — 19 normally, 6 while `seekMate` holds, so mating lines stay searched |
-| 10 | **Null move** (below) |
+| 10 | **Null move** (below); its reduction halves while `seekMate` holds |
 | 11 | **Internal iterative reduction**: with no TT move, off the followed PV (`!ss.follow_pv`), not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
-| 12–13 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
+| 12–13 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea, stood down while `seekMate` holds |
 | 14 | The move loop — `movepick.nextMove` per move (below) |
 | 15 | Prune at shallow depth: late-move, futility, SEE and history pruning per move |
 | 16 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds; a probe that instead fails high over beta multi-cuts the node (below). Skipped while `seekMate` holds |
-| 17–21 | Make; compute and apply LMR, then a full-depth search on a fail-high and a full-window PV search on the first move; unmake |
+| 17–21 | Make; compute and apply LMR — while `seekMate` holds, a quarter more for a non-checking move and a quarter less for a checking one — then a full-depth search on a fail-high and a full-window PV search on the first move; unmake |
 | 22–24 | Record a new best move; resolve mate/stalemate and the fail-high bookkeeping; write the entry to the TT |
 
-**`seekMate`** is the one predicate two steps share, and it is the only one read from the
-ROOT rather than from the node. `search.seekMate(root_depth, root_moves[pv_idx].score)`
-holds once the line under examination scores past `750 + 220000 / root_depth²` — a curve
+**`seekMate`** is the one predicate read from the ROOT rather than from the node. The
+iterative-deepening loop asks `search.seekMate(root_depth, root_moves[pv_idx].score)` once
+per root line, before its aspiration searches, and leaves the answer in `QCtx.seek_mate`,
+so every re-search of the line reads the same value however the root move's score moves
+in between. It holds once the line scores past `750 + 220000 / root_depth²` — a curve
 that falls from 2950 at depth 10 through 1609 at 16 towards 750, so a decisive win or a
 mate, in either direction, triggers it sooner the deeper the root has gone. It replaced a
 step (depth 16 and a flat 2000) that a line evaluated just under 2000 could sit beneath
-for every iteration. While it holds, Step 9's futility cutoff drops from
-depth 19 to 6 and Step 16's singular extension stands down entirely, so the tree stops
-re-proving the moves around a line the root has already resolved and collapses onto the
-line itself. An unscored root move (`-value_inf`, 32001) clears the curve from depth 3;
+for every iteration. While it holds the search narrows onto forcing lines: razoring
+(Step 8) and the deep-ProbCut return (Step 13) stand down, futility (Step 9) cuts off at
+depth 6 instead of 19, the null move (Step 10) halves its reduction, the singular
+extension (Step 16) stands down, and LMR reduces a non-checking move a quarter more and a
+checking move a quarter less — so the tree stops re-proving the moves around a line the
+root has already resolved and collapses onto the line itself. An unscored root move (`-value_inf`, 32001) clears the curve from depth 3;
 the PV line is scored by the iteration before, so reading it as a mate hunt is upstream's
 behaviour, not an edge case to guard.
 
@@ -221,7 +225,8 @@ excluded move, with non-pawn material for the side to move, at or above
 `ctx.nmp_min_ply`, and with `nullMoveBetaOk(beta)` — a flat `beta >= -2000` floor rather
 than the `!isLoss(beta)` test the other steps use. The stricter floor is load-bearing:
 `nullMoveReduction` scales `R` with how far the static eval clears beta, and without it
-that deeper reduction costs mate finds when beta is already in decisive territory.
+that deeper reduction costs mate finds when beta is already in decisive territory. While
+`seekMate` holds, `R` is halved after it is computed.
 `doNullMove` touches **no accumulator** — passing is not a move, so
 there is no feature delta to apply — and the stack records the move as `65` with the
 all-`NO_PIECE` continuation-history page, so `ss-1` resolves to the table base rather than
