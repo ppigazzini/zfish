@@ -431,10 +431,11 @@ pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     // --- A sloppy castling FIELD, at both settings of the option. `set` does not require the
     // castling token to agree with the pieces: for a `Q` it walks inward from the corner and
     // adopts the first rook it meets, so this board records a 960 geometry while the option
-    // still says standard. `legal` must decide the castle on the ROOK'S geometry -- the rook on
+    // still says standard. The castle must be decided on the ROOK'S geometry -- the rook on
     // b1 is the only thing between the king on e1 and the queen on a1, so castling exposes the
     // king and e1c1 is illegal. Gating that test on the option instead let it through, and
-    // playing it reaches "King can be captured".
+    // playing it reaches "King can be captured". The generator decides it now (upstream
+    // 400c23f97), where `legal` once did.
     //
     // Both arms are pinned because the bug was ASYMMETRIC: the 960 arm was always right, so a
     // golden covering only one of them cannot see the defect return. The counts must agree.

@@ -3,70 +3,70 @@ NNUE network contributions (Normalized, White to move)
 +------------+------------+
 |   Bucket   | Evaluation |
 +------------+------------+
-|  0         |  -  1.91   |
-|  1         |  +  0.35   |
-|  2         |  +  0.21   |
-|  3         |     0.00   |
-|  4         |  +  0.09   |
-|  5         |  +  0.12   |
-|  6         |  +  0.05   |
-|  7         |  +  0.01   | <-- this bucket is used
+|  0         |  -  0.07   |
+|  1         |  -  0.07   |
+|  2         |  -  0.05   |
+|  3         |  +  0.08   |
+|  4         |  +  0.15   |
+|  5         |  +  0.09   |
+|  6         |  -  0.02   |
+|  7         |  +  0.07   | <-- this bucket is used
 +------------+------------+
 
-NNUE evaluation          +4 (side to move, internal units)
-NNUE evaluation        +0.01 (white side)
-Final evaluation      +0.02 (white side) [with scaled NNUE, ...]
+NNUE evaluation          +21 (side to move, internal units)
+NNUE evaluation        +0.07 (white side)
+Final evaluation      +0.09 (white side) [with scaled NNUE, ...]
 == kiwipete ==
 NNUE network contributions (Normalized, White to move)
 +------------+------------+
 |   Bucket   | Evaluation |
 +------------+------------+
-|  0         |  +  0.08   |
-|  1         |  -  1.47   |
-|  2         |  -  1.15   |
-|  3         |  -  1.32   |
-|  4         |  -  1.36   |
-|  5         |  -  1.17   |
-|  6         |  -  1.09   |
-|  7         |  -  1.05   | <-- this bucket is used
+|  0         |  -  0.37   |
+|  1         |  -  1.21   |
+|  2         |  -  1.88   |
+|  3         |  -  1.12   |
+|  4         |  -  1.21   |
+|  5         |  -  1.26   |
+|  6         |  -  1.18   |
+|  7         |  -  1.10   | <-- this bucket is used
 +------------+------------+
 
-NNUE evaluation          -297 (side to move, internal units)
-NNUE evaluation        -1.05 (white side)
-Final evaluation      -1.33 (white side) [with scaled NNUE, ...]
+NNUE evaluation          -312 (side to move, internal units)
+NNUE evaluation        -1.10 (white side)
+Final evaluation      -1.40 (white side) [with scaled NNUE, ...]
 == endgame ==
 NNUE network contributions (Normalized, White to move)
 +------------+------------+
 |   Bucket   | Evaluation |
 +------------+------------+
 |  0         |  +  0.19   |
-|  1         |  +  0.07   |
-|  2         |  +  0.05   | <-- this bucket is used
-|  3         |     0.00   |
-|  4         |     0.00   |
-|  5         |  +  0.03   |
-|  6         |  -  0.21   |
-|  7         |  -  0.31   |
+|  1         |  +  0.32   |
+|  2         |  +  0.31   | <-- this bucket is used
+|  3         |  +  0.23   |
+|  4         |  +  0.22   |
+|  5         |  +  0.17   |
+|  6         |  +  0.06   |
+|  7         |  +  0.34   |
 +------------+------------+
 
-NNUE evaluation          +18 (side to move, internal units)
-NNUE evaluation        +0.05 (white side)
-Final evaluation      +0.06 (white side) [with scaled NNUE, ...]
+NNUE evaluation          +105 (side to move, internal units)
+NNUE evaluation        +0.31 (white side)
+Final evaluation      +0.32 (white side) [with scaled NNUE, ...]
 == midgame ==
 NNUE network contributions (Normalized, White to move)
 +------------+------------+
 |   Bucket   | Evaluation |
 +------------+------------+
-|  0         |  +  0.34   |
-|  1         |  +  0.61   |
-|  2         |  +  0.47   |
-|  3         |  +  0.15   |
-|  4         |  +  0.22   |
-|  5         |  +  0.10   |
-|  6         |  +  0.08   |
-|  7         |  +  0.06   | <-- this bucket is used
+|  0         |  +  0.35   |
+|  1         |  +  0.19   |
+|  2         |  -  0.21   |
+|  3         |  +  0.13   |
+|  4         |  +  0.23   |
+|  5         |  +  0.12   |
+|  6         |  +  0.12   |
+|  7         |  +  0.10   | <-- this bucket is used
 +------------+------------+
 
-NNUE evaluation          +16 (side to move, internal units)
-NNUE evaluation        +0.06 (white side)
-Final evaluation      +0.07 (white side) [with scaled NNUE, ...]
+NNUE evaluation          +29 (side to move, internal units)
+NNUE evaluation        +0.10 (white side)
+Final evaluation      +0.13 (white side) [with scaled NNUE, ...]
