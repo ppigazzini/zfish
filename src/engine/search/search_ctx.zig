@@ -85,7 +85,6 @@ pub const ZfishIdState = struct {
     pv_last: *usize,
     sel_depth: *i32,
     root_depth: *i32,
-    root_delta: *i32,
     optimism: *[2]i32,
     nodes: *const u64,
     // The pool, for the nodestime elapsed() total (poolNodesSearched), matching checkTime and
@@ -136,7 +135,6 @@ pub const QCtx = struct {
     sel_depth: *i32,
     root_depth: *i32,
     reductions: [*]const u16,
-    root_delta: *const i32,
     last_iter_pv: *const PVMoves,
     stop: *const u8,
     pv_idx: *const usize,

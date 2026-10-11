@@ -284,7 +284,7 @@ const inLastIterPv = search_control.inLastIterPv;
 // (mirrors, TT, MovePicker, the worker_state pointers) plus the pos_do_move
 // (2-arg) / followPV / root-bookkeeping callbacks. (do_null_move, reduction,
 // nmpMinPly, and seldepth are now inlined: null make/unmake is handled directly,
-// and the reductions table / rootDelta / nmpMinPly / selDepth are read through the
+// and the reductions table / nmpMinPly / selDepth are read through the
 // stable pointers worker_state hands the search.)
 
 // pos.capture(m): match an occupied target (non-castling) or en passant; exclude pure promotions.
