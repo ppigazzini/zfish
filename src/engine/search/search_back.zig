@@ -74,7 +74,6 @@ const qMatedIn = sv.matedIn;
 pub const PVMoves = search_types.PVMoves;
 const search_emit = @import("search_emit");
 const searchCbRootOnIter = search_emit.searchCbRootOnIter;
-const reductionAcc = search_acc.reductionAcc;
 const doMoveAcc = search_acc.doMoveAcc;
 const undoMoveAcc = search_acc.undoMoveAcc;
 const search_control = @import("search_control.zig");
@@ -178,7 +177,7 @@ pub inline fn runBack(nd: anytype) i32 {
         const gc = givesCheck(nd.pos_ptr, move);
 
         var new_depth = depth - 1;
-        var r = reductionAcc(nd.ctx, nd.improving, depth, move_count);
+        var r = search.reduction(nd.improving, depth, move_count);
         if (nd.pv_node) r -= 512;
         if (nd.ss.tt_pv) r += 929;
 

@@ -30,8 +30,8 @@ function-pointer seams. For the zones and the module graph, see
 | `search_back.zig` | `runBack` — the move loop and node finalization, Steps 14–24: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
-| `search_acc.zig` | The per-node accumulator/do-move/eval primitives: `doMoveAcc`, `undoMoveAcc`, `evaluateAcc`, `reductionAcc`, `updateSelDepth` |
-| `search.zig` | The tuned formulas a node prunes and reduces by: margins, reductions, singular thresholds, `seekMate`, aspiration deltas, `valueToTt`/`valueFromTt` |
+| `search_acc.zig` | The per-node accumulator/do-move/eval primitives: `doMoveAcc`, `undoMoveAcc`, `evaluateAcc`, `updateSelDepth` |
+| `search.zig` | The tuned formulas a node prunes and reduces by: margins, the comptime `reductions` table and the `reduction` it feeds, singular thresholds, `seekMate`, aspiration deltas, `valueToTt`/`valueFromTt` |
 | `search_stats.zig` | The formulas written back to the tables afterwards: the stat bonus/malus and their per-table scales, the prior-countermove fan-out, the LMR stat-score weighting, `correctionValue` and the correction bonuses with the limit they are a quarter of. Path-imported by `search.zig`, which re-exports it, so callers still read these off `search` |
 | `search_common.zig` | Shared low-level helpers: `workerHistories`, `captureStage`, `moveIsOk`, the `statsUpdate` gravity update, capture-history indexing |
 | **Move ordering** | |
@@ -145,10 +145,9 @@ relative to the current ply through `ssAdd`/`ssSub` (`search_qsearch.zig`):
 `search_ctx.QCtx` is the hot context threaded by pointer through the whole recursion.
 It is built once per search by `search_setup.buildCtx`, which snapshots the worker's
 live member pointers — the accumulator stack, the node counter, the refresh cache,
-`optimism`, `nmp_min_ply`, `sel_depth`, `root_depth`, the reductions table,
-the last-iteration PV, the shared stop flag, the root-move array — plus
-a `SearchTimeState`, whose main-thread-only fields are null on helper threads. Nothing
-in the recursion re-walks the worker graph.
+`optimism`, `nmp_min_ply`, `sel_depth`, `root_depth`, the last-iteration PV, the shared
+stop flag, the root-move array — plus a `SearchTimeState`, whose main-thread-only fields
+are null on helper threads. Nothing in the recursion re-walks the worker graph.
 
 `search_values.zig` is the value model both search bodies alias: `value_mate`,
 `value_inf`, `value_none`, `max_ply`, `value_tb`/`value_tb_win`, the `depth_qs` /
