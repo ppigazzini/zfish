@@ -28,5 +28,5 @@
 #
 # Format: <TAG><tab><gate><tab><reason>
 
-EXPIRING	chess960	8100d0ce sloppy-castling geometry + cee6facd duplicate castling token: `legal` tests the castling ROOK's geometry instead of the UCI_Chess960 option, and two tokens on one side resolve to one CastlingRights. Upstream generates a castle that leaves the king capturable, and clears the surviving rook's right when the DISCARDED rook moves.
+EXPIRING	chess960	cee6facd duplicate castling token: two tokens on one side resolve to one CastlingRights. Upstream clears the surviving rook's right when the DISCARDED rook moves. (8100d0ce's sloppy-castling rows expired at upstream 400c23f97 and AGREE.)
 EXPIRING	tb-root	f329737a: `rankRootMovesWdl` takes Syzygy50MoveRule for its draw test the way `rankRootMovesDtz` already did, so a won position past the halfmove clock is no longer ranked a draw with the tables switched off under it.

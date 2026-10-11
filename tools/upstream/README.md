@@ -98,17 +98,21 @@ construction while this table called the same state expected, and a lane that is
 a lane nobody reads.
 
 Every one is Zone-A — reached only by a MALFORMED or sloppy input, or by a non-default option —
-so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 1714434 with all
-three in place.
+so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 1684318 with
+both in place.
 
 | gate / row | zfish vs upstream | owner | expires when |
 |---|---|---|---|
-| `chess960` `sloppy-castling opt-off` | 8 moves, `e1c1=false` vs upstream's 9 with `e1c1`. `legal` tests the castling ROOK's geometry instead of the UCI_Chess960 option, so a `Q` token over a rook on b1 no longer generates a castle that leaves the king capturable. | `8100d0ce` | upstream adopts it and the row AGREES |
-| `chess960` `dup-castling-token 1` | `... b B - 1 1` vs upstream's `... b - - 1 1`. Two tokens on one side resolve to one CastlingRights, and moving the DISCARDED rook no longer clears the surviving rook's right. | `cee6facd` | as above |
+| `chess960` `dup-castling-token 1` | `... b B - 1 1` vs upstream's `... b - - 1 1`. Two tokens on one side resolve to one CastlingRights, and moving the DISCARDED rook no longer clears the surviving rook's right. | `cee6facd` | upstream adopts it and the row AGREES |
 | `tb-root` `wdl-only-rule50-off` | 156 nodes vs upstream's 192. `rankRootMovesWdl` takes Syzygy50MoveRule for its draw test the way `rankRootMovesDtz` already did, so a won position with the halfmove clock past 99 is no longer ranked a draw with the tables switched off under it. | `f329737a` | as above |
 
 Each commit body carries the before/after transcript, so a row that stops matching its stated
 numbers is a REGRESSION in that fix, not an upstream move.
+
+One row has expired that way: `chess960` `sloppy-castling opt-off` (`8100d0ce`, a `Q` token
+over a rook on b1 generating a castle that exposed the king) AGREES since upstream
+`400c23f97`, whose legal generator tests the castling rook against the king's blockers
+whatever `UCI_Chess960` says.
 
 ## The oracle
 - **Pristine** (`upstream_oracle.sh`): vanilla upstream at any sha; the source of truth for `upstream_parity`
@@ -172,6 +176,7 @@ construct zfish does not have:
 | `e5c99a89` Balanced lto for gcc > 13 | upstream's Makefile picks `-flto-partition=balanced` for gcc 14 and up. zfish builds with `zig build`, whose LTO is LLVM's and has no partition knob. |
 | `7954475e` Assert correct MaxChunkSize at compile time | a `static_assert(MaxChunkSize == sizeof(vec_t))`, because the transform's output chunk and the vector type were two constants a build could set apart. Here they are one: each `packusTransform64`/`32`/`16` takes and returns `@Vector`s whose lane counts ARE the chunk, so there is no second constant to disagree -- the same shape as the `d68041e3` row, a defect that is not representable once the type carries it. |
 | `af68fea3` Remove Redundant file.close() | drops an explicit `close()` that RAII already performs. `benchmark.zig` reads a bench FEN file with one `readFileAlloc`, which owns its handle; there is no close to remove. |
+| `dcf1cd5a8` Remove redundant curly braces on single-statement blocks | drops braces around single-statement C++ blocks in eight files and adds `score.cpp`'s missing final newline. Brace style here is `zig fmt`'s, and no hunk changes a statement. |
 
 The parts of `22dfb404` (*miscellaneous cleanups*) that did not need porting: `nodes[n].size() == 0`
 -> `empty()` and `threads.size() == 0` -> `empty()` name a C++ container idiom Zig has no
