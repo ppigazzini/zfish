@@ -180,7 +180,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("option", mods.get("option").?);
     exe.root_module.addImport("position", mods.get("position").?);
     exe.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
-    exe.root_module.addImport("search", mods.get("search").?);
     exe.root_module.addImport("timeman", mods.get("timeman").?);
     exe.root_module.addImport("thread", mods.get("thread").?);
     exe.root_module.addImport("uci", mods.get("uci").?);

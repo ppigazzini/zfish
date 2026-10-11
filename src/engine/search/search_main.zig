@@ -103,7 +103,6 @@ const search_emit = @import("search_emit");
 const searchCbRootOnIter = search_emit.searchCbRootOnIter;
 const QCtx = search_ctx.QCtx;
 const updateSelDepth = search_acc.updateSelDepth;
-const reductionAcc = search_acc.reductionAcc;
 const evaluateAcc = search_acc.evaluateAcc;
 const doMoveAcc = search_acc.doMoveAcc;
 const undoMoveAcc = search_acc.undoMoveAcc;

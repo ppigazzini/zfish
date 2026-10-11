@@ -18,7 +18,6 @@ const worker_layout = @import("worker_layout");
 const position_port = @import("position");
 const search_driver = @import("search_driver");
 const worker_histories = @import("worker_histories");
-const search_port = @import("search");
 const nnue_acc = @import("nnue_accumulator");
 const network_port = @import("network");
 
@@ -26,10 +25,6 @@ const off = worker_layout.worker_off;
 
 // Use the FT pointer (network.zig-owned inference storage) to let the full
 // constructor fill the histories exactly as the worker-clear reset.
-
-/// Treat reductions as the [256]u16 table in WorkerLayout; take the fixed element
-/// count directly rather than deriving it from the neighbouring field offsets.
-const reductions_count: usize = 256;
 
 /// Collect the inputs the Worker constructor receives, unpacked from the SharedState
 /// plus the thread parameters. Point each reference member at the exact referent it
@@ -86,7 +81,7 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
 
 /// Construct a full Worker into a caller-owned, zeroed buffer: write the
 /// constructor field set, then run the worker-clear reset pieces (histories,
-/// shared history, reductions, refresh cache). The SharedHistories the thread clears
+/// shared history, refresh cache). The SharedHistories the thread clears
 /// its range of is `in.shared_history` -- the same referent the reference member binds
 /// to. Pass `biases` as the network feature-transformer bias array.
 fn constructWorkerInto(buf: [*]u8, in: WorkerCtorInputs, biases: [*]const i16) void {
@@ -94,7 +89,6 @@ fn constructWorkerInto(buf: [*]u8, in: WorkerCtorInputs, biases: [*]const i16) v
     writeConstructorFields(buf, in);
     search_driver.clearWorkerHistories(wl);
     search_driver.clearSharedHistory(in.shared_history, .{ .index = in.numa_thread_idx, .total = in.numa_total });
-    search_port.fillReductions(&wl.reductions, reductions_count);
     nnue_acc.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
 

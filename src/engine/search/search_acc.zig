@@ -1,6 +1,6 @@
 // Provide node-level accumulator / do-move / eval helpers. The small QCtx-carrying
-// primitives the qsearch/search recursion calls per node: the seldepth/LMR-reduction
-// reads, the NNUE evaluate, the accumulator-slot do_move/undo_move, the verify
+// primitives the qsearch/search recursion calls per node: the seldepth read, the NNUE
+// evaluate, the accumulator-slot do_move/undo_move, the verify
 // make/unmake, and the legal-move membership test. None call back into the
 // recursion, so this is a std-free leaf over the board/eval leaves + the search_ctx
 // QCtx; search_driver imports it one-way.
@@ -43,23 +43,6 @@ const q_value_tb_win: i32 = 31507;
 
 pub inline fn updateSelDepth(ctx: *const QCtx, ply: i32) void {
     if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
-}
-
-/// Compute the LMR reduction step: the LMR base reduction from the per-thread reductions
-/// table and the improving flag. Use truncating integer division.
-///
-/// Hold the product and the improving term UNSIGNED. Both factors come from the reductions
-/// table, which is a scaled logarithm with no negative entry (search.fillReductions), so the
-/// product and everything built from it are non-negative -- but stored as i32 that is a fact
-/// the backend cannot use, and `/ 512` then carries the round-toward-zero correction on every
-/// move the search reduces: the dividend materialised twice, biased, sign-tested and selected
-/// by a cmov, where an unsigned shift stands alone. The widths are the bound: 124 * 124 * 197
-/// is 3,029,072, well inside u32.
-pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32) i32 {
-    const reduction_scale: u32 =
-        @as(u32, ctx.reductions[@intCast(d)]) * @as(u32, ctx.reductions[@intCast(mn)]);
-    const improving_term: u32 = @as(u32, @intFromBool(!i)) * reduction_scale * 197 / 512;
-    return @as(i32, @intCast(reduction_scale + improving_term)) + 948;
 }
 
 /// Run the evaluate step: the NNUE forward pass on the current position, then

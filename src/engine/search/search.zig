@@ -341,20 +341,46 @@ pub fn optimism(avg: i32) i32 {
     return @divTrunc(114 * avg, abs_avg + 85);
 }
 
-/// Populate the reductions[] lookup table: reductions[i] = int(2872/128.0 * ln i)
-/// for i in [1, count). Index 0 is left untouched, matching upstream clear().
+/// Index the LMR reductions table by depth or move number: reductions[i] = int(2872/128.0 * ln i),
+/// and reductions[0] = 0. One table serves every worker -- nothing in it depends on the
+/// thread -- so it is built at comptime rather than refilled on each worker clear (upstream
+/// 186d6a41c).
+///
+/// Comptime `@log` need not round as upstream's libm does, and need not: every entry sits at
+/// least 0.0027 from an integer (index 69), far outside any last-ulp disagreement, so the
+/// truncation lands the same everywhere. The test below holds comptime against runtime.
 ///
 /// The entry is u16 rather than i32 because the table is a SCALED LOGARITHM and so has no
 /// negative entry -- 22.4375 * ln(255) is 124, and there is nothing below it. Stored signed,
-/// that range is a fact no backend can use, and `reductionAcc`'s divide by 512 then had to
-/// allow for a negative dividend on every reduced move. See the comment there. The table also
-/// halves, 1024 bytes to 512, which nothing here measures.
-pub fn fillReductions(reductions_ptr: [*]u16, count: usize) void {
-    var i: usize = 1;
-    while (i < count) : (i += 1) {
-        const logv = @log(@as(f64, @floatFromInt(i)));
-        reductions_ptr[i] = @intFromFloat(2872.0 / 128.0 * logv);
-    }
+/// that range is a fact no backend can use, and `reduction`'s divide by 512 then had to
+/// allow for a negative dividend on every reduced move. See the comment there.
+pub const reductions: [256]u16 = blk: {
+    @setEvalBranchQuota(10_000);
+    var table: [256]u16 = undefined;
+    table[0] = 0;
+    for (1..table.len) |i| table[i] = reductionEntry(i);
+    break :blk table;
+};
+
+fn reductionEntry(i: usize) u16 {
+    return @intFromFloat(2872.0 / 128.0 * @log(@as(f64, @floatFromInt(i))));
+}
+
+/// Compute the LMR reduction step: the base reduction from the reductions table and the
+/// improving flag. Use truncating integer division.
+///
+/// Hold the product and the improving term UNSIGNED. Both factors come from the reductions
+/// table, which is a scaled logarithm with no negative entry, so the product and everything
+/// built from it are non-negative -- but stored as i32 that is a fact the backend cannot use,
+/// and `/ 512` then carries the round-toward-zero correction on every move the search
+/// reduces: the dividend materialised twice, biased, sign-tested and selected by a cmov,
+/// where an unsigned shift stands alone. The widths are the bound: 124 * 124 * 197 is
+/// 3,029,072, well inside u32.
+pub inline fn reduction(i: bool, d: i32, mn: i32) i32 {
+    const reduction_scale: u32 =
+        @as(u32, reductions[@intCast(d)]) * @as(u32, reductions[@intCast(mn)]);
+    const improving_term: u32 = @as(u32, @intFromBool(!i)) * reduction_scale * 197 / 512;
+    return @as(i32, @intCast(reduction_scale + improving_term)) + 948;
 }
 
 // --- tests --------------------------------------------------------------
@@ -420,29 +446,26 @@ test "seekMate: the threshold falls with root depth, and the score is read by ma
     try std.testing.expectEqual(@as(i32, 6), futilityDepth(true));
 }
 
-test "fillReductions: log-scaled, index 0 untouched, monotonic from 1" {
-    var r: [64]u16 = undefined;
-    // A sentinel index 0 cannot be negative any more, which is the point of the retype --
-    // so pick one the fill would never write. It writes 0 at index 1 and rises from there.
-    r[0] = 999;
-    fillReductions(&r, 64);
-    try std.testing.expectEqual(@as(u16, 999), r[0]); // loop starts at i=1
+test "reductions: log-scaled, zero at 0 and 1, monotonic, comptime == runtime" {
+    const r = &reductions;
+    try std.testing.expectEqual(@as(u16, 0), r[0]);
     try std.testing.expectEqual(@as(u16, 0), r[1]); // log(1) == 0
-    try std.testing.expect(r[63] > r[2]);
-    var i: usize = 2;
-    while (i < 64) : (i += 1) try std.testing.expect(r[i] >= r[i - 1]);
+    try std.testing.expectEqual(@as(u16, 15), r[2]);
+    for (2..r.len) |i| try std.testing.expect(r[i] >= r[i - 1]);
+    // The table is folded by the compiler's float arithmetic; recompute every entry with the
+    // runtime `@log` and require the same integers.
+    var probe: usize = 1;
+    std.mem.doNotOptimizeAway(&probe);
+    for (probe..r.len) |i| try std.testing.expectEqual(reductionEntry(i), r[i]);
 }
 
-test "fillReductions: no entry leaves u16, over the whole indexable range" {
+test "reductions: no entry leaves u16, over the whole indexable range" {
     // The retype rests on the table having no negative entry AND no entry past 65535: it is
-    // 2872/128 * ln(i), so the largest index the search can reach decides. Check the whole
-    // 256-entry table the worker holds rather than the 64 the test above uses -- the bound
-    // that matters is the one at MAX_MOVES, not at 64.
-    var r: [256]u16 = undefined;
-    fillReductions(&r, 256);
-    try std.testing.expectEqual(@as(u16, 124), r[255]);
-    // ... and that reductionAcc's product stays inside u32, which is what lets the
+    // 2872/128 * ln(i), so the largest index the search can reach decides -- the bound that
+    // matters is the one at MAX_MOVES.
+    try std.testing.expectEqual(@as(u16, 124), reductions[255]);
+    // ... and that reduction's product stays inside u32, which is what lets the
     // improving term be an unsigned shift rather than a rounded signed divide.
-    const widest: u32 = @as(u32, r[255]) * @as(u32, r[255]) * 197;
+    const widest: u32 = @as(u32, reductions[255]) * @as(u32, reductions[255]) * 197;
     try std.testing.expect(widest < std.math.maxInt(u32));
 }

@@ -87,7 +87,6 @@ pub const WorkerLayout = struct {
     numa_thread_idx: usize,
     numa_total: usize,
     numa_access_token: usize,
-    reductions: [256]u16,
     manager: ?*SearchManager, // the worker's SearchManager (null before build / after free)
     tb_config: TbConfig, // the root tablebase decision the in-search WDL probe is gated on
     threads: *ThreadPool,
@@ -97,9 +96,9 @@ pub const WorkerLayout = struct {
     // Worker keeps big/cold members (the root Position, its history tables) at one end and
     // its per-node scalars (nodes, sel_depth, optimism, ...) adjacent; a plain Zig struct
     // sorted these four in among the scalars by their own natural alignment, splitting
-    // nodes/tb_hits/best_move_changes (needed every node) from sel_depth/optimism/root_depth/
-    // reductions (also needed every node) by ~1.8 KB -- root_pos (1064B) and
-    // root_state (192B) alone sat between them. align(64) opts each field out of its natural
+    // nodes/tb_hits/best_move_changes (needed every node) from sel_depth/optimism/root_depth
+    // (also needed every node) by ~1.8 KB -- root_pos (1064B) and root_state (192B) alone
+    // sat between them. align(64) opts each field out of its natural
     // class instead, so the scalar fields above and below this block close the gap. Costs
     // nothing: none of these four is read inside the node recursion (root_pos/root_state are
     // read once per search via rootPosPtr/rootStatePtr; root_moves and last_iteration_pv are
@@ -152,7 +151,6 @@ pub const worker_off = struct {
     pub const numa_thread_idx = @offsetOf(WorkerLayout, "numa_thread_idx");
     pub const numa_total = @offsetOf(WorkerLayout, "numa_total");
     pub const numa_access_token = @offsetOf(WorkerLayout, "numa_access_token");
-    pub const reductions = @offsetOf(WorkerLayout, "reductions");
     pub const manager = @offsetOf(WorkerLayout, "manager");
     pub const tb_config = @offsetOf(WorkerLayout, "tb_config");
     pub const threads = @offsetOf(WorkerLayout, "threads");

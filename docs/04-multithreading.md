@@ -175,7 +175,7 @@ binding, not a design.
 | --- | --- | --- |
 | History tables: main / low-ply / capture / continuation-correction / tt-move | Per-worker | `WorkerLayout.histories` (`worker_histories.WorkerHistories`) |
 | Accumulator stack, refresh table | Per-worker | `WorkerLayout.accumulator_stack`, `.refresh_table` |
-| Reductions table | Per-worker | `WorkerLayout.reductions` |
+| Reductions table | Shared, read-only — one comptime table, nothing in it depends on the thread | `search.reductions` |
 | Root position, root state, root moves, PV, `last_iteration_pv` | Per-worker | `WorkerLayout.root_pos` / `.root_state` / `.root_moves` / `.last_iteration_pv` |
 | `nodes`, `tb_hits`, `best_move_changes`, `sel_depth`, `root_depth`, `optimism`, `nmp_min_ply` | Per-worker (read across threads only for aggregation) | `WorkerLayout` |
 | `limits`, `tb_config` | Per-worker copy, written identically by `applyRootSetup` | `WorkerLayout.limits`, `.tb_config` |

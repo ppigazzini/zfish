@@ -29,7 +29,6 @@ const nnue_feature_port = @import("nnue_feature");
 const option_port = @import("option");
 const position_port = @import("position");
 const search_driver = @import("search_driver");
-const search_port = @import("search");
 const thread_port = @import("thread");
 const timeman_port = @import("timeman");
 const uci_port = @import("uci");
@@ -131,10 +130,9 @@ fn threadpoolSetupStateBack(pool: *const worker_layout.ThreadPool) ?*const posit
 }
 
 /// Run the worker-clear reset: the per-search worker reset the clear_worker job runs on
-/// its thread. Call the four clear helpers in declaration order: histories, the
+/// its thread. Call the three clear helpers in declaration order: histories, the
 /// shared-history page (sharedHistory ref + numaThreadIdx@thread_idx+8 /
-/// numaTotal@+16), the reductions table (u16[256], the 512-byte slot before
-/// manager), and the refresh cache (feature-transformer biases). Note all four
+/// numaTotal@+16), and the refresh cache (feature-transformer biases). Note all three
 /// callees are gate-verified; only this orchestration is new.
 fn workerClear(worker: *anyopaque) void {
     const wl = worker_layout.WorkerLayout.fromPtr(worker);
@@ -142,7 +140,6 @@ fn workerClear(worker: *anyopaque) void {
     // Treat sharedHistory now as a typed field of the embedded WorkerHistories.
     const shared_history = wl.histories.shared_history.?;
     search_driver.clearSharedHistory(shared_history, .{ .index = wl.numa_thread_idx, .total = wl.numa_total });
-    search_port.fillReductions(&wl.reductions, 256);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.ftPtr() orelse return));
     nnue_accumulator_port.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }

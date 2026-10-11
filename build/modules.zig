@@ -127,7 +127,6 @@ pub const edges = [_]Edge{
     .{ .from = "worker_construct", .imp = "position", .to = "position" },
     .{ .from = "worker_construct", .imp = "search_driver", .to = "search_driver" },
     .{ .from = "worker_construct", .imp = "worker_histories", .to = "worker_histories" },
-    .{ .from = "worker_construct", .imp = "search", .to = "search" },
     .{ .from = "worker_construct", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
     .{ .from = "worker_construct", .imp = "network", .to = "network" },
     // Enter a single-worker shallow search in the engine zone via headless_search (the "search one
