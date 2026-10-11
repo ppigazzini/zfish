@@ -95,6 +95,7 @@ pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: [*]tt_types.TtCluste
         .pv_last = pv_last.?,
         .best_move_changes = best_move_changes.?,
         .time_state = time_state,
+        .seek_mate = false,
     };
 }
 

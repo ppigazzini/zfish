@@ -141,6 +141,10 @@ pub const QCtx = struct {
     pv_last: *const usize,
     best_move_changes: *u64,
     time_state: SearchTimeState,
+    /// Hold whether the root is hunting a mate. The iterative-deepening loop sets it once per
+    /// root line, before the aspiration searches (upstream's Worker::seekMate, 513ce0752), and
+    /// every node of that line reads the same answer.
+    seek_mate: bool,
 };
 
 test {

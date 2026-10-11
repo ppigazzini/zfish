@@ -270,6 +270,8 @@ pub inline fn runBack(nd: anytype) i32 {
         r -= search.lmrStatScoreReduction(nd.ss.stat_score);
         if (!capture and !qIsDecisive(alpha)) r += search.lmrLooseAlphaReduction(alpha, nd.eval);
         if (nd.all_node) r += search.lmrAllNodeScale(r, depth);
+        // When seeking a mate, reduce non-checking moves more and checking moves less.
+        if (nd.seek_mate and r > 0) r += @divTrunc(if (gc) -r else r, 4);
 
         // Step 18/19. Run the LMR + full-depth search.
         if (depth >= 2 and move_count > 1) {

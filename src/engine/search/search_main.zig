@@ -142,13 +142,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // Dive into qsearch at depth 0.
     if (depth_in <= 0) return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha_in, beta_in, comptime kind.quiescent());
 
-    // Ask the ROOT, once per node, whether it is already hunting a mate. Steps 9 and 16 both
-    // read it: futility prunes to a much shallower depth and the singular extension stands
-    // down, so the tree collapses onto the mating line instead of re-proving the moves around
-    // it. Read AFTER the qsearch dive rather than beside the other node-kind constants where
-    // upstream declares it -- a leaf node returns before either reader, and this is two loads
-    // through ctx and a divide.
-    const seek_mate = search.seekMate(ctx.root_depth.*, ctx.root_moves[ctx.pv_idx.*].score);
+    // Read whether the ROOT is hunting a mate -- the iterative-deepening loop answers it once
+    // per root line. Steps 8, 9, 10, 13, 16 and the LMR all read it, so the tree collapses
+    // onto forcing lines instead of re-proving the moves around them.
+    const seek_mate = ctx.seek_mate;
 
     const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos = pos_ptr;
@@ -338,7 +335,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (cut_node and search.nullMoveEvalBonus(ss.static_eval, ss.prior_nmp_fail_high) >= search.nullMoveThreshold(beta, depth, improving) and
             excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and search.nullMoveBetaOk(beta))
         {
-            const r = search.nullMoveReduction(depth, ss.static_eval, beta);
+            var r = search.nullMoveReduction(depth, ss.static_eval, beta);
+            // Halve the reduction while hunting a mate (upstream 513ce0752).
+            r -= @divTrunc(@as(i32, @intFromBool(seek_mate)) * r, 2);
             // Touch no accumulator for null moves: call pos.do_null_move, mark the
             // stack move as null (65), and set the all-NO_PIECE
             // continuation-history pointer.
@@ -417,7 +416,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // Step 13. Apply the deep-probcut TT idea.
     const probcut_beta2 = search.probCutBetaDeep(beta);
     if ((tt_bound & q_bound_lower) != 0 and tt_depth >= depth - 4 and tt_value >= probcut_beta2 and
-        !qIsDecisive(beta) and qIsValid(tt_value) and !qIsDecisive(tt_value)) return probcut_beta2;
+        !qIsDecisive(beta) and qIsValid(tt_value) and !qIsDecisive(tt_value) and !seek_mate) return probcut_beta2;
 
     return @import("search_back.zig").runBack(.{
         .ctx = ctx,
