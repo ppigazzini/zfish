@@ -242,6 +242,7 @@ stops being a port:
 | `1bf75bb3` | `doMoveAcc` takes the caller's `capture` instead of recomputing `captureStage`; ProbCut computes and asserts it at the call site. No functional change, and it LANDS because it loses at no tier: instructions per node 5909 -> 5893 native, 8169 -> 8156 avx2, 11962 -> 11949 sse41 (`perf_counters`, 10 rounds, one 1288278-node tree). Its AUTHORS half IS carried: one name. |
 | `49ea5ded` | the multi-cut correction bonus drops the probe's depth: `clamp(delta * 664 / 1024, +-LIMIT/4)` where it was `delta * singularDepth * 177 / 1024` (`search_stats.multiCutCorrectionBonus`). Bench 1714434. |
 | `885813b0e` | LMR stops reading the aspiration window: `reductionAcc` drops the `(beta - alpha) * 577 / root_delta` term and its constant goes 982 -> 948, and a PV node takes a flat `r -= 512` instead. `root_delta` leaves `WorkerLayout`, `QCtx` and `ZfishIdState`, and the carried `window_term` goes with it. Bench 1143550. |
+| `2d54ef335` | the default net becomes `nn-a8bcb689c267.nnue` (a longer finetune at one-tenth the learning rate). Name only -- same SFNNv17 architecture, so the parser, the feature transformer and the hash are untouched. Bench 1635273. |
 
 **They pay, and that is a separate measurement.** Ablating the hybrid step and the shared
 walk together (both routes off, same node count, so one tree with two amounts of work)
