@@ -2,8 +2,8 @@
 //
 // The vectorized feature-transformer weight-row add/sub kernels split out of
 // nnue_accumulator.zig. Fully self-contained: pure @Vector math over the FT
-// weight rows, depending only on the two network dimensions (duplicated as tiny
-// consts). No *anyopaque, no position_snapshot / nnue_feature, so no cycle. The
+// weight rows (plus SSSE3's pmaddubsw for the paired widen), depending only on the
+// two network dimensions (duplicated as tiny consts). No *anyopaque, no position_snapshot / nnue_feature, so no cycle. The
 // accumulator core imports this and aliases the kernels. Bit-exact: the wrapping
 // vector +%/-% is the same element-wise op as the scalar loop it replaces, and
 // mirrors upstream's `_mm*_add/sub_epi16` (2's-complement wrap) (bench 2497913).
@@ -136,6 +136,106 @@ inline fn tileRowsIncremental(
     if (rows.len > 1) tileRow(IT, add, acc, rows[1], weights, tile_off);
 }
 
+// ---- paired widening (upstream e08dfa804) ------------------------------------------
+
+/// Widen two int8 rows with one byte interleave and one `pmaddubsw` against a vector of
+/// ones, instead of one sign extension per row -- upstream's USE_PAIRED_WIDENING_ADD (simd.h),
+/// taken at the one tier where it is less work here: SSSE3 without SSE4.1.
+///
+/// Upstream enables it on every x86 tier from SSSE3 up. Ported at every width -- 128, 256 and
+/// 512-bit pairs, with the load-time 8-byte-block permutation the wider unpacks need -- it
+/// benched 1559611 everywhere and measured, instructions per node against the one-row kernels
+/// (perf_counters, 10 rounds, bench 16 1 13): native 5125 -> 5335 (+4.1%), avx2 7344 -> 7449
+/// (+1.4%), sse41 11157 -> 12091 (+8.4%), ssse3 13200 -> 12393 (-6.1%). Where SSE4.1 exists
+/// the one-row widen is a `pmovsxbw` straight from memory and an add, which a pair can at
+/// best match, and the odd row out of each list costs an unpack and a shift where
+/// `pmovsxbw` was one op. Without SSE4.1 the one-row widen already IS an unpack and a shift,
+/// and pairing halves it.
+const paired_widening = blk: {
+    const b = @import("builtin");
+    const has = std.Target.x86.featureSetHas;
+    break :blk b.target.cpu.arch == .x86_64 and has(b.target.cpu.features, .ssse3) and
+        !has(b.target.cpu.features, .sse4_1);
+};
+
+const PairVi8 = @Vector(16, i8);
+const PairVi16 = @Vector(16, i16);
+
+/// Interleave the low (`high = false`) or high eight bytes of `a` and `b` -- `punpck{l,h}bw`.
+const unpack_lo_mask: @Vector(16, i32) = .{ 0, ~@as(i32, 0), 1, ~@as(i32, 1), 2, ~@as(i32, 2), 3, ~@as(i32, 3), 4, ~@as(i32, 4), 5, ~@as(i32, 5), 6, ~@as(i32, 6), 7, ~@as(i32, 7) };
+const unpack_hi_mask: @Vector(16, i32) = .{ 8, ~@as(i32, 8), 9, ~@as(i32, 9), 10, ~@as(i32, 10), 11, ~@as(i32, 11), 12, ~@as(i32, 12), 13, ~@as(i32, 13), 14, ~@as(i32, 14), 15, ~@as(i32, 15) };
+const concat_mask: @Vector(16, i32) = .{ 0, 1, 2, 3, 4, 5, 6, 7, ~@as(i32, 0), ~@as(i32, 1), ~@as(i32, 2), ~@as(i32, 3), ~@as(i32, 4), ~@as(i32, 5), ~@as(i32, 6), ~@as(i32, 7) };
+
+const pmaddubsw128 = struct {
+    extern fn @"llvm.x86.ssse3.pmadd.ub.sw.128"(@Vector(16, i8), @Vector(16, i8)) callconv(.{ .x86_64_sysv = .{} }) @Vector(8, i16);
+}.@"llvm.x86.ssse3.pmadd.ub.sw.128";
+
+/// Sum two 16-byte int8 chunks into sixteen int16 lanes -- the body of upstream's
+/// `apply_feature_pair`. `pmaddubsw` against ones adds each interleaved byte pair and cannot
+/// saturate (|a + b| <= 256), and at 128 bits the two unpacks land in natural lane order, so
+/// the rows need no load-time permutation.
+inline fn pairWiden(a: PairVi8, b: PairVi8) PairVi16 {
+    const ones: PairVi8 = @splat(1);
+    const lo = pmaddubsw128(ones, @shuffle(i8, a, b, unpack_lo_mask));
+    const hi = pmaddubsw128(ones, @shuffle(i8, a, b, unpack_hi_mask));
+    return @shuffle(i16, lo, hi, concat_mask);
+}
+
+const Row = [*]align(64) const i8;
+
+/// Hold the int8 rows one apply adds or removes, as row pointers -- upstream's WeightRows. Rows
+/// of every feature set with the same sign go in one list, so nearly every row has a partner.
+const WeightRows = struct {
+    /// Fit a K32Q2 list (32 rows) plus a threat and pawn-pair list (256), as upstream's
+    /// AllWeightRows sizes itself from the two MaxActiveDimensions.
+    rows: [32 + 256]Row,
+    len: usize,
+
+    /// Start an empty list without touching the row array. `.{}` with an undefined default
+    /// still lowers to a 2312-byte memset per list per call (measured: compiler_rt.fastMemset
+    /// in applyCombinedDelta), which costs more than every pair saves.
+    inline fn empty() WeightRows {
+        var r: WeightRows = undefined;
+        r.len = 0;
+        return r;
+    }
+
+    inline fn appendPsq(self: *WeightRows, list: []const u16, weights: [*]align(64) const i8) void {
+        for (list) |index| {
+            self.rows[self.len] = @alignCast(weights + @as(usize, index) * half_dimensions);
+            self.len += 1;
+        }
+    }
+
+    inline fn appendThreat(self: *WeightRows, list: []const u32, weights: [*]align(64) const i8) void {
+        for (list) |index| {
+            self.rows[self.len] = @alignCast(weights + @as(usize, index) * half_dimensions);
+            self.len += 1;
+        }
+    }
+
+    /// Apply every row to one tile, two at a time -- upstream's WeightRows::apply.
+    inline fn apply(self: *const WeightRows, comptime add: bool, acc: *@Vector(row_tile_width, i16), tile_off: usize) void {
+        const chunks = row_tile_width / 16;
+        var i: usize = 0;
+        while (i + 1 < self.len) : (i += 2) {
+            var parts: [chunks]PairVi16 = undefined;
+            inline for (0..chunks) |c| {
+                const a = loadVec(i8, 16, 16, self.rows[i], tile_off + c * 16);
+                const b = loadVec(i8, 16, 16, self.rows[i + 1], tile_off + c * 16);
+                parts[c] = pairWiden(a, b);
+            }
+            const inc: @Vector(row_tile_width, i16) = @bitCast(parts);
+            acc.* = if (add) acc.* +% inc else acc.* -% inc;
+        }
+        if (i < self.len) {
+            // The odd row out widens on its own, which is upstream's unpack-and-shift: without
+            // SSE4.1 that is how the sign extension lowers.
+            tileRow(usize, add, acc, 0, self.rows[i], tile_off);
+        }
+    }
+};
+
 /// Refresh in ONE tiled pass -- upstream update_accumulator_refresh_cache's loop shape:
 /// load the finny-cache tile, apply the K32Q2 removed/added rows, store the psq-only
 /// tile back to `cache`, then KEEP ADDING the active Threat rows in the same registers
@@ -155,6 +255,24 @@ pub fn applyRefreshFused(
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
+    if (comptime paired_widening) {
+        var entry_removed: WeightRows = .empty();
+        var entry_added: WeightRows = .empty();
+        var active_rows: WeightRows = .empty();
+        entry_removed.appendPsq(removed, psq_weights);
+        entry_added.appendPsq(added, psq_weights);
+        active_rows.appendThreat(active, thr_weights);
+        var d: usize = 0;
+        while (d < half_dimensions) : (d += V) {
+            var acc: Vi16 = cache.ptr[d..][0..V].*;
+            entry_removed.apply(false, &acc, d);
+            entry_added.apply(true, &acc, d);
+            cache.ptr[d..][0..V].* = acc;
+            active_rows.apply(true, &acc, d);
+            state.ptr[d..][0..V].* = acc;
+        }
+        return;
+    }
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = cache.ptr[d..][0..V].*;
@@ -198,6 +316,32 @@ pub fn applyHybridDelta(
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
+    if (comptime paired_widening) {
+        var entry_removed: WeightRows = .empty();
+        var entry_added: WeightRows = .empty();
+        entry_removed.appendPsq(new_removed, psq_weights);
+        entry_added.appendPsq(new_added, psq_weights);
+        // The old entry's removed rows go back in, its added rows come out.
+        var rows_removed: WeightRows = .empty();
+        var rows_added: WeightRows = .empty();
+        rows_added.appendPsq(old_removed, psq_weights);
+        rows_added.appendThreat(thr_added, thr_weights);
+        rows_removed.appendPsq(old_added, psq_weights);
+        rows_removed.appendThreat(thr_removed, thr_weights);
+        var d: usize = 0;
+        while (d < half_dimensions) : (d += V) {
+            var acc: Vi16 = new_entry.ptr[d..][0..V].*;
+            entry_removed.apply(false, &acc, d);
+            entry_added.apply(true, &acc, d);
+            new_entry.ptr[d..][0..V].* = acc;
+            acc +%= @as(Vi16, computed.ptr[d..][0..V].*);
+            acc -%= @as(Vi16, old_entry.ptr[d..][0..V].*);
+            rows_removed.apply(false, &acc, d);
+            rows_added.apply(true, &acc, d);
+            target.ptr[d..][0..V].* = acc;
+        }
+        return;
+    }
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         // Refresh the DESTINATION bucket from its cache entry.
@@ -244,6 +388,22 @@ pub fn applyCombinedDelta(
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
+    if (comptime paired_widening) {
+        var rows_removed: WeightRows = .empty();
+        var rows_added: WeightRows = .empty();
+        rows_removed.appendPsq(psq_removed, psq_weights);
+        rows_removed.appendThreat(thr_removed, thr_weights);
+        rows_added.appendPsq(psq_added, psq_weights);
+        rows_added.appendThreat(thr_added, thr_weights);
+        var d: usize = 0;
+        while (d < half_dimensions) : (d += V) {
+            var acc: Vi16 = source.ptr[d..][0..V].*;
+            rows_removed.apply(false, &acc, d);
+            rows_added.apply(true, &acc, d);
+            target.ptr[d..][0..V].* = acc;
+        }
+        return;
+    }
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = source.ptr[d..][0..V].*;
