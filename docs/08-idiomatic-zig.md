@@ -1066,9 +1066,12 @@ The second and third failed on their own stated mechanism, which is what makes t
 rather than merely negative. The `vpcmpq` block compare left **retired branches flat**
 (1.00002) where the sibling reads 0.983 — the branches it exists to remove were not there to
 remove. The shared plane did buy its footprint, and the cache-miss column shows it (0.973),
-but the extra load to reach the plane costs more than the miss it saves: keep the plane
-INLINE in the per-attacker block, which is what puts `lut1` and the plane behind one scaled
-base.
+but the extra load to reach the plane costs more than the miss it saves. The verdict was
+about the POINTER, not the sharing: upstream `b877fbde5` shares the planes by indexing one
+static table by piece type — `threat_lut2[type][from * 64 + to]`, beside a flat `threat_lut1`
+indexed by the record's attacker/attacked byte, two RIP-relative bases and no load to reach
+either — and that form measured fewer instructions at every tier (native −0.22%, avx2
+−0.15%, sse41 −0.05%, ssse3 −0.008%), so it replaced the per-attacker block.
 
 The fourth is the clearest case of a sibling result being a hypothesis about the OTHER
 compiler, and it is now refuted on TWO tiers: **1.00040** at native avx512icl and
