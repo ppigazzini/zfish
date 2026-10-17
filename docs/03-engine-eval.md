@@ -30,7 +30,7 @@ for the same position.
 | `nnue_acc_update.zig` | the update algorithm: `evaluateSide`, the refresh path, and the fused incremental step |
 | `nnue_acc_entry.zig` | the two steps that start from a refresh-cache ENTRY: the entry diff both of them share, and `updateHybrid`, the same-half king move |
 | `nnue_acc_both.zig` | `applyCombinedBoth` — one ply taken for BOTH perspectives, decoding each diff once |
-| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `applyRefreshFused` and `applyHybridDelta` — all of them expressed through one sign-comptime int8 row applier, `tileRows` (upstream's `apply_psq_features`/`apply_threat_features` over `apply_feature_single`) |
+| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `applyRefreshFused` and `applyHybridDelta` — all of them expressed through one sign-comptime int8 row applier, `tileRows` (upstream's `apply_psq_features`/`apply_threat_features` over `apply_feature_single`), except on the SSSE3 tier, where they pair their rows instead (`WeightRows`, below) |
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(opponent-queen state, king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
 | `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 tiers that also carry VBMI2, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
@@ -393,7 +393,17 @@ Every weight pointer these kernels take carries `align(64)` and each row load as
 its alignment at the load site (`loadVec`/`loadW`): a runtime-offset slice of a
 many-pointer degrades to the element alignment, and non-VEX SSE folds a load into an
 op's `m128` operand only when 16-byte alignment is provable — without the assert the
-sse41 tier pays a separate `movdqu` per 16 weight bytes. On an Apple CPU model `tileRows`
+sse41 tier pays a separate `movdqu` per 16 weight bytes.
+
+**Paired rows, on one tier.** Upstream widens two int8 rows at once — interleave their
+bytes, `pmaddubsw` the pairs against a vector of ones — and collects every row of one sign,
+across feature sets, into one `WeightRows` list so nearly every row has a partner. zfish takes
+it only where it is less work: SSSE3 without SSE4.1 (`nnue_acc_rowops.paired_widening`). There
+the one-row widen already IS an unpack and a shift, and pairing halves it; from SSE4.1 up the
+one-row widen is a `pmovsxbw` straight from memory, which a pair can at best match. Measured
+at every width, with upstream's load-time block permutation for the 256- and 512-bit pairs:
+instructions per node +4.1% native, +1.4% avx2, +8.4% sse41 and −6.4% ssse3. Every other
+tier's instruction stream is the one-row kernels' byte for byte. On an Apple CPU model `tileRows`
 sums the i8 rows it removes and subtracts the sum once (`apple_tuned`): the same wrapping
 value, dodging an LLVM 22 miscompile of the per-row subtract
 ([08-idiomatic-zig.md](08-idiomatic-zig.md)).
