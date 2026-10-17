@@ -54,6 +54,56 @@ const rank_3_bb: u64 = 0x0000000000ff0000;
 const rank_6_bb: u64 = 0x0000ff0000000000;
 const rank_7_bb: u64 = 0x00ff000000000000;
 
+/// Read what the side not to move attacks with piece type `pt`, or with every piece at
+/// `all_pieces` -- upstream's Position::threats_by. The make leaves the sets unfilled and
+/// marks them so with an empty total (state_setup.setExtraBitboards), and the first read
+/// fills them (upstream 6a9ec5c33): a node that never generates a king move or scores a
+/// quiet never pays for them. An empty total is never a real one -- the side not to move
+/// always has a king, and a king attacks three squares at least.
+pub inline fn threatsBy(pos: *const Position, comptime pt: u8) u64 {
+    if (pos.st.threats[all_pieces] == 0) computeThreats(pos);
+    return pos.st.threats[pt];
+}
+
+/// Fill StateInfo.threats -- upstream's Position::compute_threats. The mover's own king is
+/// lifted off the board, so a slider's ray runs THROUGH it: a king that steps back along a
+/// checking ray is still in check. It changes nothing when the mover is not in check, since
+/// then no ray reaches that king. Queen and king attacks reach the total alone.
+fn computeThreats(pos: *const Position) void {
+    const them = pos.side_to_move ^ 1;
+    const occ = pos.by_type_bb[0] ^ squareBb(kingSquare(pos, pos.side_to_move));
+    const theirs = pos.by_color_bb[them];
+    const threats = &pos.st.threats;
+    threats[pawn] = pawnAttacksSet(them, theirs & pos.by_type_bb[pawn]);
+    threats[knight] = attacksFrom(knight, theirs & pos.by_type_bb[knight], occ);
+    threats[bishop] = attacksFrom(bishop, theirs & pos.by_type_bb[bishop], occ);
+    threats[rook] = attacksFrom(rook, theirs & pos.by_type_bb[rook], occ);
+    threats[all_pieces] = threats[pawn] | threats[knight] | threats[bishop] | threats[rook] |
+        attacksFrom(queen, theirs & pos.by_type_bb[queen], occ) |
+        bitboard.attacks(king, kingSquare(pos, them), 0);
+}
+
+/// Shift a pawn SET to the squares it attacks: every pawn of a colour attacks the same two
+/// relative squares, so the whole bitboard resolves in two shifts (upstream pawn_attacks_bb).
+fn pawnAttacksSet(color: u8, pawns: u64) u64 {
+    return if (color == white)
+        ((pawns & ~file_h_bb) << 9) | ((pawns & ~file_a_bb) << 7)
+    else
+        ((pawns & ~file_h_bb) >> 7) | ((pawns & ~file_a_bb) >> 9);
+}
+
+/// Union the attacks of every piece of type `pt` in `pieces` over occupancy `occ`.
+inline fn attacksFrom(comptime pt: u8, pieces: u64, occ: u64) u64 {
+    var b = pieces;
+    var result: u64 = 0;
+    while (b != 0) {
+        const s: u8 = @intCast(@ctz(b));
+        b &= b - 1;
+        result |= bitboard.attacks(pt, s, occ);
+    }
+    return result;
+}
+
 const GenType = enum {
     captures,
     quiets,
@@ -138,7 +188,7 @@ fn generateAll(
     }
 
     if (kind == .evasions) target = ~piecesColor(pos, us);
-    target &= ~pos.st.threats[all_pieces];
+    target &= ~threatsBy(pos, all_pieces);
     splatMoves(writer, ksq, bitboard.attacks(king, ksq, 0) & target);
 
     if (kind == .quiets and canCastleAny(pos, us)) {
@@ -152,7 +202,7 @@ fn generateAll(
             // geometry lies on no line from its own king to a slider, so the test always passes
             // there.
             if (!isCastlingImpeded(pos, right) and canCastle(pos, right) and
-                (bitboard.between(ksq, to) & pos.st.threats[all_pieces]) == 0 and
+                (bitboard.between(ksq, to) & threatsBy(pos, all_pieces)) == 0 and
                 (pos.st.blockers_for_king[us] & squareBb(rook_square)) == 0)
             {
                 writer.push(makeSpecialMove(castling, ksq, rook_square, knight));

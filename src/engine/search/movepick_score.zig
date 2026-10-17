@@ -232,15 +232,14 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
         if (ply < low_ply_history_size)
             lowply_row = &context.low_ply_history.?[@as(usize, @intCast(ply))];
 
-        // Read the threats the make already derived (upstream 400c23f97). They ray through
-        // our own king, which changes nothing here: a quiet list is never generated in check,
-        // so no enemy ray reaches that king.
-        const threats = &pos.st.threats;
+        // Read the other side's threats (upstream 400c23f97), filled on first read
+        // (6a9ec5c33). They ray through our own king, which changes nothing here: a quiet
+        // list is never generated in check, so no enemy ray reaches that king.
         threat_by_lesser[pawn] = 0;
-        threat_by_lesser[knight] = threats[pawn];
+        threat_by_lesser[knight] = movegen.threatsBy(pos, pawn);
         threat_by_lesser[bishop] = threat_by_lesser[knight];
-        threat_by_lesser[rook] = threats[knight] | threats[bishop] | threat_by_lesser[knight];
-        threat_by_lesser[queen] = threats[rook] | threat_by_lesser[rook];
+        threat_by_lesser[rook] = movegen.threatsBy(pos, knight) | movegen.threatsBy(pos, bishop) | threat_by_lesser[knight];
+        threat_by_lesser[queen] = movegen.threatsBy(pos, rook) | threat_by_lesser[rook];
         threat_by_lesser[king] = 0;
         check_squares = pos.st.check_squares;
     }

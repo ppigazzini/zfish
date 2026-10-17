@@ -104,7 +104,7 @@ pub fn legal(pos: *const Position, m: u16) bool {
 
     // A king may step onto any square the other side does not threaten -- the threats ray
     // through the king itself, so stepping back along a checking line is refused too.
-    if ((pc & 7) == king_pt) return (sqBb(to) & pos.st.threats[all_pieces]) == 0;
+    if ((pc & 7) == king_pt) return (sqBb(to) & movegen.threatsBy(pos, all_pieces)) == 0;
 
     const checkers = pos.st.checkers_bb;
     if (checkers != 0) {

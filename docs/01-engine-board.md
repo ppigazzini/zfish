@@ -273,7 +273,7 @@ the five sites that want both ray sets from the same square/occupancy: `attacker
 (board), `setExtraBitboards` (board), `updatePieceThreats` (board), `givesCheck`'s
 en-passant case and `seeGe`'s queen branch (both legality). Sites that want only one
 ray — `seeGe`'s pawn/bishop/rook branches, movegen's slider loop, `legal`'s slider test,
-`setExtraBitboards`' threat walk — call plain `attacks()`, as upstream's `see_ge` and
+`movegen.computeThreats`' walk — call plain `attacks()`, as upstream's `see_ge` and
 its threat bitboards call a single `attacks_bb`. That call is a
 magic/PEXT lookup on EVERY tier, and at `use_avx2` this is a deliberate divergence:
 upstream's `attacks_bb(pt, s, occupied)` runs the dual pass there too and keeps the lane
@@ -415,10 +415,14 @@ The other predicates in `legality.zig`:
 `state_setup.updateSliderBlockers` maintains the pin data both sides read: for
 each enemy sniper aligned with our king, if exactly one piece stands between, that
 piece is a blocker, and if it is ours the sniper is a pinner. `setExtraBitboards` runs
-it for both colors, refills `check_squares[pt]` — the squares from which each piece
-type would check the side not to move — and refills `threats`: what the side not to
-move attacks, by piece type through rook, and all of it in `threats[0]`. All of it runs
-on every `doMove` and `doNullMove`, and on `setState` after a FEN parse.
+it for both colors and refills `check_squares[pt]` — the squares from which each piece
+type would check the side not to move. All of it runs on every `doMove` and
+`doNullMove`, and on `setState` after a FEN parse. It leaves `threats` — what the side not
+to move attacks, by piece type through rook, and all of it in `threats[0]` — UNFILLED,
+marked by an empty `threats[0]`, and `movegen.threatsBy` fills them on first read
+(upstream's lazy `threats_by`, 6a9ec5c33): an empty total is never a real one, since the
+side not to move always has a king. A node that never generates a king move, tests one
+for legality or scores a quiet never pays for them.
 
 ## Zobrist, repetition, FEN
 

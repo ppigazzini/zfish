@@ -37,8 +37,6 @@ const relativeSquare = board_core.relativeSquare;
 const pawnAttacks = board_core.pawnAttacks;
 const kingSquare = board_core.kingSquare;
 const fileOf = board_core.fileOf;
-const file_a_bb = board_core.file_a_bb;
-const file_h_bb = board_core.file_h_bb;
 const attackersTo = legality.attackersTo;
 
 pub fn setCastlingRight(pos_ptr: *Position, c: u8, rfrom: u8) void {
@@ -144,8 +142,9 @@ pub fn setState(pos_ptr: *Position) void {
 }
 
 /// Derive the bitboards every make recomputes rather than copies: both kings' slider
-/// blockers and pinners, the squares the side to move gives check from, and the squares the
-/// other side threatens (upstream's set_extra_bitboards, 400c23f97).
+/// blockers and pinners and the squares the side to move gives check from (upstream's
+/// set_extra_bitboards). The squares the other side threatens are left unfilled, marked by an
+/// empty total, and movegen.threatsBy fills them on first read (upstream 6a9ec5c33).
 pub fn setExtraBitboards(pos_ptr: *Position) void {
     const pos = pos_ptr;
     updateSliderBlockers(pos_ptr, color_white);
@@ -163,40 +162,7 @@ pub fn setExtraBitboards(pos_ptr: *Position) void {
     pos.st.check_squares[queen_pt] = pos.st.check_squares[bishop_pt] | pos.st.check_squares[rook_pt];
     pos.st.check_squares[king_pt] = 0;
 
-    // Lift the mover's own king off the board, so a slider's ray runs THROUGH it: a king that
-    // steps back along a checking ray is still in check. It changes nothing when the mover is
-    // not in check, since then no ray reaches that king.
-    const occ = all ^ sqBb(kingSquare(pos, pos.side_to_move));
-    const theirs = pos.by_color_bb[them];
-    const threats = &pos.st.threats;
-    threats[pawn_pt] = pawnAttacksSet(them, theirs & pos.by_type_bb[pawn_pt]);
-    threats[knight_pt] = attacksFrom(knight_pt, theirs & pos.by_type_bb[knight_pt], occ);
-    threats[bishop_pt] = attacksFrom(bishop_pt, theirs & pos.by_type_bb[bishop_pt], occ);
-    threats[rook_pt] = attacksFrom(rook_pt, theirs & pos.by_type_bb[rook_pt], occ);
-    threats[all_pieces] = threats[pawn_pt] | threats[knight_pt] | threats[bishop_pt] |
-        threats[rook_pt] | attacksFrom(queen_pt, theirs & pos.by_type_bb[queen_pt], occ) |
-        bitboard.attacks(king_pt, ksq, 0);
-}
-
-/// Shift a pawn SET to the squares it attacks: every pawn of a colour attacks the same two
-/// relative squares, so the whole bitboard resolves in two shifts (upstream pawn_attacks_bb).
-fn pawnAttacksSet(color: u8, pawns: u64) u64 {
-    return if (color == color_white)
-        ((pawns & ~file_h_bb) << 9) | ((pawns & ~file_a_bb) << 7)
-    else
-        ((pawns & ~file_h_bb) >> 7) | ((pawns & ~file_a_bb) >> 9);
-}
-
-/// Union the attacks of every piece of type `pt` in `pieces` over occupancy `occ`.
-inline fn attacksFrom(comptime pt: u8, pieces: u64, occ: u64) u64 {
-    var b = pieces;
-    var result: u64 = 0;
-    while (b != 0) {
-        const s: u8 = @intCast(@ctz(b));
-        b &= b - 1;
-        result |= bitboard.attacks(pt, s, occ);
-    }
-    return result;
+    pos.st.threats[all_pieces] = 0;
 }
 
 pub fn computeMaterialKey(piece_counts_ptr: [*]const i32, piece_count_len: usize) u64 {
