@@ -81,8 +81,8 @@ pub fn fullMakeIndex(params: FullThreatParams) u32 {
     const attacker_oriented: usize = params.attacker ^ swap;
     const attacked_oriented: usize = params.attacked ^ swap;
     const less: usize = @intFromBool(from_oriented < to_oriented);
-    const block = &threat_route_blocks[attacker_oriented];
-    return block.lut1[attacked_oriented * 2 + less] + block.comb[from_oriented * 64 + to_oriented];
+    return threat_lut1[(attacker_oriented * 16 + attacked_oriented) * 2 + less] +
+        threat_lut2[attacker_oriented & 7][from_oriented * 64 + to_oriented];
 }
 
 /// Build the mask that orients a whole dirty-threat record in ONE xor: every
@@ -123,16 +123,13 @@ pub noinline fn fullAppendChanged(
     var added_len: usize = 0;
     for (values) |raw| {
         const x = raw ^ mask;
-        const attacker: usize = (x >> 20) & 0xf;
-        // Read the attacked field pre-doubled -- shift one bit less and mask
-        // the low bit away -- so [attacked2 + less] indexes index_lut1's
-        // flattened [16][2]u32 rows without a separate scale.
-        const attacked2: usize = (x >> 15) & 0x1e;
+        // Read the attacker/attacked byte pre-doubled -- shift one bit less and mask the
+        // low bit away -- so [pair2 + less] indexes threat_lut1 without a separate scale.
+        const pair2: usize = (x >> 15) & 0x1fe;
         const from: usize = x & 0xff;
         const to: usize = (x >> 8) & 0xff;
         const less: usize = @intFromBool(from < to);
-        const block = &threat_route_blocks[attacker];
-        const index = block.lut1[attacked2 + less] + block.comb[(from << 6) | to];
+        const index = threat_lut1[pair2 + less] + threat_lut2[(x >> 20) & 7][(from << 6) | to];
         if (index >= full_dimensions) continue;
         if ((x >> 31) != 0) {
             added_out[added_len] = index;
@@ -178,20 +175,18 @@ pub noinline fn fullAppendChangedBoth(
         const k: usize = raw >> 31;
 
         const xw = raw ^ white_mask;
-        const wblock = &threat_route_blocks[(xw >> 20) & 0xf];
         const wfrom: usize = xw & 0xff;
         const wto: usize = (xw >> 8) & 0xff;
-        const w_index = wblock.lut1[((xw >> 15) & 0x1e) + @intFromBool(wfrom < wto)] + wblock.comb[(wfrom << 6) | wto];
+        const w_index = threat_lut1[((xw >> 15) & 0x1fe) + @intFromBool(wfrom < wto)] + threat_lut2[(xw >> 20) & 7][(wfrom << 6) | wto];
         if (w_index < full_dimensions) {
             w_out[k][w_len[k]] = w_index;
             w_len[k] += 1;
         }
 
         const xb = raw ^ black_mask;
-        const bblock = &threat_route_blocks[(xb >> 20) & 0xf];
         const bfrom: usize = xb & 0xff;
         const bto: usize = (xb >> 8) & 0xff;
-        const b_index = bblock.lut1[((xb >> 15) & 0x1e) + @intFromBool(bfrom < bto)] + bblock.comb[(bfrom << 6) | bto];
+        const b_index = threat_lut1[((xb >> 15) & 0x1fe) + @intFromBool(bfrom < bto)] + threat_lut2[(xb >> 20) & 7][(bfrom << 6) | bto];
         if (b_index < full_dimensions) {
             b_out[k][b_len[k]] = b_index;
             b_len[k] += 1;
@@ -353,8 +348,8 @@ const queen_offset = luts.queen_offset;
 const orient_tbl_half = luts.orient_tbl_half;
 const orient_tbl_full = luts.orient_tbl_full;
 const half_offsets = luts.half_offsets;
-const ThreatRouteBlock = luts.ThreatRouteBlock;
-const threat_route_blocks = luts.threat_route_blocks;
+const threat_lut1 = luts.threat_lut1;
+const threat_lut2 = luts.threat_lut2;
 const full_dimensions = luts.full_dimensions;
 pub const FullAppendResult = luts.FullAppendResult;
 pub const FullAppendChangedLens = luts.FullAppendChangedLens;

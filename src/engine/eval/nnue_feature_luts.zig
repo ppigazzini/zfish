@@ -1,9 +1,9 @@
 // Provide the threat-index lookup tables of the full-threat feature set.
 //
 // Split from nnue_feature.zig on the 500-line lint: everything here is comptime
-// table construction (index_lut1/index_lut2/offsets and the colocated
-// ThreatRouteBlock planes) plus the piece/square constants the builders and the
-// index formulas share. nnue_feature.zig re-imports the lot; no logic changed
+// table construction (index_lut1/index_lut2/offsets and the threat_lut1/threat_lut2
+// tables the index formulas read) plus the piece/square constants the builders and
+// the index formulas share. nnue_feature.zig re-imports the lot; no logic changed
 // in the move.
 
 const std = @import("std");
@@ -214,36 +214,34 @@ pub const offsets = helper_offsets_and_offsets.second;
 pub const index_lut1 = initIndexLuts();
 pub const index_lut2 = indexLut2Array();
 
-/// Colocate one attacker's whole lookup state -- its flattened index_lut1 row
-/// ([attacked * 2 + less] addresses one element with one scaled index) and a
-/// merged u16 `offsets[from] + index_lut2[from][to]` plane -- so a threat index
-/// costs one block base plus two loads instead of three loads behind three
-/// separately scaled bases. The merge fits u16 with a wide margin: the largest
-/// per-from offset (queen, 1455) plus the largest within-from index still sits
-/// far below 65535, and the builder asserts every sum. The source tables above
-/// remain the comptime input; only the blocks are referenced at runtime.
-pub const ThreatRouteBlock = extern struct {
-    lut1: [32]u32,
-    comb: [64 * 64]u16,
-};
+/// Flatten index_lut1 by the byte a dirty-threat record already carries in bits 16-23,
+/// `attacker << 4 | attacked`: threat_lut1[pair * 2 + less] -- upstream b877fbde5's
+/// ThreatLUTs.lut1, read through `&lut1[0][0]`.
+pub const threat_lut1: [16 * 16 * 2]u32 align(64) = @bitCast(index_lut1);
 
-fn buildThreatRouteBlocks() [16]ThreatRouteBlock {
-    @setEvalBranchQuota(4000000);
-    var blocks = std.mem.zeroes([16]ThreatRouteBlock);
-    for (&blocks, 0..) |*block, attacker| {
-        block.lut1 = @bitCast(index_lut1[attacker]);
+/// Fold the per-from offset into one u16 plane per attacker piece TYPE -- upstream
+/// b877fbde5's ThreatLUTs.lut2: threat_lut2[type][from * 64 + to]. A white and a black
+/// attacker of one type share their offsets and their within-from indices, except a pawn,
+/// whose two colours attack in opposite directions; `to < from` says which one moved, so the
+/// pawn plane reads the black pawn's indices below `from` and the white pawn's above.
+pub const threat_lut2: [8][64 * 64]u16 align(64) = blk: {
+    @setEvalBranchQuota(4_000_000);
+    var planes = std.mem.zeroes([8][64 * 64]u16);
+    for (all_pieces[0..6]) |white_piece| {
+        const pt = typeOf(white_piece);
+        const black_piece = white_piece + 8;
         for (0..64) |from| {
+            if (offsets[white_piece][from] != offsets[black_piece][from])
+                @compileError("threat_lut2: the two colours' offsets differ");
             for (0..64) |to| {
-                const merged: u32 = offsets[attacker][from] + index_lut2[attacker][from][to];
-                std.debug.assert(merged <= std.math.maxInt(u16));
-                block.comb[from * 64 + to] = @intCast(merged);
+                const source = if (pt == pawn_piece_type and to < from) black_piece else white_piece;
+                const merged: u32 = offsets[white_piece][from] + index_lut2[source][from][to];
+                planes[pt][from * 64 + to] = @intCast(merged);
             }
         }
     }
-    return blocks;
-}
-
-pub const threat_route_blocks = buildThreatRouteBlocks();
+    break :blk planes;
+};
 
 pub const ps_nb: u32 = 11 * 64;
 /// FullThreats::Dimensions (SFNNv16): the threat feature count, also PP_3Wide's IndexBase.

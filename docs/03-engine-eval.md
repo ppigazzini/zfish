@@ -23,7 +23,7 @@ for the same position.
 | `nnue_feature_pp.zig` | the PP_3Wide (pawn-pair) feature set: `ppMakeIndex`, its active/changed producers, and the both-perspectives topology walk |
 | `nnue_feature_write_avx512.zig` | `writeIndices` — the AVX512VBMI+VBMI2 vector fast path for the refresh-time K32Q2 removed/added index write |
 | `nnue_feature_bb.zig` | the bitboard/attack math and comptime index tables `nnue_feature.zig` builds on |
-| `nnue_feature_luts.zig` | the full-threat feature set's threat-index lookup tables — `index_lut1`/`index_lut2`, their offsets, the colocated `ThreatRouteBlock` planes, and the piece/square constants the index formulas share; all comptime-built |
+| `nnue_feature_luts.zig` | the full-threat feature set's threat-index lookup tables — `index_lut1`/`index_lut2` and their offsets as the comptime inputs, `threat_lut1` (flat, indexed by the record's attacker/attacked byte) and `threat_lut2` (one u16 plane per attacker piece type) as what the index formulas read, and the piece/square constants they share; all comptime-built |
 | `nnue_ft.zig` | the two typed `FeatureTransformer` weight accessors (psq, threat + pawn-pair), over the byte offsets `nnue_dimensions.zig` owns — it derives none of its own |
 | **accumulator** | |
 | `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the `AccumulatorStack` handle, and every state/diff accessor |
