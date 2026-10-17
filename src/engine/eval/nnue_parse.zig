@@ -3,9 +3,8 @@
 // Parse the .nnue file into its (already-permuted) weight memory. These are the
 // building blocks of that parse, matching src/nnue exactly:
 //
-//   * decodeLeb -- signed LEB128 with the same sign-extension and 32-bit shift
-//     masking as read_leb_128_detail (nnue_common.h); lives in nnue_leb.zig,
-//     re-exported here for the section readers.
+//   * the feature-transformer sections -- plain little-endian since SFNNv18, which
+//     removed upstream's LEB128 codec (read/write_leb_128) along with the i16 psq rows;
 //   * permuteBlocks -- the byte-block reorder of permute<> (nnue_feature_
 //     transformer.h). zfish's feature transform writes its int8 output in natural
 //     chunk order (nnue_accumulator.transform), never the arch-specific packus
@@ -29,8 +28,6 @@ const dims = @import("nnue_dimensions");
 /// permuteBlocks only: the live parse never permutes on any tier (see the header), so no target
 /// swaps this -- it does not gate correctness.
 pub const packus_epi16_order_sse41 = [8]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
-
-pub const decodeLeb = @import("nnue_leb.zig").decodeLeb;
 
 /// Reorder blocks per permute<BlockSize>: `order.len` blocks of `block_size` bytes
 /// within each (block_size * order.len)-byte chunk of `data`.
@@ -107,8 +104,6 @@ pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize, s
 
 // ---- feature transformer parse ---------------------------------------------
 
-pub const leb_magic = "COMPRESSED_LEB128";
-
 /// Write each region where nnue_dimensions says it lives. The accessors in nnue_ft.zig read
 /// it back from the same declarations, so the writer and the reader cannot drift apart --
 /// see that module's header for what the two derivations used to risk.
@@ -137,19 +132,18 @@ fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
     return std.mem.bytesAsSlice(T, bytes);
 }
 
-/// Parse one COMPRESSED_LEB128 section ([magic][u32 count][data]) of `out.len`
-/// values into `out`; return total section bytes consumed, or null if malformed.
-fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
+/// Copy one little-endian section of `out.len` values from the start of `blob` into `out`
+/// -- upstream read_little_endian(stream, out, count). Return the bytes consumed, or null if
+/// the blob ends first.
+fn readLeSection(comptime T: type, blob: []const u8, out: []T) ?usize {
     @setRuntimeSafety(true); // untrusted file, startup-only -- see parseFeatureTransformer
-    if (blob.len < leb_magic.len + 4) return null;
-    if (!std.mem.eql(u8, blob[0..leb_magic.len], leb_magic)) return null;
-    const count = std.mem.readInt(u32, blob[leb_magic.len..][0..4], .little);
-    const data = blob[leb_magic.len + 4 ..];
-    if (data.len < count) return null;
-    // Hand the decoder the section, not the rest of the blob, so its bound is the section's.
-    const used = decodeLeb(T, data[0..count], out, out.len) orelse return null;
-    if (used != count) return null;
-    return leb_magic.len + 4 + count;
+    const n = out.len * @sizeOf(T);
+    if (blob.len < n) return null;
+    @memcpy(std.mem.sliceAsBytes(out), blob[0..n]);
+    if (comptime builtin.target.cpu.arch.endian() == .big) {
+        for (out) |*v| v.* = @byteSwap(v.*);
+    }
+    return n;
 }
 
 /// Parse the feature-transformer blob into `dst` (the FeatureTransformer memory
@@ -160,29 +154,21 @@ pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     // named by EvalFile happened to contain, and the shipped build otherwise checks no
     // slice bound, cast or overflow at all. The parse runs once at startup and never on
     // the per-node path, so the checks cost no search throughput. They are a backstop,
-    // not the contract: every `blob.len < ...` test below rejects a malformed file
+    // not the contract: every short-blob test below rejects a malformed file
     // gracefully, and only a bound this function failed to state can reach a trap.
     @setRuntimeSafety(true);
     // Skip the leading u32 component hash (Detail::read_parameters). Check it is there first:
     // a file shorter than the hash would make the very first section slice out of range.
     if (blob.len < 4) return null;
     var pos: usize = 4;
-    // Follow the SFNNv17 read order: biases, threatWeights, ppWeights, weights. The threat
-    // and pp weight sections are framed separately in the stream but written into the one
-    // contiguous threatAndPp region (pp right after threat), so a single index addresses
-    // either at runtime.
-    // 1. Read biases (LEB i16)
-    pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, biases_off, biases_count)) orelse return null;
-    // 2. Copy threatWeights (raw little-endian i8) into the head of the threatAndPp region
-    if (blob.len < pos + threat_only_weights_count) return null;
-    @memcpy(dst[threat_weights_off .. threat_weights_off + threat_only_weights_count], blob[pos .. pos + threat_only_weights_count]);
-    pos += threat_only_weights_count;
-    // 3. Copy ppWeights (raw little-endian i8) into the tail of the threatAndPp region
-    if (blob.len < pos + pp_only_weights_count) return null;
-    @memcpy(dst[pp_weights_off .. pp_weights_off + pp_only_weights_count], blob[pos .. pos + pp_only_weights_count]);
-    pos += pp_only_weights_count;
-    // 4. Read weights / psq weights (LEB i16)
-    pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, weights_off, psq_weights_count)) orelse return null;
+    // Follow the SFNNv18 read order: biases, threatWeights, ppWeights, weights, every one a
+    // plain little-endian array. The threat and pp weight sections are read separately but
+    // written into the one contiguous threatAndPp region (pp right after threat), so a
+    // single index addresses either at runtime.
+    pos += readLeSection(i16, blob[pos..], dstSlice(i16, dst, biases_off, biases_count)) orelse return null;
+    pos += readLeSection(i8, blob[pos..], dstSlice(i8, dst, threat_weights_off, threat_only_weights_count)) orelse return null;
+    pos += readLeSection(i8, blob[pos..], dstSlice(i8, dst, pp_weights_off, pp_only_weights_count)) orelse return null;
+    pos += readLeSection(i8, blob[pos..], dstSlice(i8, dst, weights_off, psq_weights_count)) orelse return null;
     return pos;
 }
 
@@ -191,7 +177,7 @@ pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
 const FtRegion = struct { off: usize, len: usize };
 pub const ft_regions = [_]FtRegion{
     .{ .off = biases_off, .len = biases_count * 2 },
-    .{ .off = weights_off, .len = psq_weights_count * 2 },
+    .{ .off = weights_off, .len = psq_weights_count * 1 },
     .{ .off = threat_weights_off, .len = threat_weights_count * 1 },
 };
 
@@ -241,44 +227,26 @@ fn constSlice(comptime T: type, src: []const u8, off: usize, count: usize) []con
     return std.mem.bytesAsSlice(T, bytes);
 }
 
-/// Append one canonical signed-LEB128 value (write_leb_128, nnue_common.h).
-fn encodeLebValue(comptime T: type, v: T, out: *Bytes, a: std.mem.Allocator) !void {
-    var value: i64 = v;
-    while (true) {
-        const byte: u8 = @intCast(value & 0x7f);
-        value >>= 7;
-        const done = if (byte & 0x40 == 0) value == 0 else value == -1;
-        if (done) {
-            try out.append(a, byte);
-            return;
+/// Append `values` as one little-endian section -- upstream write_little_endian.
+fn appendLeSection(comptime T: type, values: []const T, out: *Bytes, a: std.mem.Allocator) !void {
+    if (comptime builtin.target.cpu.arch.endian() == .big) {
+        for (values) |v| {
+            var le: [@sizeOf(T)]u8 = undefined;
+            std.mem.writeInt(T, &le, v, .little);
+            try out.appendSlice(a, &le);
         }
-        try out.append(a, byte | 0x80);
+        return;
     }
-}
-
-/// Append a COMPRESSED_LEB128 section: magic, u32 byte-count, then the encoded values.
-fn encodeLebSection(
-    comptime T: type,
-    values: []const T,
-    out: *Bytes,
-    a: std.mem.Allocator,
-) !void {
-    try out.appendSlice(a, leb_magic);
-    const count_pos = out.items.len;
-    try out.appendSlice(a, &[_]u8{ 0, 0, 0, 0 });
-    const data_start = out.items.len;
-    for (values) |v| try encodeLebValue(T, v, out, a);
-    const count: u32 = @intCast(out.items.len - data_start);
-    std.mem.writeInt(u32, out.items[count_pos..][0..4], count, .little);
+    try out.appendSlice(a, std.mem.sliceAsBytes(values));
 }
 
 /// Serialize FeatureTransformer::write_parameters preceded by Detail::write_parameters'
 /// u32 hash. The live parse never permutes on any tier (see the header), so there is no
 /// unpermute. Member
 /// write order MUST mirror parseFeatureTransformer (the file / upstream layout):
-/// biases (LEB i16), threatWeights (raw i8), ppWeights (raw i8), weights (LEB i16).
+/// biases (i16), threatWeights (i8), ppWeights (i8), weights (i8), all little-endian.
 /// The threat and pp weight sections are stored contiguously (pp after threat) but
-/// framed as separate stream sections.
+/// written as separate stream sections.
 pub fn serializeFeatureTransformer(
     ft: []const u8,
     hash_value: u32,
@@ -289,10 +257,10 @@ pub fn serializeFeatureTransformer(
     std.mem.writeInt(u32, &hdr, hash_value, .little);
     try out.appendSlice(a, &hdr);
 
-    try encodeLebSection(i16, constSlice(i16, ft, biases_off, biases_count), out, a);
-    try out.appendSlice(a, ft[threat_weights_off .. threat_weights_off + threat_only_weights_count]);
-    try out.appendSlice(a, ft[pp_weights_off .. pp_weights_off + pp_only_weights_count]);
-    try encodeLebSection(i16, constSlice(i16, ft, weights_off, psq_weights_count), out, a);
+    try appendLeSection(i16, constSlice(i16, ft, biases_off, biases_count), out, a);
+    try appendLeSection(i8, constSlice(i8, ft, threat_weights_off, threat_only_weights_count), out, a);
+    try appendLeSection(i8, constSlice(i8, ft, pp_weights_off, pp_only_weights_count), out, a);
+    try appendLeSection(i8, constSlice(i8, ft, weights_off, psq_weights_count), out, a);
 }
 
 /// Serialize AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
@@ -409,15 +377,12 @@ test "feature transformer layout offsets match the FeatureTransformer format" {
     try testing.expectEqual(@as(usize, 112052224), ft_total_bytes);
 }
 
-test "readLebSection rejects a count that outruns its own section" {
-    var out: [4]i16 = undefined;
-    // [magic][count=1][one byte] -- the section is well-formed but promises 4 values to decode.
-    var blob: std.ArrayList(u8) = .empty;
-    defer blob.deinit(testing.allocator);
-    try blob.appendSlice(testing.allocator, leb_magic);
-    try blob.appendSlice(testing.allocator, &[_]u8{ 1, 0, 0, 0 });
-    try blob.append(testing.allocator, 0x01);
-    try testing.expectEqual(@as(?usize, null), readLebSection(i16, blob.items, &out));
+test "parseFeatureTransformer rejects a blob that ends inside a section" {
+    // The hash, then a bias section one byte short: no section may be read past the blob.
+    // The parse stops at the first section, so the destination need only hold that one.
+    var dst: [biases_count * 2]u8 align(64) = @splat(0);
+    const short: [4 + biases_count * 2 - 1]u8 = @splat(0);
+    try testing.expectEqual(@as(?usize, null), parseFeatureTransformer(&short, &dst));
 }
 
 test "parseFeatureTransformer rejects a blob shorter than its component hash" {

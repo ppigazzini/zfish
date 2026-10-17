@@ -1,6 +1,7 @@
 // Provide the NNUE refresh cache / finny tables.
 //
-// Model the per-(king-square, perspective) AccumulatorRefreshTable: the entry byte
+// Model the per-(opponent-queen state, king-square, perspective) AccumulatorRefreshTable
+// (SFNNv18 doubled it: a K32Q2 bucket is keyed on both): the entry byte
 // layout, the typed accessors into each entry (accumulation i16 / pieces /
 // pieceBB), and clearRefreshCache which seeds every entry from the FT
 // biases. Split out of nnue_accumulator.zig; pure pointer-offset math over the
@@ -12,6 +13,7 @@
 const half_dimensions: usize = 1024;
 const square_count: usize = 64;
 const color_count: usize = 2;
+const queen_state_count: usize = 2;
 const nnue_align: usize = 64;
 const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16);
 
@@ -28,9 +30,10 @@ const cache_entry_pieces_offset = half_dimensions * @sizeOf(i16);
 /// 2176 B -- the size upstream's alignas(CacheLineSize) Entry has for the same three fields.
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
 const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
-/// The whole table: one entry per (king square, perspective). The Worker embeds a buffer of
-/// exactly this many bytes; search_id comptime-asserts worker_layout's pins against it.
-pub const table_bytes = cache_entry_bytes * square_count * color_count;
+/// The whole table: one entry per (opponent-queen state, king square, perspective). The
+/// Worker embeds a buffer of exactly this many bytes; search_id comptime-asserts
+/// worker_layout's pins against it.
+pub const table_bytes = cache_entry_bytes * queen_state_count * square_count * color_count;
 
 /// Expose opaque handles. The refresh cache is a raw byte arena (the
 /// per-(king-square,perspective) finny table); its entries are byte slots within it.
@@ -39,22 +42,25 @@ pub const table_bytes = cache_entry_bytes * square_count * color_count;
 pub const RefreshCache = opaque {};
 pub const CacheEntry = opaque {};
 
-pub fn cacheEntry(cache: *RefreshCache, king_square: u8, perspective: u8) *CacheEntry {
-    return @ptrCast(cacheBytesMut(cache) +
-        ((@as(usize, king_square) * color_count + @as(usize, perspective)) * cache_entry_bytes));
+/// Address entry [opponent_has_queen][king_square][perspective], upstream's
+/// `cache[opponentHasQueen][ksq][perspective]`.
+pub fn cacheEntry(cache: *RefreshCache, opponent_has_queen: bool, king_square: u8, perspective: u8) *CacheEntry {
+    const row = @as(usize, @intFromBool(opponent_has_queen)) * square_count + king_square;
+    return @ptrCast(cacheBytesMut(cache) + ((row * color_count + @as(usize, perspective)) * cache_entry_bytes));
 }
 
-/// Clear the AccumulatorRefreshTable: initialize every (king_square, perspective)
-/// refresh entry to the empty board -- accumulation = the feature-transformer
-/// biases, and the rest of the entry (pieces, pieceBB) zeroed.
-/// The biases pointer is passed in by the caller.
+/// Clear the AccumulatorRefreshTable: initialize every refresh entry to the empty board --
+/// accumulation = the feature-transformer biases, and the rest of the entry (pieces,
+/// pieceBB) zeroed. The biases pointer is passed in by the caller.
 pub fn clearRefreshCache(cache: *RefreshCache, biases: [*]const i16) void {
     const biases_bytes: [*]const u8 = @ptrCast(biases);
-    for (0..square_count) |ks| {
-        for (0..color_count) |p| {
-            const bytes = cacheEntryBytesMut(cacheEntry(cache, @intCast(ks), @intCast(p)));
-            @memcpy(bytes[0..feature_transformer_biases_bytes], biases_bytes[0..feature_transformer_biases_bytes]);
-            @memset(bytes[cache_entry_pieces_offset..cache_entry_bytes], 0);
+    for ([_]bool{ false, true }) |q| {
+        for (0..square_count) |ks| {
+            for (0..color_count) |p| {
+                const bytes = cacheEntryBytesMut(cacheEntry(cache, q, @intCast(ks), @intCast(p)));
+                @memcpy(bytes[0..feature_transformer_biases_bytes], biases_bytes[0..feature_transformer_biases_bytes]);
+                @memset(bytes[cache_entry_pieces_offset..cache_entry_bytes], 0);
+            }
         }
     }
 }

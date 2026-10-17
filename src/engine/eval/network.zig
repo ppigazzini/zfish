@@ -19,13 +19,27 @@ const network_version = network_parse.network_version;
 
 const Position = position_types.Position;
 
-const layer_stacks: usize = 8;
+const layer_stacks = nnue_dims.layer_stacks;
 const internal_dir = "<internal>";
 const none_name = "None";
 /// Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
 /// constant. Keep a single source of truth: engine.zig imports this via the
 /// "network" module rather than re-declaring it (a net bump edits one line).
-pub const default_eval_file_name = "nn-a8bcb689c267.nnue";
+pub const default_eval_file_name = "nn-c9e480e92425.nnue";
+
+/// Size one layer stack the way C++ lays out upstream's `NetworkArchitecture`, which is what
+/// the verify banner multiplies by LayerStacks: every affine layer is an alignas(64) bias
+/// array then an alignas(64) weight array, and the two activation layers between affine
+/// layers are empty members -- a byte each -- that push the next layer onto a fresh line.
+const network_architecture_bytes: usize = blk: {
+    const line = nnue_dims.cache_line_bytes;
+    var off: usize = 0;
+    for (weight_storage.layer_biases_bytes, weight_storage.layer_weights_bytes, 0..) |bias_bytes, weight_bytes, i| {
+        if (i > 0) off = std.mem.alignForward(usize, off + 2, line);
+        off = std.mem.alignForward(usize, off + bias_bytes, line) + weight_bytes;
+    }
+    break :blk std.mem.alignForward(usize, off, line);
+};
 
 /// Expose an opaque handle to the network subsystem. The NNUE weights live in this
 /// module's globals (ft_ptr_storage &c.), so there is no struct to point at --
@@ -151,12 +165,14 @@ pub fn verify(requested_path: []const u8) VerifyResult {
         };
     }
 
-    // Fix the verification dims by the NNUE architecture (sizeof the
-    // FeatureTransformer + NetworkArchitecture*LayerStacks; the static InputDimensions /
-    // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Fixed constants.
+    // Fix the verification dims by the NNUE architecture: sizeof the FeatureTransformer +
+    // NetworkArchitecture * LayerStacks, and the static InputDimensions /
+    // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS. Derive the two that the
+    // layout owns rather than restating them -- a literal here stayed at its SFNNv16 value
+    // through SFNNv17 and printed 109MiB where upstream printed 107.
     const info = VerifyInfo{
-        .size_bytes = 115115520,
-        .input_dimensions = 86896,
+        .size_bytes = nnue_dims.ft_total_bytes + layer_stacks * network_architecture_bytes,
+        .input_dimensions = nnue_dims.psq_feature_dimensions + nnue_dims.threat_and_pp_dimensions,
         .transformed_dimensions = 1024,
         .fc0_outputs = 32,
         .fc1_outputs = 32,

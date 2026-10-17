@@ -22,7 +22,7 @@ const layerPtr = weight_storage.layerPtr;
 
 pub const network_version: u32 = 0x6A448AFA; // upstream nnue_common.h Version (post-merge format)
 
-const layer_stacks: usize = 8;
+const layer_stacks = nnue_dims.layer_stacks;
 
 fn layerBiasesBytes(idx: usize) usize {
     return weight_storage.layer_biases_bytes[idx];

@@ -58,29 +58,27 @@ inline fn loadVec(comptime T: type, comptime V: usize, comptime A: usize, p: [*]
 }
 
 /// Apply one feature list to ONE accumulator tile -- upstream's `apply_psq_features` and
-/// `apply_threat_features` (b0ee1440), which differ only in the weight element type and the
-/// sign, both comptime here. `WT` is i16 for the HalfKA rows and i8 for the threat and
-/// pawn-pair rows, whose load widens to i16 the way upstream's `vec_convert_8_16` does.
-/// `IT` is the list's element type -- u16 for the HalfKA indices (upstream d96c183f), u32
-/// for the threat and pawn-pair ones.
+/// `apply_threat_features`, which since SFNNv18 differ only in the list and the sign: every
+/// weight row is int8, widened to i16 on load the way upstream's `apply_feature_single`
+/// (`vec_convert_8_16`) does. `IT` is the list's element type -- u16 for the K32Q2 indices
+/// (upstream d96c183f), u32 for the threat and pawn-pair ones.
 inline fn tileRows(
-    comptime WT: type,
     comptime IT: type,
     comptime add: bool,
     acc: *@Vector(row_tile_width, i16),
     rows: []const IT,
-    weights: [*]align(64) const WT,
+    weights: [*]align(64) const i8,
     tile_off: usize,
 ) void {
-    if (WT == i8 and !add and apple_tuned) {
+    if (!add and apple_tuned) {
         // Sum the rows, then take the sum out once: the same wrapping i16 value, but an add
         // recurrence, which LLVM 22 recombines correctly. See apple_tuned.
         var sum: @Vector(row_tile_width, i16) = @splat(0);
-        for (rows) |index| tileRow(WT, IT, true, &sum, index, weights, tile_off);
+        for (rows) |index| tileRow(IT, true, &sum, index, weights, tile_off);
         acc.* -%= sum;
         return;
     }
-    for (rows) |index| tileRow(WT, IT, add, acc, index, weights, tile_off);
+    for (rows) |index| tileRow(IT, add, acc, index, weights, tile_off);
 }
 
 /// Mark an Apple CPU model, which Zig's `.baseline` picks on aarch64-macos (apple_m1). LLVM 22
@@ -88,33 +86,34 @@ inline fn tileRows(
 /// accumulators for these models only, then recombines them with the wrong signs: the tile
 /// comes out near the NEGATED source once a list holds 4+ rows. LLVM 21 (Zig 0.16) and every
 /// other aarch64 model (generic, cortex, neoverse, oryon, ampere) compile it correctly, and
-/// the i16 rows and every add are unaffected. Linux aarch64 built with an apple model
+/// every add is unaffected. Since SFNNv18 the K32Q2 rows are int8 too, so the refresh's
+/// removed list takes this path as well. Linux aarch64 built with an apple model
 /// reproduces it under qemu-aarch64; drop this once that repro passes on the pinned Zig.
 const apple_tuned = blk: {
     const b = @import("builtin");
     break :blk b.target.cpu.arch == .aarch64 and std.mem.startsWith(u8, b.target.cpu.model.name, "apple_");
 };
 
-/// Add or subtract ONE weight row into the tile -- the body of upstream's `apply<sign>`.
+/// Add or subtract ONE weight row into the tile -- the body of upstream's
+/// `apply_feature_single<sign>`.
 inline fn tileRow(
-    comptime WT: type,
     comptime IT: type,
     comptime add: bool,
     acc: *@Vector(row_tile_width, i16),
     index: IT,
-    weights: [*]align(64) const WT,
+    weights: [*]align(64) const i8,
     tile_off: usize,
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
-    const wraw: @Vector(V, WT) = loadVec(WT, V, 64, weights, @as(usize, index) * half_dimensions + tile_off);
-    const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
+    const wraw: @Vector(V, i8) = loadVec(i8, V, 64, weights, @as(usize, index) * half_dimensions + tile_off);
+    const w: Vi16 = wraw; // i8 -> i16 widen
     acc.* = if (add) acc.* +% w else acc.* -% w;
 }
 
-/// Apply a HalfKA list of KNOWN length one or two -- upstream's
+/// Apply a K32Q2 list of KNOWN length one or two -- upstream's
 /// `apply_psq_features<sign, Incremental = true>` (8bc5caa2). A single ply's piece diff
-/// names at most two changed HalfKA squares per direction and always at least one (the
+/// names at most two changed K32Q2 squares per direction and always at least one (the
 /// moved piece leaves `from` and arrives at `to`; a capture or a promotion adds the second),
 /// so the counted loop's trip test is knowledge the caller already has. Peeling the first
 /// row hands it over: one unconditional apply, then one predicated one.
@@ -125,95 +124,33 @@ inline fn tileRow(
 /// `rows[0]` is unguarded, exactly as upstream's unguarded `list[0]` is; ReleaseSafe and
 /// the test builds are what check it.
 inline fn tileRowsIncremental(
-    comptime WT: type,
     comptime IT: type,
     comptime add: bool,
     acc: *@Vector(row_tile_width, i16),
     rows: []const IT,
-    weights: [*]align(64) const WT,
+    weights: [*]align(64) const i8,
     tile_off: usize,
 ) void {
     std.debug.assert(rows.len == 1 or rows.len == 2);
-    tileRow(WT, IT, add, acc, rows[0], weights, tile_off);
-    if (rows.len > 1) tileRow(WT, IT, add, acc, rows[1], weights, tile_off);
-}
-
-/// Apply a whole row list to the accumulator, upstream's `apply_combined` way: tile the
-/// accumulator, hold the tile in a register, and walk the rows INSIDE. The rows are the inner
-/// loop, so the accumulator is loaded and stored once per tile rather than once per row --
-/// which is what a row-outer loop costs, since each row streams all half_dimensions of it
-/// through memory.
-///
-/// Order per element is unchanged, and i16 wrap-around (`+%`/`-%`, matching upstream's
-/// `_mm*_add/sub_epi16`) is associative regardless, so this is bit-identical to applying
-/// the rows one at a time.
-inline fn accRows(
-    comptime WT: type,
-    comptime IT: type,
-    comptime add: bool,
-    target: []i16,
-    rows: []const IT,
-    weights: [*]align(64) const WT,
-) void {
-    const V = row_tile_width;
-    const Vi16 = @Vector(V, i16);
-    var d: usize = 0;
-    while (d < half_dimensions) : (d += V) {
-        var acc: Vi16 = target.ptr[d..][0..V].*;
-        tileRows(WT, IT, add, &acc, rows, weights, d);
-        target.ptr[d..][0..V].* = acc;
-    }
-}
-
-pub fn applyAccumulatorDeltaI16(
-    target: []i16,
-    source: []const i16,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]align(64) const i16,
-) void {
-    @memcpy(target, source);
-    accRows(i16, u32, false, target, removed, weights);
-    accRows(i16, u32, true, target, added, weights);
-}
-
-pub fn applyAccumulatorDeltaInPlaceI16(
-    target: []i16,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]align(64) const i16,
-) void {
-    accRows(i16, u32, false, target, removed, weights);
-    accRows(i16, u32, true, target, added, weights);
-}
-
-pub fn applyAccumulatorDeltaI8(
-    target: []i16,
-    source: []const i16,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]align(64) const i8,
-) void {
-    @memcpy(target, source);
-    accRows(i8, u32, false, target, removed, weights);
-    accRows(i8, u32, true, target, added, weights);
+    tileRow(IT, add, acc, rows[0], weights, tile_off);
+    if (rows.len > 1) tileRow(IT, add, acc, rows[1], weights, tile_off);
 }
 
 /// Refresh in ONE tiled pass -- upstream update_accumulator_refresh_cache's loop shape:
-/// load the finny-cache tile, apply the HalfKA removed/added rows, store the psq-only
+/// load the finny-cache tile, apply the K32Q2 removed/added rows, store the psq-only
 /// tile back to `cache`, then KEEP ADDING the active Threat rows in the same registers
 /// and store the combined tile to `state`. Replaces the dual-store pass plus a separate
-/// accumulateRowsI8 pass, which reloaded and rewrote the whole 2 KB row it had just
+/// accumulate pass, which reloaded and rewrote the whole 2 KB row it had just
 /// stored. Per element the wrapping-add order (psq removed, psq added, threat active)
 /// and both stored values are unchanged, so cache and state hold byte-identical results
 /// and ReleaseSafe sees the identical run.
-pub fn applyRefreshFusedI16(
+pub fn applyRefreshFused(
     cache: []i16,
     state: []i16,
     removed: []const u16,
     added: []const u16,
     active: []const u32,
-    psq_weights: [*]align(64) const i16,
+    psq_weights: [*]align(64) const i8,
     thr_weights: [*]align(64) const i8,
 ) void {
     const V = row_tile_width;
@@ -221,21 +158,21 @@ pub fn applyRefreshFusedI16(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = cache.ptr[d..][0..V].*;
-        tileRows(i16, u16, false, &acc, removed, psq_weights, d);
-        tileRows(i16, u16, true, &acc, added, psq_weights, d);
+        tileRows(u16, false, &acc, removed, psq_weights, d);
+        tileRows(u16, true, &acc, added, psq_weights, d);
         cache.ptr[d..][0..V].* = acc;
-        tileRows(i8, u32, true, &acc, active, thr_weights, d);
+        tileRows(u32, true, &acc, active, thr_weights, d);
         state.ptr[d..][0..V].* = acc;
     }
 }
 
 /// Take a same-half king move incrementally -- upstream's update_accumulator_hybrid
-/// (nnue_accumulator.cpp). A king move rebuckets every HalfKA index, but the threat and
+/// (nnue_accumulator.cpp). A king move rebuckets every K32Q2 index, but the threat and
 /// pawn-pair orientation depends only on which HALF of the board the king stands on, so a
-/// king move that stays on its half keeps that whole accumulation. Only the HalfKA half
+/// king move that stays on its half keeps that whole accumulation. Only the K32Q2 half
 /// has to change buckets, and both buckets are reachable from the refresh cache:
 ///
-///   target = computed - <old-bucket HalfKA> + <new-bucket HalfKA> + <this ply's thr/pp delta>
+///   target = computed - <old-bucket K32Q2> + <new-bucket K32Q2> + <this ply's thr/pp delta>
 ///
 /// One register per tile carries the destination-entry refresh, the bucket swap and the
 /// threat delta, so the 2 KB row is loaded once. `new_entry` is refreshed in place
@@ -256,7 +193,7 @@ pub fn applyHybridDelta(
     old_added: []const u16,
     thr_removed: []const u32,
     thr_added: []const u32,
-    psq_weights: [*]align(64) const i16,
+    psq_weights: [*]align(64) const i8,
     thr_weights: [*]align(64) const i8,
 ) void {
     const V = row_tile_width;
@@ -265,8 +202,8 @@ pub fn applyHybridDelta(
     while (d < half_dimensions) : (d += V) {
         // Refresh the DESTINATION bucket from its cache entry.
         var acc: Vi16 = new_entry.ptr[d..][0..V].*;
-        tileRows(i16, u16, false, &acc, new_removed, psq_weights, d);
-        tileRows(i16, u16, true, &acc, new_added, psq_weights, d);
+        tileRows(u16, false, &acc, new_removed, psq_weights, d);
+        tileRows(u16, true, &acc, new_added, psq_weights, d);
         new_entry.ptr[d..][0..V].* = acc;
 
         // Fold in the computed accumulator -- which brings (most of) the threat and pawn-pair
@@ -276,20 +213,20 @@ pub fn applyHybridDelta(
 
         // The old entry is a cache state, not the pre-move position, so undo its own diff:
         // its removed rows are re-added and its added rows taken back out.
-        tileRows(i16, u16, true, &acc, old_removed, psq_weights, d);
-        tileRows(i16, u16, false, &acc, old_added, psq_weights, d);
+        tileRows(u16, true, &acc, old_removed, psq_weights, d);
+        tileRows(u16, false, &acc, old_added, psq_weights, d);
 
         // This ply's threat/pawn-pair change, at the new king square.
-        tileRows(i8, u32, false, &acc, thr_removed, thr_weights, d);
-        tileRows(i8, u32, true, &acc, thr_added, thr_weights, d);
+        tileRows(u32, false, &acc, thr_removed, thr_weights, d);
+        tileRows(u32, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }
 
 /// Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
-/// one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register,
-/// with both feature sets' removed/added weight rows applied in-register (psq int16 rows
-/// via i16 add/sub, threat int8 rows widened to i16), then stored ONCE. Replaces the two
+/// one combined accumulator (K32Q2 + Threats), loaded per tile ONCE into a register,
+/// with both feature sets' removed/added weight rows applied in-register (every row int8,
+/// widened to i16), then stored ONCE. Replaces the two
 /// separate load/store round-trips (one per feature) of the split-accumulator design.
 /// Integer +%/-% commute under 2's-complement i16 wrap (upstream `_mm*_add/sub_epi16`), so
 /// the final tile value equals
@@ -302,7 +239,7 @@ pub fn applyCombinedDelta(
     psq_added: []const u16,
     thr_removed: []const u32,
     thr_added: []const u32,
-    psq_weights: [*]align(64) const i16,
+    psq_weights: [*]align(64) const i8,
     thr_weights: [*]align(64) const i8,
 ) void {
     const V = row_tile_width;
@@ -310,10 +247,10 @@ pub fn applyCombinedDelta(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = source.ptr[d..][0..V].*;
-        tileRowsIncremental(i16, u16, false, &acc, psq_removed, psq_weights, d);
-        tileRowsIncremental(i16, u16, true, &acc, psq_added, psq_weights, d);
-        tileRows(i8, u32, false, &acc, thr_removed, thr_weights, d);
-        tileRows(i8, u32, true, &acc, thr_added, thr_weights, d);
+        tileRowsIncremental(u16, false, &acc, psq_removed, psq_weights, d);
+        tileRowsIncremental(u16, true, &acc, psq_added, psq_weights, d);
+        tileRows(u32, false, &acc, thr_removed, thr_weights, d);
+        tileRows(u32, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }

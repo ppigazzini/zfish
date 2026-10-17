@@ -10,6 +10,7 @@ const dims = @import("nnue_dimensions");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const Position = position_types.Position;
+const nnue_feature = @import("nnue_feature");
 
 pub const psq_feature: u8 = 0;
 pub const threat_feature: u8 = 1;
@@ -20,8 +21,9 @@ pub const pawn_piece_type: u8 = 1;
 pub const no_piece: u8 = 0;
 pub const sq_none: u8 = 64;
 pub const square_count: usize = 64;
-/// Match PieceType.king.
+/// Match PieceType.king and PieceType.queen.
 const king_piece_type: u8 = 6;
+const queen_piece_type: u8 = 5;
 pub const max_stack_size: usize = 247;
 /// Align the accumulator arena on the same cache line the weight blob's regions use,
 /// for the same SIMD reason. Derived, not restated: two independent spellings of 64
@@ -60,8 +62,8 @@ pub const transform_vec_width: usize = blk: {
 };
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
-/// HalfKA changed/active index element type. u16 the way upstream's
-/// `HalfKAv2_hm::IndexList` is (d96c183f), which is what lets the AVX-512 writer store its
+/// K32Q2 changed/active index element type. u16 the way upstream's
+/// `K32Q2::IndexList` is (d96c183f), which is what lets the AVX-512 writer store its
 /// 32 index words with one unmasked 512-bit store instead of widening them to u32 first.
 /// The comptime assert below is what keeps the narrowing honest.
 pub const PsqIndex = u16;
@@ -70,10 +72,10 @@ pub const PsqIndex = u16;
 pub const threat_index_capacity: usize = 256;
 /// FullThreats::Dimensions (SFNNv16); also PP_3Wide's IndexBase.
 pub const threat_dimensions: u32 = dims.threat_dimensions;
-pub const psq_feature_dimensions: usize = 22528;
+pub const psq_feature_dimensions: usize = dims.psq_feature_dimensions;
 comptime {
-    // Every HalfKA index is < psq_feature_dimensions by construction (halfMakeIndex sums an
-    // oriented square, a piece-square base and a king bucket), so narrowing the lists to
+    // Every K32Q2 index is < psq_feature_dimensions by construction (halfMakeIndex sums an
+    // oriented square, a piece-square base, a king bucket and the queen block), so narrowing the lists to
     // PsqIndex is lossless only while the whole index space fits. A future arch that grows
     // the feature count past 65536 must widen PsqIndex with it.
     if (psq_feature_dimensions > std.math.maxInt(PsqIndex) + 1)
@@ -280,6 +282,11 @@ pub fn kingSquare(pos: *const Position, color: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[color] & pos.by_type_bb[king_piece_type]));
 }
 
+/// Compute upstream's `bool(pos.pieces(~perspective, QUEEN))` -- K32Q2's second bucket axis.
+pub fn opponentHasQueen(pos: *const Position, perspective: u8) bool {
+    return pos.by_color_bb[perspective ^ 1] & pos.by_type_bb[queen_piece_type] != 0;
+}
+
 pub fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i16 {
     const offset = perspective * half_dimensions * @sizeOf(i16);
     const ptr: [*]const i16 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
@@ -311,9 +318,20 @@ pub fn zeroDiff(bytes: [*]u8, feature_kind: u8, index: usize, len: usize) void {
     @memset(bytes[stateOffset(feature_kind, index) + diffOffset(feature_kind) ..][0..len], 0);
 }
 
+/// Ask the feature set whether this slot's piece diff forces a refresh -- the own king
+/// moved, or an opponent queen was captured or promoted to (K32Q2::requires_refresh). The
+/// predicate has one owner, nnue_feature; this only reads the diff out of the slot.
 pub fn psqRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool {
-    const offset = stateOffset(psq_feature, index) + psq_diff_offset;
-    return bytes[offset] == kingPiece(perspective);
+    const d = psqDiff(bytes + stateOffset(psq_feature, index));
+    return nnue_feature.halfRequiresRefresh(.{
+        .from = d.from,
+        .to = d.to,
+        .pc = d.pc,
+        .remove_sq = d.remove_sq,
+        .add_sq = d.add_sq,
+        .remove_pc = d.remove_pc,
+        .add_pc = d.add_pc,
+    }, perspective);
 }
 
 pub fn threatRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool {
@@ -324,6 +342,10 @@ pub fn threatRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) 
 
 pub fn kingPiece(perspective: u8) u8 {
     return king_piece + 8 * perspective;
+}
+
+pub fn queenPiece(color: u8) u8 {
+    return queen_piece_type + 8 * color;
 }
 
 test {

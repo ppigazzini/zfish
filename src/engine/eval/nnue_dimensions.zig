@@ -53,10 +53,17 @@ comptime {
 // ---- the blob layout those cardinalities determine ---------------------------
 
 /// Size the transformer's own arrays. `half_dimensions` is upstream's
-/// TransformedFeatureDimensions and `psq_feature_dimensions` is HalfKAv2_hm::Dimensions.
-/// SFNNv17 dropped the PSQTBuckets output, so no array here is sized by a bucket count.
+/// TransformedFeatureDimensions and `psq_feature_dimensions` is K32Q2::Dimensions: 32
+/// own-king buckets x 2 opponent-queen states x 704 piece-squares (SFNNv18). SFNNv17
+/// dropped the PSQTBuckets output, so no array here is sized by a bucket count.
 pub const half_dimensions: usize = 1024;
-pub const psq_feature_dimensions: usize = 22528;
+pub const psq_feature_dimensions: usize = 32 * 2 * 11 * 64;
+
+/// Count the layer stacks above the transformer (upstream LayerStacks). SFNNv18 selects
+/// one by piece count AND queen presence, `(piece_count - 1) / 4 * 4 + queen_bucket`, so
+/// the count is the eight material buckets times four queen states. Every file that walks
+/// or sizes the stacks reads this one.
+pub const layer_stacks: usize = 8 * 4;
 
 /// Align every region on a cache line, which is what upstream's `alignas(CacheLineSize)`
 /// on each member spells. The accumulator arena carries the same alignment for the same
@@ -70,7 +77,7 @@ fn roundUp(x: usize, a: usize) usize {
 /// Count the elements of the feature-transformer arrays. The threat weight region holds
 /// the FullThreats rows followed by the PP_3Wide rows (one contiguous array).
 pub const biases_count = half_dimensions; // i16
-pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i16
+pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i8 since SFNNv18
 pub const threat_weights_count = half_dimensions * threat_and_pp_dimensions; // i8 (threat ++ pp)
 
 /// The stream splits the concatenated region back into separate sections (threat, then
@@ -82,7 +89,7 @@ pub const pp_only_weights_count = half_dimensions * pp_dimensions; // i8
 /// weights(psq), threatAndPpWeights.
 pub const biases_off = 0;
 pub const weights_off = roundUp(biases_count * 2, cache_line_bytes);
-pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 2, cache_line_bytes);
+pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 1, cache_line_bytes);
 pub const ft_total_bytes = roundUp(threat_weights_off + threat_weights_count * 1, cache_line_bytes);
 /// Byte offset of the pp sub-region within the concatenated threat region.
 pub const pp_weights_off = threat_weights_off + threat_only_weights_count * 1;
@@ -93,7 +100,7 @@ comptime {
     // a dims change that opened an alignment gap would leak uninitialized bytes into
     // the weight image; fail the build instead.
     std.debug.assert(weights_off == biases_off + biases_count * 2);
-    std.debug.assert(threat_weights_off == weights_off + psq_weights_count * 2);
+    std.debug.assert(threat_weights_off == weights_off + psq_weights_count * 1);
     std.debug.assert(ft_total_bytes == threat_weights_off + threat_weights_count * 1);
 }
 

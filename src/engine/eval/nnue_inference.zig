@@ -28,11 +28,12 @@ const affineDpbusd = nnue_affine.affineDpbusd;
 const Position = position_types.Position;
 
 const output_scale: i32 = 16;
-const layer_stacks: usize = 8;
+const layer_stacks = @import("nnue_dimensions").layer_stacks;
 const cache_line_size: usize = 64;
 const transformed_feature_bytes: usize = 1024;
 const square_count: usize = 64;
 const no_piece: u8 = 0;
+const queen_piece_type: usize = 5;
 
 const layerPtr = weight_storage.layerPtr;
 const ftPtr = weight_storage.ftPtr;
@@ -128,9 +129,7 @@ pub fn evaluate(
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
     cache: *nnue_accumulator_port.RefreshCache,
 ) i32 {
-    const piece_count = pieceCount(pos);
-    const bucket = (piece_count - 1) / 4;
-    return @divTrunc(evaluateBucketRaw(pos, accumulator_stack, cache, bucket), output_scale);
+    return @divTrunc(evaluateBucketRaw(pos, accumulator_stack, cache, layerStack(pos)), output_scale);
 }
 
 /// Score every layer stack over ONE transform -- upstream's trace_evaluate. The transformer
@@ -145,8 +144,7 @@ pub fn traceEvaluate(
         .positional = @splat(0),
         .correct_bucket = 0,
     };
-    const piece_count = pieceCount(pos);
-    output.correct_bucket = (piece_count - 1) / 4;
+    output.correct_bucket = layerStack(pos);
 
     var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
     var nnz: nnue_accumulator_port.NnzOut = undefined;
@@ -172,6 +170,17 @@ fn evaluateBucketRaw(
 
     networkTransform(pos, accumulator_stack, cache, @ptrCast(&transformed), &nnz);
     return propagateBucket(bucket, @ptrCast(&transformed), &nnz);
+}
+
+/// Select the layer stack -- upstream Network::evaluate's SFNNv18 bucket: the material
+/// bucket `(piece_count - 1) / 4`, times four, plus the queen bucket, 2 if the side to move
+/// has a queen and 1 if its opponent does.
+fn layerStack(pos: *const Position) usize {
+    const queens = pos.by_type_bb[queen_piece_type];
+    const stm: usize = pos.side_to_move;
+    const queen_bucket = @as(usize, @intFromBool(pos.by_color_bb[stm] & queens != 0)) * 2 +
+        @intFromBool(pos.by_color_bb[stm ^ 1] & queens != 0);
+    return (pieceCount(pos) - 1) / 4 * 4 + queen_bucket;
 }
 
 fn pieceCount(pos: *const Position) usize {

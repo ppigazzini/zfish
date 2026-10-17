@@ -42,7 +42,7 @@ const stateAccumulationMut = layout.stateAccumulationMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
-/// Diff a refresh-cache entry against a board and write the HalfKA removed/added index
+/// Diff a refresh-cache entry against a board and write the K32Q2 removed/added index
 /// lists -- the first half of upstream's update_accumulator_refresh_cache, split out
 /// because update_accumulator_hybrid needs the SAME diff twice, against two different
 /// (entry, board) pairs, and neither of them is `pos` for the old bucket.
@@ -53,6 +53,7 @@ pub fn entryDiffIndices(
     board_piece_bb: u64,
     perspective: u8,
     king_square: u8,
+    opp_queen: bool,
     removed: *[psq_index_capacity]PsqIndex,
     added: *[psq_index_capacity]PsqIndex,
 ) struct { removed_len: usize, added_len: usize } {
@@ -100,6 +101,7 @@ pub fn entryDiffIndices(
             added_bb,
             perspective,
             king_square,
+            opp_queen,
             removed,
             added,
         );
@@ -115,6 +117,7 @@ pub fn entryDiffIndices(
                 .square = sq,
                 .piece = entry_pieces[sq],
                 .king_square = king_square,
+                .opponent_has_queen = opp_queen,
             }));
             removed_len += 1;
         }
@@ -125,6 +128,7 @@ pub fn entryDiffIndices(
                 .square = sq,
                 .piece = board[sq],
                 .king_square = king_square,
+                .opponent_has_queen = opp_queen,
             }));
             added_len += 1;
         }
@@ -132,9 +136,14 @@ pub fn entryDiffIndices(
     return .{ .removed_len = removed_len, .added_len = added_len };
 }
 
-/// State upstream's five conditions for the hybrid step in one predicate
+/// State upstream's six conditions for the hybrid step in one predicate
 /// (nnue_accumulator.cpp, evaluate_side). Each one is load-bearing:
 ///   * the moved piece is THIS perspective's king -- otherwise nothing rebuckets;
+///   * the king did not capture the opponent's queen -- that changes the K32Q2 queen
+///     state, which the step cannot carry across. Upstream tests `remove_pc` alone, which
+///     on a quiet king move reads a byte this ply did not write; reading it only behind
+///     `remove_sq` changes which route runs on such a stale byte, never the result, since
+///     the refresh it would fall back to computes the same accumulator;
 ///   * the slot below is computed for this perspective -- the step reads it as `computed`;
 ///   * at least MIN_PC_COUNT_HYBRID pieces -- below that, summing the threat/pair features
 ///     from scratch is cheaper than reconstructing the source bucket;
@@ -145,6 +154,7 @@ pub fn hybridApplicable(stack: *const AccumulatorStack, pos: *const Position, pe
     const min_pc_count_hybrid: u32 = 15;
     const diff = psqDiff(stateBytesConst(psq_feature, latest_index, stack));
     if (diff.pc != layout.kingPiece(perspective)) return false;
+    if (diff.remove_sq != sq_none and diff.remove_pc == layout.queenPiece(perspective ^ 1)) return false;
     if (!stateComputed(stack, psq_feature, latest_index - 1, perspective)) return false;
     if (@popCount(pos.by_type_bb[0]) < min_pc_count_hybrid) return false;
     if ((diff.from & 0b100) != (diff.to & 0b100)) return false;
@@ -154,9 +164,10 @@ pub fn hybridApplicable(stack: *const AccumulatorStack, pos: *const Position, pe
 
 /// Take a same-half king move incrementally -- upstream's update_accumulator_hybrid.
 ///
-///   target = computed - <old-bucket HalfKA> + <new-bucket HalfKA> + <this ply's thr/pp delta>
+///   target = computed - <old-bucket K32Q2> + <new-bucket K32Q2> + <this ply's thr/pp delta>
 ///
-/// Both HalfKA buckets come from the refresh cache. The OLD bucket's board is the position
+/// Both K32Q2 buckets come from the refresh cache, under the one queen state the move kept
+/// (hybridApplicable refuses a king move that captured the opponent's queen). The OLD bucket's board is the position
 /// BEFORE the move, which does not exist anywhere: reconstruct it by undoing the king move
 /// on a copy of the piece array. That copy is the only board this file builds rather than
 /// reads, and it is why the step is bounded by a piece count -- on a sparse board, summing
@@ -164,6 +175,7 @@ pub fn hybridApplicable(stack: *const AccumulatorStack, pos: *const Position, pe
 pub fn updateHybrid(
     perspective: u8,
     king_square: u8,
+    opp_queen: bool,
     stack: *AccumulatorStack,
     pos: *const Position,
     feature_transformer: *const FeatureTransformer,
@@ -194,8 +206,8 @@ pub fn updateHybrid(
     previous_pieces[old_ksq] = diff.pc;
     previous_piece_bb |= @as(u64, 1) << @intCast(old_ksq);
 
-    const old_entry_ptr = cacheEntry(cache, old_ksq, perspective);
-    const new_entry_ptr = cacheEntry(cache, new_ksq, perspective);
+    const old_entry_ptr = cacheEntry(cache, opp_queen, old_ksq, perspective);
+    const new_entry_ptr = cacheEntry(cache, opp_queen, new_ksq, perspective);
 
     // "Removed" is what must come OUT of the cache entry, "added" what must go IN, to turn
     // that entry into the accumulator we want -- for each bucket against its own board.
@@ -208,6 +220,7 @@ pub fn updateHybrid(
         previous_piece_bb,
         perspective,
         old_ksq,
+        opp_queen,
         &old_removed,
         &old_added,
     );
@@ -221,6 +234,7 @@ pub fn updateHybrid(
         pos.by_type_bb[0],
         perspective,
         new_ksq,
+        opp_queen,
         &new_removed,
         &new_added,
     );

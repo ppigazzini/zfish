@@ -365,7 +365,7 @@ pub fn register(ctx: Context) void {
     // carry their own transitive imports.
     const DepTest = struct { path: []const u8, deps: []const []const u8 };
     for ([_]DepTest{
-        .{ .path = "src/engine/eval/nnue_acc_layout.zig", .deps = &.{ "position_snapshot", "position_types", "nnue_dimensions" } },
+        .{ .path = "src/engine/eval/nnue_acc_layout.zig", .deps = &.{ "position_snapshot", "position_types", "nnue_dimensions", "nnue_feature" } },
         .{ .path = "src/engine/eval/nnue_acc_update.zig", .deps = &.{ "position_snapshot", "position_types", "nnue_feature", "nnue_acc_rowops", "nnue_ft", "nnue_refresh_cache", "nnue_dimensions" } },
         // The four roots that read the concatenated feature-set counts from nnue_dimensions.
         .{ .path = "src/engine/eval/nnue_parse.zig", .deps = &.{"nnue_dimensions"} },
@@ -374,7 +374,7 @@ pub fn register(ctx: Context) void {
         .{ .path = "src/engine/eval/nnue_feature.zig", .deps = &.{"nnue_dimensions"} },
         .{ .path = "src/shell/thread_construct.zig", .deps = &.{"worker_layout"} },
         .{ .path = "src/engine/search/movepick_history.zig", .deps = &.{ "position_snapshot", "shared_history_types" } },
-        .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{"page_alloc"} },
+        .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{ "page_alloc", "nnue_dimensions" } },
         .{ .path = "src/engine/eval/nnue_inference.zig", .deps = &.{ "page_alloc", "nnue_accumulator", "position_types", "nnue_dimensions" } },
         .{ .path = "src/engine/search/movepick_score.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
         .{ .path = "src/engine/search/movepick_sort_avx512.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
