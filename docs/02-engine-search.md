@@ -348,7 +348,7 @@ comptime on the kind (`captures` / `quiets` / `evasions`):
 
 The quiet score reads the continuation history at slots 0, 1, 2, 3 and 5; the threat
 term uses per-piece-type "attacked by a lesser piece" bitboards built once per list
-from the `threats` the make already left in `StateInfo`; the check bonus requires both a check square and `seeGe`; the
+from the `threats` in `StateInfo` (`movegen.threatsBy`, filled on first read); the check bonus requires both a check square and `seeGe`; the
 low-ply bonus applies only below `low_ply_history_size` (the constant the scorer reads is
 `movepick_score.zig`'s; `movepick.zig` carries a second copy).
 
