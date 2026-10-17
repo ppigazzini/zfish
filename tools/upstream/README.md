@@ -98,7 +98,7 @@ construction while this table called the same state expected, and a lane that is
 a lane nobody reads.
 
 Every one is Zone-A — reached only by a MALFORMED or sloppy input, or by a non-default option —
-so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 1684318 with
+so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 1559611 with
 both in place.
 
 | gate / row | zfish vs upstream | owner | expires when |
