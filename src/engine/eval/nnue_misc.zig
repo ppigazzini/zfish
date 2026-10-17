@@ -34,9 +34,11 @@ fn formatTraceAlloc(input: NnueTraceInput) ![]u8 {
 
     for (0..input.bucket_count) |bucket| {
         var bucket_buffer: [64]u8 = undefined;
-        // Match `"|  " << bucket << "         |  "` (nnue_misc.cpp) byte-for-byte, and close
-        // the cell with `"   |"`: THREE spaces before the pipe, not two.
-        const bucket_text = std.mem.print(&bucket_buffer, "|  {d}         |  ", .{bucket}) catch unreachable;
+        // Match `"|  " << std::left << std::setw(10) << bucket << std::right << "|  "`
+        // (nnue_misc.cpp) byte-for-byte -- left-aligned in ten, so the 32 stacks' two-digit
+        // numbers keep the column -- and close the cell with `"   |"`: THREE spaces before
+        // the pipe, not two.
+        const bucket_text = std.mem.print(&bucket_buffer, "|  {d: <10}|  ", .{bucket}) catch unreachable;
         try buffer.appendSlice(allocator, bucket_text);
         try appendAlignedDot(&buffer, input.positional_raw[bucket], input.positional_cp[bucket]);
         try buffer.appendSlice(allocator, "   |");
@@ -103,6 +105,21 @@ test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
             "+------------+------------+\n",
         out,
     );
+}
+
+test "formatTrace: a two-digit bucket keeps the column" {
+    var raw: [12]i32 = @splat(0);
+    raw[11] = 5;
+    const s = formatTrace(.{
+        .side_to_move_white = 1,
+        .bucket_count = 12,
+        .correct_bucket = 11,
+        .positional_raw = &raw,
+        .positional_cp = &raw,
+    }).?;
+    defer std.heap.c_allocator.free(s);
+    try std.testing.expect(std.mem.find(u8, s, "|  9         |     0.00   |\n") != null);
+    try std.testing.expect(std.mem.find(u8, s, "|  11        |  +  0.05   | <-- this bucket is used\n") != null);
 }
 
 test "formatTrace: black-to-move header" {

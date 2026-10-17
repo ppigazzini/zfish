@@ -11,7 +11,7 @@
 const std = @import("std");
 const page_alloc = @import("page_alloc");
 
-const layer_stacks_n = 8;
+const layer_stacks_n = @import("nnue_dimensions").layer_stacks;
 const layers_per_stack = 3;
 
 /// Track the loaded-net identity: the current EvalFile name, its description, and the
@@ -126,7 +126,7 @@ pub fn layerStorage(bucket: usize, idx: usize, part: LayerPart, n: usize) ?[*]u8
         // Zero the arena once: page_alloc hands it out uninitialized, the parse writes
         // only the exact bias/weight part lengths, and alignPart opens padding gaps
         // between parts (fc_2's 4-byte biases in a 64-byte slot). The zero keeps the
-        // gap bytes deterministic. ~283 KB once, vs the ~106 MB FT arena the parse
+        // gap bytes deterministic. ~1.1 MB once, vs the ~106 MB FT arena the parse
         // tiles gaplessly (comptime-asserted in nnue_parse) and needs no fill for.
         @memset(layer_arena.?[0 .. stack_stride * layer_stacks_n], 0);
     }

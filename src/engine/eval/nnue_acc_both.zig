@@ -5,7 +5,7 @@
 //! What is SHARED is what does not depend on the perspective: the dirty-threat records
 //! and their add/remove routing, and the pawn-pair topology -- which squares changed,
 //! which partners each pairs with, and in what order. What stays PER-PERSPECTIVE is the
-//! orientation every index is computed under, the HalfKA indices, and the accumulator
+//! orientation every index is computed under, the K32Q2 indices, and the accumulator
 //! arithmetic. Every list ends up holding exactly what two separate walks produced, in
 //! the same order, so the evaluation is unchanged -- which is also why no value gate can
 //! tell whether this step ran (see nnue_acc_update.PathCounts).
@@ -39,7 +39,7 @@ const stateAccumulationMut = layout.stateAccumulationMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
-/// Route one square's HalfKA index into removed or added. Forward only -- the shared walk
+/// Route one square's K32Q2 index into removed or added. Forward only -- the shared walk
 /// has no backward direction -- so `is_removed` reads literally.
 inline fn appendHalf(removed: [*]PsqIndex, removed_len: *usize, added: [*]PsqIndex, added_len: *usize, index: u32, is_removed: bool) void {
     // Narrow on the store, the way upstream's ValueList<u16> converts on push_back:
@@ -54,13 +54,14 @@ inline fn appendHalf(removed: [*]PsqIndex, removed_len: *usize, added: [*]PsqInd
     }
 }
 
-/// Build one perspective's HalfKA changed-index lists from this ply's piece diff. Kept
+/// Build one perspective's K32Q2 changed-index lists from this ply's piece diff. Kept
 /// per-perspective exactly as upstream keeps it: only the orientation differs, but the
 /// index formula is cheap and sharing it would buy nothing.
 fn psqChangedIndices(
     diff: layout.HalfDiff,
     perspective: u8,
     king_square: u8,
+    opp_queen: bool,
     removed: [*]PsqIndex,
     added: [*]PsqIndex,
 ) nnue_feature.FullAppendChangedLens {
@@ -71,6 +72,7 @@ fn psqChangedIndices(
         .square = diff.from,
         .piece = diff.pc,
         .king_square = king_square,
+        .opponent_has_queen = opp_queen,
     }), true);
     if (diff.to != sq_none) {
         appendHalf(removed, &removed_len, added, &added_len, nnue_feature.halfMakeIndex(.{
@@ -78,6 +80,7 @@ fn psqChangedIndices(
             .square = diff.to,
             .piece = diff.pc,
             .king_square = king_square,
+            .opponent_has_queen = opp_queen,
         }), false);
     }
     if (diff.remove_sq != sq_none) {
@@ -86,6 +89,7 @@ fn psqChangedIndices(
             .square = diff.remove_sq,
             .piece = diff.remove_pc,
             .king_square = king_square,
+            .opponent_has_queen = opp_queen,
         }), true);
     }
     if (diff.add_sq != sq_none) {
@@ -94,6 +98,7 @@ fn psqChangedIndices(
             .square = diff.add_sq,
             .piece = diff.add_pc,
             .king_square = king_square,
+            .opponent_has_queen = opp_queen,
         }), false);
     }
     return .{ .removed = removed_len, .added = added_len };
@@ -104,6 +109,8 @@ pub fn applyCombinedBoth(
     feature_transformer: *const FeatureTransformer,
     white_ksq: u8,
     black_ksq: u8,
+    white_opp_queen: bool,
+    black_opp_queen: bool,
     white_mask: u32,
     black_mask: u32,
     target_index: usize,
@@ -147,8 +154,8 @@ pub fn applyCombinedBoth(
     var w_psq_added: [psq_index_capacity]PsqIndex = undefined;
     var b_psq_removed: [psq_index_capacity]PsqIndex = undefined;
     var b_psq_added: [psq_index_capacity]PsqIndex = undefined;
-    const w_psq = psqChangedIndices(psq_diff, white, white_ksq, &w_psq_removed, &w_psq_added);
-    const b_psq = psqChangedIndices(psq_diff, black, black_ksq, &b_psq_removed, &b_psq_added);
+    const w_psq = psqChangedIndices(psq_diff, white, white_ksq, white_opp_queen, &w_psq_removed, &w_psq_added);
+    const b_psq = psqChangedIndices(psq_diff, black, black_ksq, black_opp_queen, &b_psq_removed, &b_psq_added);
 
     applySide(stack, feature_transformer, white, target_index, computed_index, w_psq_removed[0..w_psq.removed], w_psq_added[0..w_psq.added], w_thr_removed[0..pp.w.removed], w_thr_added[0..pp.w.added]);
     applySide(stack, feature_transformer, black, target_index, computed_index, b_psq_removed[0..b_psq.removed], b_psq_added[0..b_psq.added], b_thr_removed[0..pp.b.removed], b_thr_added[0..pp.b.added]);

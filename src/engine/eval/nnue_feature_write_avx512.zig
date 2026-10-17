@@ -1,16 +1,17 @@
-// Write the removed/added HalfKAv2_hm feature indices for a Finny-cache refresh in
-// one vector pass, as upstream's HalfKAv2_hm::write_indices does
-// (nnue/features/half_ka_v2_hm.cpp:32-79, gated USE_AVX512ICL). The scalar loop this
+// Write the removed/added K32Q2 feature indices for a Finny-cache refresh in
+// one vector pass, as upstream's K32Q2::write_indices does
+// (nnue/features/k32q2.cpp:37-82, gated USE_AVX512ICL). The scalar loop this
 // replaces (nnue_acc_update.zig's refreshCombined) is one ctz + halfMakeIndex call per
 // changed square, each dependent on the last.
 //
-// Ports the identity from upstream's own comment: PieceSquareIndex and KingBuckets are
-// both multiples of 64 (verified against nnue_feature_luts.zig's actual table values --
-// piece_square_index entries are 0/64/128/.../640, king_buckets entries are N*ps_nb with
-// ps_nb=704, both always 0 mod 64), and orient/square only ever use the low 6 bits, so
-// no carry crosses bit 6: (square ^ orient) + psi[pc] + bucket == square ^ (psi[pc] +
-// bucket + orient). Folding bucket+orient into a per-piece lookup once per call turns
-// every active feature's index into one XOR against a gather.
+// Ports the identity from upstream's own comment: PieceSquareIndex, KingBuckets and the
+// queen offset are all multiples of 64 (verified against nnue_feature_luts.zig's actual
+// table values -- piece_square_index entries are 0/64/128/.../640, king_buckets entries are
+// N*2*ps_nb and queen_offset is ps_nb, with ps_nb=704, all 0 mod 64), and orient/square
+// only ever use the low 6 bits, so no carry crosses bit 6: (square ^ orient) + psi[pc] +
+// bucket + queen == square ^ (psi[pc] + bucket + queen + orient). Folding
+// bucket+queen+orient into a per-piece lookup once per call turns every active feature's
+// index into one XOR against a gather.
 //
 // Gated on AVX512VBMI + AVX512VBMI2, the tier movegen_splat_avx512.zig,
 // threats_write_avx512.zig and movepick_sort_avx512.zig already gate the analogous
@@ -20,7 +21,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const luts = @import("nnue_feature_luts.zig");
 
-/// HalfKA index element type -- upstream's `HalfKAv2_hm::IndexList` is ValueList<u16,32>
+/// K32Q2 index element type -- upstream's `K32Q2::IndexList` is ValueList<u16,32>
 /// (d96c183f). Restated rather than imported: this file is a leaf of the nnue_feature
 /// module and nnue_acc_layout (which owns `PsqIndex` and the comptime bound proving the
 /// index space fits) imports the accumulator side. The two are pinned equal by the
@@ -79,7 +80,7 @@ fn widenLow32(bytes: V64u8) V32u16 {
 pub const WriteResult = struct { removed_len: usize, added_len: usize };
 
 /// removed_out/added_out must have 32 slots of headroom past the caller's write
-/// position -- the store is unmasked, upstream's own shape (half_ka_v2_hm.cpp:73-74);
+/// position -- the store is unmasked, upstream's own shape (k32q2.cpp:80-81);
 /// only the first popCount(removed_bb)/popCount(added_bb) of the 32 written words are
 /// meaningful.
 ///
@@ -99,6 +100,7 @@ pub fn writeIndices(
     added_bb: u64,
     perspective: u8,
     king_square: u8,
+    opponent_has_queen: bool,
     removed_out: [*]PsqIndex,
     added_out: [*]PsqIndex,
 ) WriteResult {
@@ -108,12 +110,13 @@ pub fn writeIndices(
     const added_len: usize = @popCount(added_bb);
 
     // Build the row of luts.half_offsets that nnue_feature.halfMakeIndex reads, from the
-    // same flip/orient/bucket terms that table is folded from, so bucket+orient is
+    // same flip/orient/bucket/queen terms that table is folded from, so their sum is
     // computed once per call and the permute below gathers each piece's entry.
     const flip: u16 = 56 * @as(u16, perspective);
     const orient: u16 = @as(u16, @intCast(luts.orient_tbl_half[king_square])) ^ flip;
     const bucket: u16 = @as(u16, @intCast(luts.king_buckets[king_square ^ perspective * 56]));
-    const offset = bucket +% orient;
+    const queen: u16 = if (opponent_has_queen) @intCast(luts.queen_offset) else 0;
+    const offset = bucket +% queen +% orient;
 
     var psi_arr: [32]u16 = undefined;
     inline for (0..16) |i| psi_arr[i] = @as(u16, @intCast(luts.piece_square_index[perspective][i])) +% offset;
@@ -134,7 +137,7 @@ pub fn writeIndices(
     // Store the index words as they were computed -- one unmasked 512-bit store each,
     // upstream d96c183f. The list element type IS the lane type now (PsqIndex == u16),
     // so the two `_mm512_cvtepu16_epi32` widenings and the second pair of stores that
-    // paid for them are gone; the whole HalfKA index space fits in 16 bits, which
+    // paid for them are gone; the whole K32Q2 index space fits in 16 bits, which
     // nnue_acc_layout's comptime bound on PsqIndex pins.
     removed_out[0..32].* = removed_indices;
     added_out[0..32].* = added_indices;
@@ -151,19 +154,20 @@ const testing = std.testing;
 /// which its sibling nnue_feature.zig already imports THIS file from; duplicating three
 /// lines keeps the module graph acyclic and this test provably can't pass by sharing a
 /// bug with the code under test).
-fn referenceIndex(perspective: u8, square: u8, piece: u8, king_square: u8) u32 {
+fn referenceIndex(perspective: u8, square: u8, piece: u8, king_square: u8, opponent_has_queen: bool) u32 {
     const flip: u32 = 56 * perspective;
     return (@as(u32, square) ^ luts.orient_tbl_half[king_square] ^ flip) +
-        luts.piece_square_index[perspective][piece] + luts.king_buckets[king_square ^ perspective * 56];
+        luts.piece_square_index[perspective][piece] + luts.king_buckets[king_square ^ perspective * 56] +
+        (if (opponent_has_queen) luts.queen_offset else 0);
 }
 
-fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in: u64, added_bb_in: u64, perspective: u8, king_square: u8, removed_out: []PsqIndex, added_out: []PsqIndex) WriteResult {
+fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in: u64, added_bb_in: u64, perspective: u8, king_square: u8, opponent_has_queen: bool, removed_out: []PsqIndex, added_out: []PsqIndex) WriteResult {
     var removed_bb = removed_bb_in;
     var n: usize = 0;
     while (removed_bb != 0) {
         const sq: u8 = @intCast(@ctz(removed_bb));
         removed_bb &= removed_bb - 1;
-        removed_out[n] = @intCast(referenceIndex(perspective, sq, old_pieces[sq], king_square));
+        removed_out[n] = @intCast(referenceIndex(perspective, sq, old_pieces[sq], king_square, opponent_has_queen));
         n += 1;
     }
     var added_bb = added_bb_in;
@@ -171,7 +175,7 @@ fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in:
     while (added_bb != 0) {
         const sq: u8 = @intCast(@ctz(added_bb));
         added_bb &= added_bb - 1;
-        added_out[m] = @intCast(referenceIndex(perspective, sq, new_pieces[sq], king_square));
+        added_out[m] = @intCast(referenceIndex(perspective, sq, new_pieces[sq], king_square, opponent_has_queen));
         m += 1;
     }
     return .{ .removed_len = n, .added_len = m };
@@ -216,11 +220,12 @@ test "writeIndices matches an independent scalar reference over random boards/ma
 
         var removed_ref: [32]PsqIndex = undefined;
         var added_ref: [32]PsqIndex = undefined;
-        const ref_result = referenceWrite(&old_pieces, &new_pieces, removed_bb, added_bb, perspective, king_square, removed_ref[0..], added_ref[0..]);
+        const opponent_has_queen = random.boolean();
+        const ref_result = referenceWrite(&old_pieces, &new_pieces, removed_bb, added_bb, perspective, king_square, opponent_has_queen, removed_ref[0..], added_ref[0..]);
 
         var removed_vec: [32]PsqIndex = undefined;
         var added_vec: [32]PsqIndex = undefined;
-        const vec_result = writeIndices(&old_pieces, &new_pieces, removed_bb, added_bb, perspective, king_square, &removed_vec, &added_vec);
+        const vec_result = writeIndices(&old_pieces, &new_pieces, removed_bb, added_bb, perspective, king_square, opponent_has_queen, &removed_vec, &added_vec);
 
         try testing.expectEqual(ref_result.removed_len, vec_result.removed_len);
         try testing.expectEqual(ref_result.added_len, vec_result.added_len);

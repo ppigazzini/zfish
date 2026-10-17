@@ -14,7 +14,7 @@ const nnue_feature = @import("nnue_feature");
 /// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
 /// so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
-const applyRefreshFusedI16 = nnue_acc_rowops.applyRefreshFusedI16;
+const applyRefreshFused = nnue_acc_rowops.applyRefreshFused;
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
 const applyHybridDelta = nnue_acc_rowops.applyHybridDelta;
 
@@ -70,6 +70,7 @@ const stateComputed = layout.stateComputed;
 const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
 const kingSquare = layout.kingSquare;
+const opponentHasQueen = layout.opponentHasQueen;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
 const psqDiff = layout.psqDiff;
@@ -79,12 +80,16 @@ const threatDiff = layout.threatDiff;
 // full-threats active append; index parameters pass as an anonymous struct literal, which
 // a direct Zig call marshals correctly on every ABI (see the import note above).
 
-// Walk the stack once per perspective over the combined HalfKA + Threats accumulator --
+// Walk the stack once per perspective over the combined K32Q2 + Threats accumulator --
 // a direct port of upstream Stockfish's AccumulatorStack::evaluate_side. The single
 // combined accumulator lives in the psq_feature storage slot (the threat_feature
-// accumulation slot is now unused); find_last_usable uses ONLY the PSQ (HalfKA)
+// accumulation slot is now unused); find_last_usable uses ONLY the PSQ (K32Q2)
 // refresh condition, because a threat refresh (king move across the center) is a
-// subset of a HalfKA refresh, so the combined accumulator always refreshes together.
+// subset of a K32Q2 refresh, so the combined accumulator always refreshes together.
+//
+// Every walk reads the opponent-queen state off the LIVE position, as it reads the king
+// square: no ply it steps across can have changed either, because a ply that does
+// requires a refresh and find_last_usable stops on it.
 /// Count which route to the top slot each walk took. Every route AGREES on every
 /// value they produce -- that is the whole point of them -- and it is exactly what makes
 /// a dead one invisible: a route that stops running is answered correctly by the route
@@ -156,6 +161,8 @@ fn forwardUpdateBoth(
     const size = stackSize(stack);
     const white_ksq = kingSquare(pos, white);
     const black_ksq = kingSquare(pos, black);
+    const white_opp_queen = opponentHasQueen(pos, white);
+    const black_opp_queen = opponentHasQueen(pos, black);
     const shared_begin = @max(white_begin, black_begin);
 
     const white_mask = nnue_feature.threatRouteMask(white, white_ksq, true);
@@ -164,18 +171,18 @@ fn forwardUpdateBoth(
     var next = white_begin + 1;
     while (next <= shared_begin) : (next += 1) {
         countPath(.forward);
-        applyCombined(stack, white, feature_transformer, white_ksq, white_mask, next, next - 1, true);
+        applyCombined(stack, white, feature_transformer, white_ksq, white_opp_queen, white_mask, next, next - 1, true);
     }
     next = black_begin + 1;
     while (next <= shared_begin) : (next += 1) {
         countPath(.forward);
-        applyCombined(stack, black, feature_transformer, black_ksq, black_mask, next, next - 1, true);
+        applyCombined(stack, black, feature_transformer, black_ksq, black_opp_queen, black_mask, next, next - 1, true);
     }
 
     next = shared_begin + 1;
     while (next < size) : (next += 1) {
         countPath(.shared);
-        applyCombinedBoth(stack, feature_transformer, white_ksq, black_ksq, white_mask, black_mask, next, next - 1);
+        applyCombinedBoth(stack, feature_transformer, white_ksq, black_ksq, white_opp_queen, black_opp_queen, white_mask, black_mask, next, next - 1);
     }
 }
 
@@ -189,6 +196,7 @@ pub fn evaluateSide(
 ) void {
     const size = stackSize(stack);
     const king_square = kingSquare(pos, perspective);
+    const opp_queen = opponentHasQueen(pos, perspective);
 
     // Ablation (-Dacc-refresh-only): rebuild from the board every evaluation. Bit-exact by
     // the invariant the incremental chain rests on -- a refresh and a walk compute the same
@@ -196,7 +204,7 @@ pub fn evaluateSide(
     // Measures what the incremental path is worth, and, with -Dno-threat-record, what
     // do_move's recording costs: the records are dead on this path.
     if (comptime build_options.acc_refresh_only) {
-        refreshCombined(perspective, king_square, stack, pos, feature_transformer, cache);
+        refreshCombined(perspective, king_square, opp_queen, stack, pos, feature_transformer, cache);
         return;
     }
 
@@ -208,7 +216,7 @@ pub fn evaluateSide(
         var next = last_usable + 1;
         while (next < size) : (next += 1) {
             countPath(.forward);
-            applyCombined(stack, perspective, feature_transformer, king_square, route_mask, next, next - 1, true);
+            applyCombined(stack, perspective, feature_transformer, king_square, opp_queen, route_mask, next, next - 1, true);
         }
     } else {
         // A king move that stayed on its half of the board keeps the whole threat and
@@ -217,24 +225,24 @@ pub fn evaluateSide(
         const latest_index = size - 1;
         if (size >= 2 and hybridApplicable(stack, pos, perspective, latest_index)) {
             countPath(.hybrid);
-            updateHybrid(perspective, king_square, stack, pos, feature_transformer, cache, latest_index);
+            updateHybrid(perspective, king_square, opp_queen, stack, pos, feature_transformer, cache, latest_index);
             return;
         }
 
         countPath(.refresh);
-        refreshCombined(perspective, king_square, stack, pos, feature_transformer, cache);
+        refreshCombined(perspective, king_square, opp_queen, stack, pos, feature_transformer, cache);
 
         const route_mask = nnue_feature.threatRouteMask(perspective, king_square, false);
         var computed_index = size - 1;
         while (computed_index > last_usable) : (computed_index -= 1) {
             countPath(.backward);
-            applyCombined(stack, perspective, feature_transformer, king_square, route_mask, computed_index - 1, computed_index, false);
+            applyCombined(stack, perspective, feature_transformer, king_square, opp_queen, route_mask, computed_index - 1, computed_index, false);
         }
     }
 }
 
 /// Perform the fused refresh -- upstream's update_accumulator_refresh_cache: compute the
-/// HalfKA changed rows against the finny cache entry and the active Threat rows, then
+/// K32Q2 changed rows against the finny cache entry and the active Threat rows, then
 /// apply everything in ONE tiled pass. The cache entry receives the psq-only
 /// accumulation (in place, for next time) and the stack state receives psq + threats
 /// (the combined accumulator), with no second pass over the 2 KB row and no
@@ -242,13 +250,14 @@ pub fn evaluateSide(
 fn refreshCombined(
     perspective: u8,
     king_square: u8,
+    opp_queen: bool,
     stack: *AccumulatorStack,
     pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
     const latest_index = stackSize(stack) - 1;
-    const entry_ptr = cacheEntry(cache, king_square, perspective);
+    const entry_ptr = cacheEntry(cache, opp_queen, king_square, perspective);
     const entry_pieces = cacheEntryPiecesMut(entry_ptr);
 
     var removed: [psq_index_capacity]PsqIndex = undefined;
@@ -260,6 +269,7 @@ fn refreshCombined(
         pos.by_type_bb[0],
         perspective,
         king_square,
+        opp_queen,
         &removed,
         &added,
     );
@@ -277,7 +287,7 @@ fn refreshCombined(
     // Apply the finny-cache delta and the active threat rows in one tiled pass: the
     // cache entry gets the psq-only tile stored back mid-pass, the stack state gets
     // psq + threats -- no reload of the 2 KB row a separate accumulate pass would cost.
-    applyRefreshFusedI16(
+    applyRefreshFused(
         cacheEntryAccumulationMut(entry_ptr),
         stateAccumulationMut(psq_feature, latest_index, stack, perspective),
         removed[0..removed_len],
@@ -294,7 +304,7 @@ fn refreshCombined(
 }
 
 /// Take one fused incremental step onto the combined accumulator -- a port of upstream's
-/// update_accumulator_incremental + apply_combined. Computes the PSQ (HalfKA) and
+/// update_accumulator_incremental + apply_combined. Computes the PSQ (K32Q2) and
 /// Threat changed-feature index lists for this ply, then applies both to the single
 /// combined accumulation (psq_feature slot) in one load/store per tile.
 fn applyCombined(
@@ -302,6 +312,7 @@ fn applyCombined(
     perspective: u8,
     feature_transformer: *const FeatureTransformer,
     king_square: u8,
+    opp_queen: bool,
     route_mask: u32,
     target_index: usize,
     computed_index: usize,
@@ -310,7 +321,7 @@ fn applyCombined(
     std.debug.assert(stateComputed(stack, psq_feature, computed_index, perspective));
     std.debug.assert(!stateComputed(stack, psq_feature, target_index, perspective));
 
-    // --- PSQ (HalfKA) changed-feature indices ---
+    // --- PSQ (K32Q2) changed-feature indices ---
     const psq_diff = if (forward)
         psqDiff(stateBytesConst(psq_feature, target_index, stack))
     else
@@ -329,6 +340,7 @@ fn applyCombined(
         .square = psq_diff.from,
         .piece = psq_diff.pc,
         .king_square = king_square,
+        .opponent_has_queen = opp_queen,
     }), forward);
     if (psq_diff.to != sq_none) {
         appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, nnue_feature.halfMakeIndex(.{
@@ -336,6 +348,7 @@ fn applyCombined(
             .square = psq_diff.to,
             .piece = psq_diff.pc,
             .king_square = king_square,
+            .opponent_has_queen = opp_queen,
         }), !forward);
     }
     if (psq_diff.remove_sq != sq_none) {
@@ -344,6 +357,7 @@ fn applyCombined(
             .square = psq_diff.remove_sq,
             .piece = psq_diff.remove_pc,
             .king_square = king_square,
+            .opponent_has_queen = opp_queen,
         }), forward);
     }
     if (psq_diff.add_sq != sq_none) {
@@ -352,6 +366,7 @@ fn applyCombined(
             .square = psq_diff.add_sq,
             .piece = psq_diff.add_pc,
             .king_square = king_square,
+            .opponent_has_queen = opp_queen,
         }), !forward);
     }
 

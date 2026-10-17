@@ -21,13 +21,6 @@ const Position = position_types.Position;
 /// identical on x86.
 const nnue_feature = @import("nnue_feature");
 
-/// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
-/// so the refresh/incremental core stays unqualified.
-const nnue_acc_rowops = @import("nnue_acc_rowops");
-const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
-const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
-const applyAccumulatorDeltaI8 = nnue_acc_rowops.applyAccumulatorDeltaI8;
-
 /// Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
 /// for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
@@ -136,7 +129,7 @@ pub fn evaluate(
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
-    // Match upstream AccumulatorStack::evaluate: one combined (HalfKA + Threats) pass per
+    // Match upstream AccumulatorStack::evaluate: one combined (K32Q2 + Threats) pass per
     // perspective, not one per (feature, perspective) -- and when NEITHER perspective
     // needs a refresh, one pass for both, sharing the common suffix. The combined
     // accumulator lives in the psq_feature storage slot.
@@ -192,7 +185,7 @@ pub fn transform(
 ) void {
     evaluate(stack, pos, feature_transformer, cache);
 
-    // Read the single combined (HalfKA + Threats) accumulator from the psq_feature slot.
+    // Read the single combined (K32Q2 + Threats) accumulator from the psq_feature slot.
     // Carry the state's 64-byte alignment (arena base + nnue_align'd strides, pinned by
     // nnue_acc_layout's comptime asserts) in the type: non-VEX SSE folds the accumulator
     // loads into pminsw's m128 operand only when 16-byte alignment is provable.

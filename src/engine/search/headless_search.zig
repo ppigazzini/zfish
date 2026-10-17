@@ -330,3 +330,66 @@ test "headless search: every accumulator update route is exercised" {
     try std.testing.expect(counts.hybrid > 0);
     try std.testing.expect(counts.shared > 0);
 }
+
+// Assert the K32Q2 queen axis survives every update route. A ply that changes an
+// opponent-queen state re-keys every index of the perspective it concerns, so the stack must
+// refresh rather than step -- and the hybrid king-move step must refuse a king that takes the
+// queen, since it carries the accumulation across under ONE queen state. Each case evaluates
+// the ply through the stack, whatever route the update picks, and requires the score a
+// from-scratch rebuild of the same board gives. The bench reaches the capture and promotion
+// terms but not the hybrid guard: no bench position has a king take a queen with fifteen
+// pieces left.
+var walk_stack_buf: [worker_layout.accumulator_stack_size]u8 align(64) = undefined;
+var walk_cache_buf: [worker_layout.accumulator_caches_size]u8 align(64) = undefined;
+var fresh_stack_buf: [worker_layout.accumulator_stack_size]u8 align(64) = undefined;
+var fresh_cache_buf: [worker_layout.accumulator_caches_size]u8 align(64) = undefined;
+
+fn rebuiltEval(pos: *const position.Position, biases: [*]const i16) i32 {
+    const stack: *nnue_acc.AccumulatorStack = @ptrCast(&fresh_stack_buf);
+    const cache: *nnue_acc.RefreshCache = @ptrCast(&fresh_cache_buf);
+    nnue_acc.stackReset(stack);
+    nnue_acc.clearRefreshCache(cache, biases);
+    return network.evaluate(pos, stack, cache);
+}
+
+test "headless search: an opponent-queen change evaluates incrementally as it does rebuilt" {
+    position.initRuntime();
+    if (network.ftPtr() == null) {
+        const dir = "resources/";
+        network.load(dir, "");
+    }
+    const ft = network.ftPtr() orelse return error.SkipZigTest;
+    const biases: [*]const i16 = @ptrCast(@alignCast(ft));
+
+    const promotion: u16 = 1 << 14;
+    const to_queen: u16 = (5 - 2) << 12;
+    const cases = [_]struct { fen: []const u8, from: u8, to: u8, flags: u16 }{
+        // Kxf2: the king takes the queen and stays on its half -- the hybrid step's shape.
+        .{ .fen = "rnb1kbnr/pppp1ppp/8/4p3/8/8/PPPPPqPP/RNBQKBNR w KQkq - 0 3", .from = 4, .to = 13, .flags = 0 },
+        // exd5: a pawn takes the queen.
+        .{ .fen = "rnb1kbnr/ppp1pppp/8/3q4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 3", .from = 28, .to = 35, .flags = 0 },
+        // h8=Q: the first queen of its side arrives by promotion.
+        .{ .fen = "rnbqkbn1/pppppppP/8/8/8/8/PPPPPPP1/RNB1KBNR w KQq - 0 5", .from = 55, .to = 63, .flags = promotion | to_queen },
+    };
+    const stack: *nnue_acc.AccumulatorStack = @ptrCast(&walk_stack_buf);
+    const cache: *nnue_acc.RefreshCache = @ptrCast(&walk_cache_buf);
+    for (cases) |c| {
+        var p: position.Position align(64) = undefined;
+        var st: position.StateInfo align(16) = undefined;
+        var next: position.StateInfo align(16) = undefined;
+        _ = position.setPosition(&p, c.fen.ptr, c.fen.len, 0, &st, worker_layout.position_size, worker_layout.state_info_size);
+
+        nnue_acc.stackReset(stack);
+        nnue_acc.clearRefreshCache(cache, biases);
+        _ = network.evaluate(&p, stack, cache); // compute the root slot for both sides
+
+        const wanted: u16 = c.flags | (@as(u16, c.from) << 6) | c.to;
+        var legal: [256]u16 = undefined;
+        const n = movegen.generateLegal(&p, &legal);
+        try std.testing.expect(std.mem.findScalar(u16, legal[0..n], wanted) != null);
+
+        const out = nnue_acc.stackPush(stack);
+        position.doMove(&p, wanted, &next, @intFromBool(position.givesCheck(&p, wanted)), out.dirty_piece, out.dirty_threats, null);
+        try std.testing.expectEqual(rebuiltEval(&p, biases), network.evaluate(&p, stack, cache));
+    }
+}

@@ -38,6 +38,8 @@ pub const HalfThreatParams = struct {
     square: u8,
     piece: u8,
     king_square: u8,
+    /// Whether the side opposite `perspective` has a queen -- K32Q2's second bucket axis.
+    opponent_has_queen: bool,
 };
 
 pub const FullThreatParams = struct {
@@ -49,13 +51,26 @@ pub const FullThreatParams = struct {
     king_square: u8,
 };
 
+/// Index a K32Q2 feature -- upstream K32Q2::make_index: the square xor'd with one entry of
+/// half_offsets, which folds the orientation, the piece-square base, the king bucket and
+/// the opponent-queen block into a single u16.
 pub fn halfMakeIndex(params: HalfThreatParams) u32 {
-    const row = @as(usize, params.perspective) * 64 + params.king_square;
+    const row = (@as(usize, @intFromBool(params.opponent_has_queen)) * 2 + params.perspective) * 64 + params.king_square;
     return @as(u32, params.square) ^ half_offsets[row][params.piece];
 }
 
+/// Say whether a ply's piece diff forces a K32Q2 refresh for `perspective` -- upstream
+/// K32Q2::requires_refresh. Every index is keyed on that side's king square AND on whether
+/// the opponent has a queen, so either one changing invalidates the whole accumulation: the
+/// king moving, or an opponent queen leaving (captured) or arriving (promoted to). A
+/// queen-for-queen capture with a second queen left is refreshed too, the cost of testing
+/// the diff rather than the board. `remove_pc` and `add_pc` are read only behind their
+/// square, which is what says they were written for this ply.
 pub fn halfRequiresRefresh(diff: HalfDiff, perspective: u8) bool {
-    return diff.pc == makePiece(perspective, king_piece_type);
+    if (diff.pc == makePiece(perspective, king_piece_type)) return true;
+    const opponent_queen = makePiece(perspective ^ 1, queen_piece_type);
+    return (diff.remove_sq != sq_none and diff.remove_pc == opponent_queen) or
+        (diff.add_sq != sq_none and diff.add_pc == opponent_queen);
 }
 
 pub fn fullMakeIndex(params: FullThreatParams) u32 {
@@ -311,7 +326,7 @@ fn appendFullActiveIndex(
     }
 }
 
-/// Re-export the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKAv2_hm
+/// Re-export the AVX512VBMI+VBMI2 vector fast path for the refresh-time K32Q2
 /// index write (nnue_feature_write_avx512.zig), so nnue_acc_update.zig -- which
 /// already imports this module by name -- reaches it without a second relative import
 /// of the same file: nnue_feature_write_avx512.zig also relative-imports
@@ -334,6 +349,7 @@ pub const writeIndicesAvx512 = nnue_feature_write_avx512.writeIndices;
 const luts = @import("nnue_feature_luts.zig");
 const piece_square_index = luts.piece_square_index;
 const king_buckets = luts.king_buckets;
+const queen_offset = luts.queen_offset;
 const orient_tbl_half = luts.orient_tbl_half;
 const orient_tbl_full = luts.orient_tbl_full;
 const half_offsets = luts.half_offsets;
@@ -353,6 +369,7 @@ const rook_piece_type = luts.rook_piece_type;
 const queen_piece_type = luts.queen_piece_type;
 const king_piece_type = luts.king_piece_type;
 const square_count = luts.square_count;
+const sq_none = luts.sq_none;
 const sq_a2 = luts.sq_a2;
 const north_east = luts.north_east;
 const north_west = luts.north_west;
@@ -360,17 +377,38 @@ const south_east = luts.south_east;
 const south_west = luts.south_west;
 
 test "halfMakeIndex: the offset table agrees with the unfolded formula everywhere" {
-    for (0..2) |p| for (0..64) |ksq| for (0..64) |sq| for (0..16) |pc| {
+    for (0..2) |q| for (0..2) |p| for (0..64) |ksq| for (0..64) |sq| for (0..16) |pc| {
         const flip: u32 = 56 * @as(u32, @intCast(p));
         const unfolded = (@as(u32, @intCast(sq)) ^ orient_tbl_half[ksq] ^ flip) +
-            piece_square_index[p][pc] + king_buckets[ksq ^ (p * 56)];
+            piece_square_index[p][pc] + king_buckets[ksq ^ (p * 56)] + @as(u32, @intCast(q)) * queen_offset;
         try std.testing.expectEqual(unfolded, halfMakeIndex(.{
             .perspective = @intCast(p),
             .square = @intCast(sq),
             .piece = @intCast(pc),
             .king_square = @intCast(ksq),
+            .opponent_has_queen = q == 1,
         }));
     };
+}
+
+test "halfRequiresRefresh: the own king, or an opponent queen leaving or arriving" {
+    const quiet: HalfDiff = .{ .from = 12, .to = 28, .pc = 1, .remove_sq = sq_none, .add_sq = sq_none, .remove_pc = 13, .add_pc = 13 };
+    // A stale queen byte behind an empty square is not this ply's capture or promotion.
+    try std.testing.expect(!halfRequiresRefresh(quiet, white));
+    var king_move = quiet;
+    king_move.pc = 6;
+    try std.testing.expect(halfRequiresRefresh(king_move, white));
+    try std.testing.expect(!halfRequiresRefresh(king_move, black));
+    var takes_queen = quiet;
+    takes_queen.remove_sq = 28;
+    takes_queen.remove_pc = 13; // black queen
+    try std.testing.expect(halfRequiresRefresh(takes_queen, white));
+    try std.testing.expect(!halfRequiresRefresh(takes_queen, black));
+    var promotes = quiet;
+    promotes.add_sq = 63;
+    promotes.add_pc = 5; // white queen
+    try std.testing.expect(halfRequiresRefresh(promotes, black));
+    try std.testing.expect(!halfRequiresRefresh(promotes, white));
 }
 
 test {

@@ -69,11 +69,11 @@ fn combineHash(comptime hashes: []const u32) u32 {
 
 /// Compute FeatureTransformer::get_hash_value: combine the feature-set hashes, xor the
 /// transformed dimensions. ThreatFeatureSet=full_threats (SFNNv16: 0x2e6b9d04),
-/// PairFeatureSet=pp_3wide (0x86f2b1dd), PSQFeatureSet=half_ka_v2_hm (0x7f234cb8),
+/// PairFeatureSet=pp_3wide (0x86f2b1dd), PSQFeatureSet=k32q2 (SFNNv18: 0x32b5e284),
 /// OutputDimensions=HalfDimensions=1024. Combine order matches upstream:
 /// {threat, pair, psq}.
 pub fn featureTransformerHashValue() u32 {
-    return combineHash(&.{ 0x2e6b9d04, 0x86f2b1dd, 0x7f234cb8 }) ^ (@as(u32, nnue_dims.half_dimensions) * 2);
+    return combineHash(&.{ 0x2e6b9d04, 0x86f2b1dd, 0x32b5e284 }) ^ (@as(u32, nnue_dims.half_dimensions) * 2);
 }
 
 /// Compute FeatureTransformer::get_content_hash. The raw-data hashes run in member-value
@@ -83,7 +83,7 @@ pub fn featureTransformerContentHash(ft: [*]const u8) usize {
     const p = nnue_dims;
     var h: usize = 0;
     rawDataHash(&h, ft[p.biases_off..][0 .. p.biases_count * 2]);
-    rawDataHash(&h, ft[p.weights_off..][0 .. p.psq_weights_count * 2]);
+    rawDataHash(&h, ft[p.weights_off..][0..p.psq_weights_count]);
     rawDataHash(&h, ft[p.threat_weights_off..][0..p.threat_weights_count]);
     hashCombine(&h, featureTransformerHashValue());
     return h;

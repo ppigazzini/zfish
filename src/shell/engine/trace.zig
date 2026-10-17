@@ -40,7 +40,6 @@ const appendPaddedInt = engine_util.appendPaddedInt;
 const appendCheckers = engine_util.appendCheckers;
 const verifyNetwork = engine_nnue.verifyNetwork;
 
-const layer_stacks: usize = 8;
 const square_count: usize = 64;
 const piece_to_char = " PNBRQK  pnbrqk";
 const white: u8 = 0;
@@ -242,6 +241,8 @@ fn buildNnueTrace(
     nnue_acc.stackReset(accumulators);
 
     const trace = network_port.traceEvaluate(pos, accumulators, caches);
+    // Size by the trace's own row, which the eval sizes by its layer-stack count.
+    const layer_stacks = trace.positional.len;
     var positional_cp: [layer_stacks]i32 = undefined;
 
     for (0..layer_stacks) |bucket| {
