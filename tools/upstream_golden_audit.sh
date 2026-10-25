@@ -59,6 +59,9 @@ GATES=(
     "tb-search:tb_search"
     "tb-cursed:tb_cursed"
 )
+# Every gate this script knows, kept apart from GATES, which the selection below narrows to
+# the ones this run audits.
+ALL_GATES=("${GATES[@]}")
 
 if [ "${1:-}" = "--list" ]; then
     for g in "${GATES[@]}"; do echo "${g%%:*}"; done
@@ -68,7 +71,7 @@ fi
 # Reject an unknown gate name rather than quietly auditing nothing: a typo in a CI --skip
 # would otherwise read as a clean run over a set that never excluded what it meant to.
 known() {
-    for g in "${GATES[@]}"; do [ "${g%%:*}" = "$1" ] && return 0; done
+    for g in "${ALL_GATES[@]}"; do [ "${g%%:*}" = "$1" ] && return 0; done
     echo "golden-audit: unknown gate '$1' (see --list)" >&2
     exit 2
 }
@@ -183,6 +186,9 @@ while IFS=$'\t' read -r tag gate _reason; do
 done < "$KNOWN_FILE"
 
 in_list() { local n="$1"; shift; local g; for g in "$@"; do [ "$g" = "$n" ] && return 0; done; return 1; }
+# Name a gate this run audited -- after --skip and any gates named on the command line. A
+# declaration for a gate it did not audit can neither differ nor expire in this run.
+audited() { local g; for g in "${GATES[@]}"; do [ "${g%%:*}" = "$1" ] && return 0; done; return 1; }
 
 rc_final=0
 
@@ -208,7 +214,7 @@ fi
 expired=()
 for gate in "${declared_expiring[@]:-}"; do
     [ -n "$gate" ] || continue
-    in_list "$gate" "${SKIPPED_BY_REQUEST[@]:-}" && continue
+    audited "$gate" || continue
     in_list "$gate" "${FAILED[@]:-}" || expired+=("$gate")
 done
 if [ "${#expired[@]}" -gt 0 ]; then
@@ -222,9 +228,9 @@ fi
 [ "$rc_final" -ne 0 ] && exit "$rc_final"
 
 if [ "$differ" -gt 0 ]; then
-    echo "golden-audit: OK -- every golden matches upstream except ${#FAILED[@]} DECLARED"
+    echo "golden-audit: OK -- every audited golden matches upstream except ${#FAILED[@]} DECLARED"
     echo "golden-audit: divergence(s) (${FAILED[*]}), each owned in $KNOWN_FILE"
     exit 0
 fi
-echo "golden-audit: OK -- every golden matches what upstream itself produces"
+echo "golden-audit: OK -- every audited golden matches what upstream itself produces"
 exit 0

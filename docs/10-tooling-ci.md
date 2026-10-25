@@ -104,7 +104,9 @@ by construction — a lane nobody reads. `tools/golden_audit_known.txt` declares
 the same `EXPIRING`/`PERMANENT` doctrine `transcript_known.txt` uses, and the audit enforces
 the tag both ways: a declared gate may differ, an undeclared gate that differs is a finding,
 and a declared gate that starts AGREEING turns it red so the row is deleted rather than left
-granting an allowance nobody is adjudicating. Steady state is stated by the run itself, not
+granting an allowance nobody is adjudicating. A declaration binds only a gate the run
+audited: one left out by name or by `--skip` can neither differ nor expire, so a run naming
+`tb-search eval` is judged on those two alone. Steady state is stated by the run itself, not
 here — the declared rows and what expires each are owned by
 [`tools/upstream/README.md`](../tools/upstream/README.md)'s divergence table.
 
