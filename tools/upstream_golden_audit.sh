@@ -21,8 +21,8 @@
 #
 # Prefer --skip over naming gates positionally when the reason is a MISSING FIXTURE rather
 # than a narrowed run: a positional list silently stops covering every gate added after it
-# was written, where --skip keeps picking new gates up. CI skips tb-cursed for exactly that
-# reason -- it needs the 5-man tables, which no CI lane fetches.
+# was written, where --skip keeps picking new gates up. The weekly lane skips tb-cursed for
+# exactly that reason when its best-effort `zig build tb5` could not fetch the 5-man tables.
 #
 # CWD MATTERS, and getting it wrong reads as a divergence. Every gate runs from the repo's
 # resources/ -- that is where the net lives AND where syzygy/ + syzygy5/ are fetched. Run the

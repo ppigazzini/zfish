@@ -1,7 +1,8 @@
-//! Fetch the runtime inputs the gates need: the NNUE net and the 3-man Syzygy set.
+//! Fetch the runtime inputs the gates need: the NNUE net and the 3-man and 5-man Syzygy sets.
 //!
-//! Both are Zig tools rather than shell scripts, and both are build-time downloads with a
-//! sha256 check, so they belong together and out of `build()`. The net one matters most: it
+//! Both are Zig tools rather than shell scripts, and both are build-time downloads checked before
+//! they are kept -- the net against the sha256 its name carries, a table against its Syzygy magic
+//! -- so they belong together and out of `build()`. The net one matters most: it
 //! reads the net NAME from network.zig's authoritative constant, not from upstream's stale
 //! src/evaluate.h -- after an upstream net bump those diverge and the wrong file lands, and
 //! the binary then crashes on a net it cannot load.
@@ -13,8 +14,11 @@ pub const Fetches = struct {
     net: *std.Build.Step.Run,
     /// Run step for the 3-man tablebases; only the tb-* gates depend on it.
     tb: *std.Build.Step.Run,
+    /// Run step for the 5-man cursed-win tablebases; only tb-cursed depends on it.
+    tb5: *std.Build.Step.Run,
     net_step: *std.Build.Step,
     tb_step: *std.Build.Step,
+    tb5_step: *std.Build.Step,
 };
 
 pub fn register(b: *std.Build) Fetches {
@@ -67,5 +71,17 @@ pub fn register(b: *std.Build) Fetches {
     );
     tb_step.dependOn(&tb_cmd.step);
 
-    return .{ .net = net_cmd, .tb = tb_cmd, .net_step = net_step, .tb_step = tb_step };
+    // The same tool with `5`: the ~24 MB 5-man set tb-cursed's golden was derived under, into
+    // resources/syzygy5/. Its own step, so nothing but tb-cursed ever pays for the download.
+    const tb5_cmd = b.addRunArtifact(fetch_tb_exe);
+    tb5_cmd.addArg("5");
+    tb5_cmd.setCwd(b.path("resources"));
+    tb5_cmd.has_side_effects = true; // idempotent: skips files already present
+    const tb5_step = b.step(
+        "tb5",
+        "Download the 5-man cursed-win Syzygy tables into resources/syzygy5/ (for tb-cursed)",
+    );
+    tb5_step.dependOn(&tb5_cmd.step);
+
+    return .{ .net = net_cmd, .tb = tb_cmd, .tb5 = tb5_cmd, .net_step = net_step, .tb_step = tb_step, .tb5_step = tb5_step };
 }

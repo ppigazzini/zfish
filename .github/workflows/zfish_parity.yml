@@ -54,6 +54,9 @@ jobs:
     # Splitting runs the two halves in PARALLEL, so wall-clock falls rather than the budget
     # rising to cover a serial sum that keeps growing.
     timeout-minutes: 45
+    # Every tablebase download in this job is BEST EFFORT -- see the fetch step below.
+    env:
+      ZFISH_TB_BEST_EFFORT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -73,20 +76,64 @@ jobs:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
-      # Cache the ~26 KB 3-man Syzygy tablebases (fetched by `zig build tb`, which the tb-init /
-      # tb-wdl / tb-dtz / tb-root / tb-search gates inside `zig build parity` trigger). Never
-      # committed; keyed on the fetcher so a set/source change re-downloads.
-      - name: Cache Syzygy tablebases
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Both Syzygy sets, never committed: the ~26 KB 3-man one the tb-init / tb-wdl / tb-dtz /
+      # tb-root / tb-search / parity-malformed gates read, and the ~24 MB 5-man one tb-cursed reads
+      # (../mcfish's `tb-fetch 5`). The tables never change, so the cache is keyed on the one thing
+      # that changes WHAT is fetched: tools/fetch_tb.zig, which owns both lists. Restore and save
+      # are split so that only a COMPLETE fetch is saved -- a key that hits is never saved again,
+      # so caching what an outage left behind would pin the partial set until the fetcher next
+      # changed. This job is the cache's only writer; every other job restores this entry.
+      - name: Restore the Syzygy tables
+        id: tbcache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: resources/syzygy
-          key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
+          path: |
+            resources/syzygy
+            resources/syzygy5
+          key: syzygy-3man-5man-${{ hashFiles('tools/fetch_tb.zig') }}
+
+      # BEST EFFORT ON PURPOSE, as ../mcfish's parity lane is. This is the blocking lane, and a
+      # tablebase mirror is not this project's dependency to be held hostage by: if a download
+      # fails, this step shows red and the lane goes on. ZFISH_TB_BEST_EFFORT, set on the job,
+      # makes every gate that reads a missing set SKIP loudly ("NOT a pass") instead of failing,
+      # parity-malformed narrow to its crafted family, and negative_control.sh skip the row whose
+      # gate narrowed. Off CI the variable is unset and an absent set is an error.
+      - name: Fetch the Syzygy tables (best effort; the tablebase gates SKIP without them)
+        id: tbfetch
+        continue-on-error: true
+        # Cleared HERE, so a failed download exits 1 and this step shows red; the job-level
+        # value is what lets the gates below narrow instead of failing.
+        env:
+          ZFISH_TB_BEST_EFFORT: ""
+        run: zig build tb tb5
+      - name: Save the Syzygy tables
+        if: steps.tbfetch.outcome == 'success' && steps.tbcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            resources/syzygy
+            resources/syzygy5
+          key: syzygy-3man-5man-${{ hashFiles('tools/fetch_tb.zig') }}
 
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
       # `native` resolves to a PEXT/AVX512 arch. Pin the exact baseline the bench
       # signature / parity goldens were validated against so the gate is
       # reproducible and CPU-independent (sse41 runs on any runner).
       - run: zig build parity -Darch=x86-64-sse41-popcnt
+
+      # The cursed-win / blessed-loss gate: the DTZ > 100 branches of the prober, which only the
+      # 5-man set fetched above reaches. Kept out of `parity`, where every local run of the
+      # aggregate would pay for 24 MB of tables; its golden pins the oracle's answers under exactly
+      # the set tools/fetch_tb.zig lists. When the mirror was down on a cache miss the gate SKIPS,
+      # and the step says so in a warning instead of going red -- the same best effort as the
+      # fetch, and ../mcfish's shape. The default shell is `bash -eo pipefail`, so a gate that
+      # FAILS still fails the step through the pipe.
+      - name: Cursed win / blessed loss (5-man tables)
+        run: |
+          zig build tb-cursed -Darch=x86-64-sse41-popcnt 2>&1 | tee "$RUNNER_TEMP/tb-cursed.log"
+          if grep -q '^tb-cursed: SKIPPED' "$RUNNER_TEMP/tb-cursed.log"; then
+            echo "::warning title=tb-cursed SKIPPED::no 5-man tables (the fetch failed), so the cursed-win branches are UNEXERCISED in this run"
+          fi
 
       # Coverage-guided fuzz-target SMOKE: `zig build fuzz` runs each
       # std.testing.fuzz target once (FEN-parse -> movegen -> make/unmake via the
@@ -174,11 +221,13 @@ jobs:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
-      - name: Cache Syzygy tablebases
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore the Syzygy tables
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: resources/syzygy
-          key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
+          path: |
+            resources/syzygy
+            resources/syzygy5
+          key: syzygy-3man-5man-${{ hashFiles('tools/fetch_tb.zig') }}
 
       # Unit + property tests: the module `test {}` blocks plus the
       # board property suite (perft to reference counts, make/unmake & null-move
@@ -212,6 +261,9 @@ jobs:
     timeout-minutes: 30
     # The whole point: a master regression must NOT block the merge queue.
     continue-on-error: true
+    # Narrow the tablebase gates on a failed download, as the blocking lane does.
+    env:
+      ZFISH_TB_BEST_EFFORT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -228,11 +280,13 @@ jobs:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
-      - name: Cache Syzygy tablebases
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore the Syzygy tables
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: resources/syzygy
-          key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
+          path: |
+            resources/syzygy
+            resources/syzygy5
+          key: syzygy-3man-5man-${{ hashFiles('tools/fetch_tb.zig') }}
 
       - run: zig version
       # Same host arch/gates as the blocking Linux lane, under Zig master.
@@ -311,6 +365,10 @@ jobs:
     # cancelled instead of as this job. 60, not 30: a TSan build is several times a plain one
     # and the margin is the point -- a deadline that trips on a slow runner is a flaky gate.
     timeout-minutes: 60
+    # tsan-race fetches the 3-man set it points SyzygyPath at; its workloads run without it, so
+    # a failed download must not fail the race gate.
+    env:
+      ZFISH_TB_BEST_EFFORT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1

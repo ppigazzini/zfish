@@ -221,7 +221,7 @@ pub fn build(b: *std.Build) void {
 
     const install_step = b.getInstallStep();
 
-    // Fetch the runtime inputs (build/fetch.zig): the NNUE net and the 3-man Syzygy set.
+    // Fetch the runtime inputs (build/fetch.zig): the NNUE net and the 3-man and 5-man Syzygy sets.
     const fetches = buildpkg.fetch.register(b);
     const net_cmd = fetches.net;
     const tb_cmd = fetches.tb;
@@ -306,6 +306,7 @@ pub fn build(b: *std.Build) void {
         .install_step = install_step,
         .net_step = &net_cmd.step,
         .tb_step = &tb_cmd.step,
+        .tb5_step = &fetches.tb5.step,
         .goldenPath = repoPath,
     });
 

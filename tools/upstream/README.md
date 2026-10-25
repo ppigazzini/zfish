@@ -56,9 +56,9 @@ ZFISH_GOLDEN_UPDATE_FROM_ZFISH=1 zig build output-golden-update eval-trace-updat
 #   reference genuinely moved -- upstream_parity above has already proven this binary
 #   bit-exact against the pristine oracle -- so saying so explicitly is the sanctioned
 #   path, and the audit below is what turns "we wrote it" into "upstream agrees".
-# LOCAL-ONLY GATES ARE NOT IN parity AND NOT IN CI -- they go stale SILENTLY. Run them by hand
-# every sync, or nobody learns their golden aged until it reads as somebody's regression:
-zig build tb-cursed                                 # needs the 5-man set in resources/syzygy5
+# GATES OUTSIDE parity go stale SILENTLY on your machine. tb-cursed runs in the parity lane,
+# but run it here too before the sync lands, or the push is what tells you its golden aged:
+zig build tb-cursed                                 # fetches the 5-man set (`zig build tb5`) first
 zig build tb-cursed-update                          # only after the oracle agrees, at the SAME SyzygyPath
 # THEN PROVE the reharden: every golden re-checked with the ORACLE as the engine. This is the
 # mechanical form of "drive the oracle and match its bytes" -- a golden that only agrees with

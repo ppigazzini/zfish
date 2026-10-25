@@ -30,13 +30,6 @@ fuzz-tb-probe dispatched by zfish_fuzz.yml through a `for step in ...` loop vari
 # the same tool.
 fuzz-report CI drives tools/fuzz_report.zig directly in snapshot/check modes; this step is the local one-shot reading
 
-# Needs the 5-man tables. No CI lane fetches them -- `tb` fetches the 3-man set only -- so this
-# pair is local-only by construction, and it went red for a week once because of exactly that:
-# a resync refreshed every golden a lane could reach and left this one behind. Run it by hand
-# after any sync. (docs/10-tooling-ci.md, "A resync must refresh every golden it moves".)
-tb-cursed needs the 5-man Syzygy set that no CI lane fetches; local-only, run by hand every upstream sync
-tb-cursed-update regeneration half of the local-only tb-cursed gate
-
 # Prints the host's best ARCH tier and exits. It resolves `-Darch=native` for a human at a
 # prompt; there is no verdict for a lane to read.
 host-arch prints the resolved -Darch=native tier for a human; it asserts nothing a lane could gate on

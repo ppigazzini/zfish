@@ -1,66 +1,120 @@
-// Fetch the zfish Syzygy 3-man tablebases, in pure Zig (mirrors fetch_net.zig) -- no sh/curl.
-// Download the 5 three-man endgames (KPvK KNvK KBvK KRvK KQvK), WDL (.rtbw) + DTZ (.rtbz), into
-// `syzygy/` under the cwd (build.zig runs it with cwd = resources/, so -> resources/syzygy/). ~26 KB total;
-// never commit the tables (see .gitignore) -- fetch + cache them like the NNUE net. Only the
-// 3-man set is needed for the Syzygy CI gate (a KPvK/KQvK probe); verify each file's Syzygy
-// magic header so a mirror error page can't masquerade as a table. Skip files already present.
+// Fetch the Syzygy tablebases the gates read, in pure Zig (mirrors fetch_net.zig) -- no sh/curl.
+//
+// Two sets, WDL (.rtbw) + DTZ (.rtbz) each, from lichess's mirror of the standard tables, into
+// directories under the cwd (build.zig runs this with cwd = resources/):
+//   * no argument -- the 3-man set into syzygy/, ~26 KB. tb-init, tb-wdl, tb-dtz, tb-root,
+//     tb-search and parity-malformed read it.
+//   * `5` -- the 5-man cursed-win set into syzygy5/, ~24 MB: the tables tb-cursed's golden was
+//     derived under, and ONLY those. A probe reads every table on its SyzygyPath, so a golden
+//     pinned at one set is a different probe stream at another; add a table here and the golden
+//     has to be re-derived from the oracle with it in place.
+// Never commit the tables (see .gitignore); fetch and cache them like the NNUE net. Verify each
+// file's Syzygy magic so a mirror error page can't masquerade as a table, and skip files already
+// present.
+//
+// BEST EFFORT when ZFISH_TB_BEST_EFFORT is set, as CI sets it. A tablebase mirror is not this
+// project's dependency to be held hostage by: a file that cannot be fetched is reported and
+// skipped, the run exits 0, and the gates that read the set then SKIP, loudly, rather than fail
+// (tools/parity/tb_tables.zig). Without it a failure exits 1, which is what a developer at the
+// keyboard wants to see.
 
 const std = @import("std");
 const Io = std.Io;
 
-const names = [_][]const u8{ "KPvK", "KNvK", "KBvK", "KRvK", "KQvK" };
-/// Match the first 4 bytes of a valid file (SF `Magics`): index [type == WDL] -> [0]=DTZ, [1]=WDL.
-const wdl_magic = [4]u8{ 0x71, 0xE8, 0x23, 0x5D };
-const dtz_magic = [4]u8{ 0xD7, 0x66, 0x0C, 0xA5 };
-const base = "https://tablebase.lichess.ovh/tables/standard";
+/// Name the 3-man set, fetched into `three_man_dir`.
+pub const three_man = [_][]const u8{ "KPvK", "KNvK", "KBvK", "KRvK", "KQvK" };
+pub const three_man_dir = "syzygy";
 
-fn fatal(comptime fmt: []const u8, args: anytype) noreturn {
-    std.debug.print("fetch_tb: " ++ fmt ++ "\n", args);
-    std.process.exit(1);
-}
+/// Name the 5-man set tb-cursed reads, fetched into `five_man_dir` -- ../mcfish's `tb-fetch 5`,
+/// ~24 MB. KNNvKP is the cursed win itself; KNNvK and KNvKP are the two children its DTZ walk
+/// recurses into, by capturing the pawn or a knight. KNNvKP alone is NOT enough: without the
+/// child a cursed win probes as a plain draw rather than as an error, so a missing table looks
+/// like a correct answer.
+pub const five_man = [_][]const u8{ "KNNvKP", "KNNvK", "KNvKP" };
+pub const five_man_dir = "syzygy5";
+
+/// Name the variable that turns a failed download into a skipped file.
+pub const best_effort_env = "ZFISH_TB_BEST_EFFORT";
+
+/// Pair each file kind with its extension, its mirror directory and its Syzygy magic (SF `Magics`).
+pub const Kind = struct { ext: []const u8, dir: []const u8, magic: [4]u8 };
+pub const kinds = [_]Kind{
+    .{ .ext = ".rtbw", .dir = "3-4-5-wdl", .magic = .{ 0x71, 0xE8, 0x23, 0x5D } },
+    .{ .ext = ".rtbz", .dir = "3-4-5-dtz", .magic = .{ 0xD7, 0x66, 0x0C, 0xA5 } },
+};
+
+const base = "https://tablebase.lichess.ovh/tables/standard";
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;
 
-    // Ensure syzygy/ exists (Io.Dir has no makeDir; libc mkdir, ignore EEXIST).
-    _ = std.c.mkdir("syzygy", 0o755);
+    var arg_it = try std.process.Args.Iterator.initAllocator(init.minimal.args, gpa);
+    defer arg_it.deinit();
+    _ = arg_it.next(); // argv0
+    const five = if (arg_it.next()) |a| std.mem.eql(u8, a, "5") else false;
+    const names: []const []const u8 = if (five) &five_man else &three_man;
+    const dir_name = if (five) five_man_dir else three_man_dir;
+    const label = if (five) "5-man cursed-win" else "3-man";
+    const best_effort = init.minimal.environ.containsUnempty(gpa, best_effort_env) catch false;
+
+    // Ensure the directory exists (Io.Dir has no makeDir; libc mkdir, ignore EEXIST).
+    _ = std.c.mkdir(if (five) five_man_dir else three_man_dir, 0o755);
 
     var client: std.http.Client = .{ .allocator = gpa, .io = io };
     defer client.deinit();
 
-    const Spec = struct { ext: []const u8, dir: []const u8, magic: [4]u8 };
-    const specs = [_]Spec{
-        .{ .ext = ".rtbw", .dir = "3-4-5-wdl", .magic = wdl_magic },
-        .{ .ext = ".rtbz", .dir = "3-4-5-dtz", .magic = dtz_magic },
-    };
-
     var fetched: usize = 0;
+    var failed: usize = 0;
     for (names) |name| {
-        for (specs) |spec| {
-            const ext = spec.ext;
-            const dir = spec.dir;
-            const magic = spec.magic;
-            const dst = try gpa.print("syzygy/{s}{s}", .{ name, ext });
+        for (kinds) |kind| {
+            const dst = try gpa.print("{s}/{s}{s}", .{ dir_name, name, kind.ext });
             defer gpa.free(dst);
 
             if (Io.Dir.cwd().access(io, dst, .{})) |_| {
                 continue; // already present
             } else |_| {}
 
-            const url = try gpa.print("{s}/{s}/{s}{s}", .{ base, dir, name, ext });
+            const url = try gpa.print("{s}/{s}/{s}{s}", .{ base, kind.dir, name, kind.ext });
             defer gpa.free(url);
-            var body: Io.Writer.Allocating = .init(gpa);
-            defer body.deinit();
-            const res = client.fetch(.{ .location = .{ .url = url }, .response_writer = &body.writer }) catch |e|
-                fatal("download failed {s} ({s})", .{ url, @errorName(e) });
-            if (res.status != .ok) fatal("download failed {s} (HTTP {d})", .{ url, @backingInt(res.status) });
-            const bytes = body.written();
-            if (bytes.len < 4 or !std.mem.eql(u8, bytes[0..4], &magic))
-                fatal("bad magic for {s}{s} ({d} bytes) -- not a Syzygy file", .{ name, ext, bytes.len });
-            try Io.Dir.cwd().writeFile(io, .{ .sub_path = dst, .data = bytes });
-            fetched += 1;
+            if (fetchOne(gpa, io, &client, url, dst, kind.magic)) |_| {
+                fetched += 1;
+            } else |_| {
+                if (!best_effort) std.process.exit(1);
+                failed += 1;
+            }
         }
     }
-    std.debug.print("fetch_tb: 3-man set ready in syzygy/ ({d} downloaded, {d} total)\n", .{ fetched, names.len * 2 });
+    if (failed != 0) {
+        std.debug.print(
+            "fetch_tb: BEST EFFORT -- {d} {s} file(s) not fetched ({s} is set); the gates that read {s}/ SKIP\n",
+            .{ failed, label, best_effort_env, dir_name },
+        );
+        return;
+    }
+    std.debug.print("fetch_tb: {s} set ready in {s}/ ({d} downloaded, {d} total)\n", .{ label, dir_name, fetched, names.len * kinds.len });
+}
+
+/// Download one file and write it only once it is whole and carries its magic, so a failure never
+/// leaves a partial file that the next run would take for a table. Report why on failure.
+fn fetchOne(gpa: std.mem.Allocator, io: Io, client: *std.http.Client, url: []const u8, dst: []const u8, magic: [4]u8) error{Failed}!void {
+    var body: Io.Writer.Allocating = .init(gpa);
+    defer body.deinit();
+    const res = client.fetch(.{ .location = .{ .url = url }, .response_writer = &body.writer }) catch |e| {
+        std.debug.print("fetch_tb: download failed {s} ({s})\n", .{ url, @errorName(e) });
+        return error.Failed;
+    };
+    if (res.status != .ok) {
+        std.debug.print("fetch_tb: download failed {s} (HTTP {d})\n", .{ url, @backingInt(res.status) });
+        return error.Failed;
+    }
+    const bytes = body.written();
+    if (bytes.len < 4 or !std.mem.eql(u8, bytes[0..4], &magic)) {
+        std.debug.print("fetch_tb: bad magic for {s} ({d} bytes) -- not a Syzygy file\n", .{ url, bytes.len });
+        return error.Failed;
+    }
+    Io.Dir.cwd().writeFile(io, .{ .sub_path = dst, .data = bytes }) catch |e| {
+        std.debug.print("fetch_tb: cannot write {s} ({s})\n", .{ dst, @errorName(e) });
+        return error.Failed;
+    };
 }

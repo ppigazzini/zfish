@@ -270,12 +270,17 @@ fn driveFixture(gpa: std.mem.Allocator, io: Io, bin: []const u8, f: struct { nam
 pub fn runMalformed(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     const cwd = Io.Dir.cwd();
 
-    // A missing corpus SKIPs loudly and never passes: a gate that reports OK on nothing checked
-    // is worse than no gate, because it retires the question.
-    cwd.access(io, "syzygy/KQvK.rtbw", .{}) catch {
-        std.debug.print("malformed: SKIPPED -- no 3-man corpus in syzygy/ (run `zig build fetch-tb`)\n", .{});
-        std.process.exit(0);
-    };
+    // A missing corpus narrows the gate to the crafted family, loudly: the mutations need real
+    // tables to mutate, the crafted pairs need none. The run then reports what it skipped rather
+    // than an OK over a set it never checked.
+    var corpus = true;
+    for (stems) |s| {
+        var buf: [64]u8 = undefined;
+        const p = std.mem.print(&buf, "syzygy/{s}.rtbw", .{s.name}) catch unreachable;
+        cwd.access(io, p, .{}) catch {
+            corpus = false;
+        };
+    }
 
     cwd.deleteTree(io, fixture_dir) catch {};
     cwd.createDirPath(io, fixture_dir) catch
@@ -287,7 +292,9 @@ pub fn runMalformed(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     defer dir.close(io);
 
     var done: usize = 0;
+    if (!corpus) std.debug.print("malformed: the {d} mutated-table fixtures SKIPPED -- no 3-man corpus in syzygy/ (run `zig build tb`)\n", .{fixtures.len});
     for (fixtures) |f| {
+        if (!corpus) break;
         // Start each fixture from an empty directory: a table left behind by the previous one
         // would let a REFUSED file pass on its neighbour's answer.
         for (stems) |s| {
@@ -297,10 +304,7 @@ pub fn runMalformed(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
         }
         if (!(writeFixture(gpa, io, dir, f) catch
             fail("malformed: fixture '{s}' could not be written", .{f.name})))
-        {
-            std.debug.print("malformed: SKIPPED -- {s}.rtbw absent from syzygy/\n", .{f.stem});
-            std.process.exit(0);
-        }
+            fail("malformed: {s}.rtbw vanished from syzygy/ mid-run", .{f.stem});
         var fen: []const u8 = "";
         for (stems) |s| if (std.mem.eql(u8, s.name, f.stem)) {
             fen = s.fen;
@@ -325,6 +329,10 @@ pub fn runMalformed(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
         done += 1;
     }
 
+    if (!corpus) {
+        std.debug.print("malformed: NARROWED ({d} crafted tables survived; the mutated family did not run)\n", .{done});
+        std.process.exit(0);
+    }
     std.debug.print("malformed: OK ({d} bad tables, every one survived: clean exit + a legal bestmove)\n", .{done});
     std.process.exit(0);
 }
