@@ -291,9 +291,9 @@ pub fn updateAllStats(
         // runs at depth >= 1, so it is at least 733; `actual_malus` only ever multiplies it by
         // positive factors and shifts right, so neither dividend reaches @divTrunc's
         // round-toward-zero fixup. This one is per QUIET MOVE, inside the loop.
-        var actual_malus: i32 = malus * 1159 >> 10;
+        var actual_malus: i32 = (malus * 1159) >> 10;
         for (0..n_quiets) |i| {
-            actual_malus = actual_malus * 921 >> 10;
+            actual_malus = (actual_malus * 921) >> 10;
             updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, quiets[i], -actual_malus);
         }
     } else {
@@ -311,7 +311,7 @@ pub fn updateAllStats(
         const psq: u8 = @intCast(prev_sq);
         // Negate AFTER the shift: C truncates toward zero, so `-x / 1024` is `-(x >> 10)`
         // for the non-negative x above, not `(-x) >> 10`, which floors.
-        updateContinuationHistories(ss_prev, pos.board[psq], psq, -(malus * 713 >> 10));
+        updateContinuationHistories(ss_prev, pos.board[psq], psq, -((malus * 713) >> 10));
     }
 
     for (0..n_captures) |j| {
@@ -320,7 +320,7 @@ pub fn updateAllStats(
         const to = moveTo(move);
         const captured_pt = pieceTypeOn(pos, to);
         const ce = &capture_base[@as(usize, moved_pc) * 512 + @as(usize, to) * 8 + captured_pt];
-        statsUpdate(ce, -(malus * 1489 >> 10), capture_history_limit);
+        statsUpdate(ce, -((malus * 1489) >> 10), capture_history_limit);
     }
 }
 

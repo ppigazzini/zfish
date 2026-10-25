@@ -202,7 +202,7 @@ pub fn transform(
     // result is align(2) whatever the base was), and the transform's loads fold into their
     // memory operands only while it is provable. The comptime assert is what makes the
     // @alignCast a fact rather than a promise.
-    comptime std.debug.assert(half_dimensions * @sizeOf(i16) % nnue_align == 0);
+    comptime std.debug.assert((half_dimensions * @sizeOf(i16)) % nnue_align == 0);
     transformPerspective(@alignCast(comb_acc + p0 * half_dimensions), output, 0, nnz);
     transformPerspective(@alignCast(comb_acc + p1 * half_dimensions), output, 1, nnz);
 }

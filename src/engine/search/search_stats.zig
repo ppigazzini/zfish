@@ -45,15 +45,15 @@ pub fn priorScaledBonusBase(depth: i32) i32 {
 /// at while the scale ends in `@max(s, 0)` -- so the dividend is never negative and
 /// `@divTrunc` buys only a round-toward-zero fixup (lea/test/cmov/sar) nothing can reach.
 pub fn priorConthistScale(scaled_bonus: i32) i32 {
-    return scaled_bonus * 263 >> 14;
+    return (scaled_bonus * 263) >> 14;
 }
 
 pub fn priorMainhistScale(scaled_bonus: i32) i32 {
-    return scaled_bonus * 215 >> 15;
+    return (scaled_bonus * 215) >> 15;
 }
 
 pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
-    return scaled_bonus * 324 >> 13;
+    return (scaled_bonus * 324) >> 13;
 }
 
 /// Assemble the Step 18 LMR stat-score (search()). The caller reads the relevant
@@ -63,7 +63,7 @@ pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
 pub fn captureStatScore(piece_value: i32, capture_hist: i32) i32 {
     // `piece_value` indexes search_values.piece_value, which has no negative entry, so the
     // product cannot be negative and the divide is a shift.
-    return (873 * piece_value >> 7) + capture_hist;
+    return ((873 * piece_value) >> 7) + capture_hist;
 }
 
 pub fn quietStatScore(main_hist: i32, cont0: i32, cont1: i32) i32 {

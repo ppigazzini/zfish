@@ -114,7 +114,7 @@ pub fn writeIndices(
     // computed once per call and the permute below gathers each piece's entry.
     const flip: u16 = 56 * @as(u16, perspective);
     const orient: u16 = @as(u16, @intCast(luts.orient_tbl_half[king_square])) ^ flip;
-    const bucket: u16 = @as(u16, @intCast(luts.king_buckets[king_square ^ perspective * 56]));
+    const bucket: u16 = @as(u16, @intCast(luts.king_buckets[king_square ^ (perspective * 56)]));
     const queen: u16 = if (opponent_has_queen) @intCast(luts.queen_offset) else 0;
     const offset = bucket +% queen +% orient;
 
@@ -157,7 +157,7 @@ const testing = std.testing;
 fn referenceIndex(perspective: u8, square: u8, piece: u8, king_square: u8, opponent_has_queen: bool) u32 {
     const flip: u32 = 56 * perspective;
     return (@as(u32, square) ^ luts.orient_tbl_half[king_square] ^ flip) +
-        luts.piece_square_index[perspective][piece] + luts.king_buckets[king_square ^ perspective * 56] +
+        luts.piece_square_index[perspective][piece] + luts.king_buckets[king_square ^ (perspective * 56)] +
         (if (opponent_has_queen) luts.queen_offset else 0);
 }
 

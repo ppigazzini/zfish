@@ -99,7 +99,7 @@ pub fn fullMakeIndex(params: FullThreatParams) u32 {
 pub fn threatRouteMask(perspective: u8, king_square: u8, forward: bool) u32 {
     const orientation: u32 = @as(u8, @bitCast(orient_tbl_full[king_square])) ^ (56 * @as(u32, perspective));
     const swap: u32 = 8 * @as(u32, perspective);
-    return orientation * 0x0101 | (swap << 16) | (swap << 20) |
+    return (orientation * 0x0101) | (swap << 16) | (swap << 20) |
         (if (forward) 0 else @as(u32, 0x8000_0000));
 }
 
