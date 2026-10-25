@@ -363,8 +363,11 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             const high_best_move_effort = fclamp(0.969 + (0.714 - 0.969) * (hbme_x - 75800.0) / (104510.0 - 75800.0), 0.693, 0.838);
 
             var total_time = @as(f64, @floatFromInt(id.tm_optimum)) * falling_eval * reduction * best_move_instability * high_best_move_effort;
-            // Cap used time to 0.5s for a better viewer experience (search.cpp:592-594).
-            if (id.root_moves_count == 1) total_time = @min(500.0, total_time);
+            // Cap used time to 0.5s for a better viewer experience -- in nodes under nodestime,
+            // where `total_time` and the elapsed clock count nodes too (upstream f59408947).
+            // `npmsec` is 0 off nodestime, and the floor of 1 keeps the cap in milliseconds there.
+            if (id.root_moves_count == 1)
+                total_time = @min(500.0 * @as(f64, @floatFromInt(@max(wl.limits.npmsec, 1))), total_time);
 
             // Stop once there is nothing better to find: a mate in <=3 for us, or a forced
             // mate against us in 2 (search.cpp:600-601). Both disjuncts were missing, so a
