@@ -155,6 +155,16 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
         }
     }
 
+    // Refuse a symmetric DTZ table with pawns that claims to store black to move on any file.
+    // doProbeTable maps every position of a symmetric table to stm 0, and the exemption that lets
+    // a pawnless one answer either side excludes pawns, so such a file answers CHANGE_STM for
+    // BOTH sides: probeDtz's one-ply search then recurses down every quiet line until the stack
+    // is gone. Upstream reads the file the same way and segfaults. A real table carries the flag
+    // clear -- KPvKP's four files read 0x02 -- because only white to move is stored.
+    if (dtz and t.key == t.key2 and t.has_pawns) {
+        for (files) |f| if (t.get(true, 0, f).flags & decode.flag_stm != 0) return false;
+    }
+
     if (dtz and !setDtzMap(t, buf, &pos, files)) return false;
 
     // Carve the three file-backed regions with a bound each. Their sizes come from the header
@@ -366,4 +376,46 @@ test "set refuses a pawnful table whose leading piece is not the lead colour's p
     var good = kpvkStub(0x11);
     _ = set(&good.table, false, &good.buf);
     try std.testing.expectEqual(@as(i32, 1), good.table.items[0][0].group_len[0]);
+}
+
+/// Build a KPvKP entry -- symmetric (key == key2) and with pawns on both sides -- and a whole
+/// `.rtbz` for it: KPvKP's own 30 header bytes, then one single-valued sub-table per file whose
+/// flags byte is `0x80 | stm`. Single-valued, so the file needs no symbol tables to load.
+fn kpvkpDtz(stm: u8) struct { table: TBTable, buf: [80]u8 } {
+    var buf: [80]u8 = @splat(0);
+    const header = [30]u8{
+        0xd7, 0x66, 0x0c, 0xa5, 0x42, 0x01, 0x03, 0x01, 0x09, 0x06, 0x0e, 0x03, 0x02, 0x01, 0x09,
+        0x06, 0x0e, 0x03, 0x01, 0x01, 0x09, 0x06, 0x0e, 0x03, 0x01, 0x01, 0x09, 0x06, 0x0e, 0x00,
+    };
+    @memcpy(buf[0..30], &header);
+    for (0..4) |f| {
+        buf[30 + 2 * f] = decode.flag_single_value | stm;
+        buf[31 + 2 * f] = 1; // the stored DTZ
+    }
+    return .{
+        .table = .{
+            .key = 7,
+            .key2 = 7,
+            .piece_count = 4,
+            .has_pawns = true,
+            .has_unique_pieces = false,
+            .pawn_count = .{ 1, 1 },
+            .lead_color = 0,
+            .sides = 1,
+        },
+        .buf = buf,
+    };
+}
+
+test "set refuses a symmetric pawn DTZ table that stores black to move" {
+    registry.reset(""); // the arena setSizes allocates from, and the encoding geometry setGroups reads
+    // Black to move on every file: no position of a symmetric table is ever probed as black, so
+    // the file can only answer "the other side" and probeDtz would recurse without end.
+    var black = kpvkpDtz(decode.flag_stm);
+    try std.testing.expect(!set(&black.table, true, &black.buf));
+
+    // The control, flagged white as every real table is: the same file loads, so the refusal is
+    // about the flag and not about symmetric pawn tables.
+    var white = kpvkpDtz(0);
+    try std.testing.expect(set(&white.table, true, &white.buf));
 }
