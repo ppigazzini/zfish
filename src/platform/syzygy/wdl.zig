@@ -142,21 +142,26 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime 
 /// Port SF probe_dtz: DTZ from the side-to-move's view. Use search<true> to fold in zeroing pawn moves,
 /// then probe_table<DTZ>; the CHANGE_STM branch does a 1-ply search that minimizes DTZ (the DTZ
 /// table stored the other side, so we step one move and read the resulting DTZ).
-fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state: *i32) i32 {
-    out_state.* = probe_ok;
+///
+/// Leave `state` holding what upstream's shared `result` holds: the WDL search, the table probe
+/// and every child probe of the one-ply search write that one variable in turn, so it returns
+/// with what the last of them left -- ZEROING when the best move zeroes, the last child's state
+/// after the one-ply search, CHANGE_STM when that search had no move. The search reads only
+/// whether it is FAIL; the `d` command prints it. The table probe and the children write locals
+/// and `state` is stored once, on the way out: the same value, in fewer instructions than
+/// writing through the pointer at every step.
+fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, state: *i32) i32 {
     const w = searchWdl(pos, storage, true);
-    if (w.state == probe_fail) {
-        out_state.* = probe_fail;
-        return 0;
-    }
+    state.* = w.state;
     const wdl = w.value;
-    if (wdl == wdl_draw) return 0; // Return 0 -- DTZ tables don't store draws
+    if (w.state == probe_fail or wdl == wdl_draw) return 0; // DTZ tables don't store draws
     if (w.state == probe_zeroing) return dtzBeforeZeroing(wdl); // best move is a winning zeroing move
 
-    var st: i32 = probe_ok;
+    // probeTable writes only FAIL or CHANGE_STM, so on an answer `state` still holds the search's.
+    var st: i32 = w.state;
     const dtz = probeTable(pos, true, wdl, &st);
     if (st == probe_fail) {
-        out_state.* = probe_fail;
+        state.* = probe_fail;
         return 0;
     }
     if (st != change_stm) {
@@ -166,18 +171,19 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
 
     // Resolve CHANGE_STM: the DTZ is stored for the other side; do a 1-ply search minimizing DTZ.
     var min_dtz: i32 = 0xFFFF;
+    var last: i32 = change_stm; // what upstream's shared state holds when no move follows
     var buf: [256]u16 = undefined;
     const total = movegen.generateLegal(pos, buf[0..]);
     const node = state_list.storagePush(storage) catch {
-        out_state.* = probe_fail;
+        state.* = probe_fail;
         return 0;
     };
     for (0..total) |i| {
         const m = buf[i];
         const zeroing = isCapture(pos, m) or movedPieceType(pos, m) == pawn_pt;
         position.doMoveState(pos, m, node);
-        var cst: i32 = probe_ok;
         var d: i32 = undefined;
+        var cst: i32 = undefined;
         if (zeroing) {
             const s = searchWdl(pos, storage, false);
             cst = s.state;
@@ -193,10 +199,12 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
         if (d < min_dtz and signOf(d) == signOf(wdl)) min_dtz = d;
         position.undoMove(pos, m);
         if (cst == probe_fail) {
-            out_state.* = probe_fail;
+            state.* = probe_fail;
             return 0;
         }
+        last = cst;
     }
+    state.* = last;
     return if (min_dtz == 0xFFFF) -1 else min_dtz; // no legal moves -> mate -> -1
 }
 
