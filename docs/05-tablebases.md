@@ -87,7 +87,11 @@ one-sided, so when the stored side is not the side to move `doProbeTable` return
 
 A `ProbeResult` (`tb_source.zig`) carries both: `available`, `wdl` + `wdl_state`, and
 `dtz` + `dtz_state`. `available == 0` means "no WDL result"; a DTZ failure is reported
-through `dtz_state` while WDL still reports.
+through `dtz_state` while WDL still reports. `dtz_state` is upstream's shared `result`: the
+WDL search, the table probe and every child of the 1-ply search write it in turn, so it
+holds what the last of them left -- zeroing (2) when the best move zeroes, a child's state
+after the 1-ply search, `change_stm` (-1) when that search had no move. The search reads only
+whether it is a failure; the `d` command prints it.
 
 ## Loading
 
@@ -475,7 +479,7 @@ The gates live in `tools/parity/golden_tb.zig`, each diffed against a golden in 
 | --- | --- | --- |
 | `tb-init` | `tools/tb_init.golden` | the load report — the `Found N WDL and N DTZ tablebase files (up to M-man)` line == the upstream oracle. Pins discovery. |
 | `tb-wdl` | `tools/tb_wdl.golden` | the `d`-command `Tablebases WDL: N (state)` line == oracle over a curated 3-man battery: all five piece types, win/loss/draw, white/black to move, the pawn and blackStronger (lead pawn is black) flip paths, and the `searchWdl` capture recursion (the lone king captures into a KvK draw). |
-| `tb-dtz` | `tools/tb_dtz.golden` | the same battery, pinning the `Tablebases DTZ:` line — including the `change_stm` 1-ply path via KQvK with black to move. |
+| `tb-dtz` | `tools/tb_dtz.golden` | the same battery, pinning the `Tablebases DTZ:` line — including the `change_stm` 1-ply path via KQvK with black to move, and the two states only a shared `dtz_state` produces: a winning zeroing move (2) and a mated side to move (-1). |
 | `tb-root` | `tools/tb_root.golden` | root DTZ ranking: `go` on a TB win, pinning the emitted **score** and **tbhits** == oracle. Deliberately *not* pinned: the bestmove and node count — the oracle early-returns on a `root_in_tb` decisive win while zfish still searches, so among equally-optimal TB moves it may pick a different (also winning) one; gating that would be fake parity. |
 | `tb-search` | `tools/tb_search.golden` | the in-search Step 7 probe: bench one 4-man position per file (each bigger than the 3-man tables, so the root searches normally and Step 7 fires at the 3-man nodes captures reach), pinning the node count **with** `SyzygyPath` and **without** — both == oracle — plus a third, node-limited count that pins the probe's time-check-counter reset, which a depth-limited bench cannot see. Bit-exact node-count parity for the in-tree probe. |
 | `tb-cursed` | `tools/tb_cursed.golden` | **local-only**: cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Needs ~40 MB of 5-man tables staged into `resources/syzygy5/`, which the 3-man CI set never contains, so it is not in the `parity` aggregate (`in_parity = false` in `build/gates.zig`; the staging recipe is in `buildTbCursed`'s comment in `tools/parity/golden_tb.zig`). |

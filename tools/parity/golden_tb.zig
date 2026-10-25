@@ -53,6 +53,8 @@ pub fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 /// piece types (Q/R/B/N/P), win/loss/draw, white/black to move, the pawn + blackStronger (lead pawn
 /// is black) flip paths, and -- via the last two -- the search<false> capture recursion (the lone
 /// king captures the piece into a KvK draw). KQvK-btm also exercises the DTZ CHANGE_STM 1-ply path.
+/// The last two pin the two DTZ states nothing else reaches: a winning zeroing move (2), and a
+/// side to move that is mated, whose one-ply search has no move to overwrite CHANGE_STM (-1).
 const tb_probe_runs = [_]struct { label: []const u8, fen: []const u8 }{
     .{ .label = "KQvK-wtm (win)  ", .fen = "4k3/8/8/8/3QK3/8/8/8 w - - 0 1" },
     .{ .label = "KQvK-btm (loss) ", .fen = "4k3/8/8/8/3QK3/8/8/8 b - - 0 1" },
@@ -63,6 +65,8 @@ const tb_probe_runs = [_]struct { label: []const u8, fen: []const u8 }{
     .{ .label = "KBvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/B2K4 w - - 0 1" },
     .{ .label = "KQvK cap->draw  ", .fen = "8/8/8/8/8/1Qk5/8/K7 b - - 0 1" },
     .{ .label = "KRvK cap->draw  ", .fen = "8/8/8/8/8/1Rk5/8/K7 b - - 0 1" },
+    .{ .label = "KPvK zeroing win", .fen = "8/8/6K1/3P4/8/8/8/2k5 w - - 0 1" },
+    .{ .label = "KRvK mated (btm)", .fen = "7R/8/8/8/8/8/5K1k/8 b - - 0 1" },
 };
 
 /// Run the `d`-command probe battery, pinning the `Tablebases <prefix>: N (state)` line ==
