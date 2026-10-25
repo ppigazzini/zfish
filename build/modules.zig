@@ -230,7 +230,6 @@ pub const edges = [_]Edge{
     .{ .from = "move_do", .imp = "state_setup", .to = "state_setup" },
     .{ .from = "move_do", .imp = "legality", .to = "legality" },
     .{ .from = "move_do", .imp = "position_types", .to = "position_types" },
-    .{ .from = "move_do", .imp = "tt_types", .to = "tt_types" },
     .{ .from = "move_do", .imp = "shared_history_types", .to = "shared_history_types" },
     .{ .from = "move_do", .imp = "worker_histories", .to = "worker_histories" },
     .{ .from = "position", .imp = "fen_parse", .to = "fen_parse" },

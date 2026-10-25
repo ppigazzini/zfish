@@ -460,28 +460,28 @@ for its existing callers) perturbs the key near the 50-move boundary so position
 differing only in rule50 hash apart; it lives in the board zone because `doMove` needs it
 too (below), matching upstream keeping `adjust_key50` on `Position` itself.
 
-Two TT prefetches bracket every move, at different precision because they run at
-different points. `doMoveAcc` issues a `tt.prefetch` for the child cluster *before* making
-the move — keyed by `move_do.prefetchKey`, an approximate post-move key (from/to/captured
-psq toggles, side flip, and the rule50 mix; castling/en-passant/promotion left wrong, so
-those rare moves prefetch an unused line) reached through the same `firstEntryIndex` the
-probe uses. Beside it, and equally approximate, go the three continuation-correction entries
+One TT prefetch precedes every move. `doMoveAcc` issues a `tt.prefetch` for the child
+cluster *before* making the move — keyed by `move_do.prefetchKey`, an approximate post-move
+key (from/to/captured psq toggles, side flip, and the rule50 mix; castling/en-passant/
+promotion left wrong, so those rare moves prefetch an unused line) reached through the same
+`firstEntryIndex` the probe uses. `doMove` used to hint the same cluster again on the exact
+key; for every other move that is the same line, and upstream ed2f9bdce removed it as a
+duplicate. Beside it, and equally approximate, go the three continuation-correction entries
 the child will read: its `(ss-2)`, `(ss-4)` and `(ss-6)` are this node's `ss-1`, `ss-3` and
 `ss-5`, addressed
 by `history.contCorrIndex` — the same derivation `setContHist` pages with, so the hint
 cannot drift from the load — off the pre-move moved piece, which castling and promotion
 make approximate the same way. `doMove` itself then issues a second, EXACT round of prefetches once the
-child's key and correction-history keys are all final — `pos.st.key` (via `adjustKey50`)
-for the TT cluster, plus the four correction bundles (`pawn_key`, `minor_piece_key`,
-`non_pawn_key[0]`, `non_pawn_key[1]`) and the specific `[pc][to]` slot of the pawn-history
+child's correction-history keys are all final — the four correction bundles (`pawn_key`,
+`minor_piece_key`, `non_pawn_key[0]`, `non_pawn_key[1]`) and the specific `[pc][to]` slot of the pawn-history
 row (`pawn_key` into `SharedHistories.pawn_data`, then `pc * hist_square_nb + to` within
 that row — the exact slot `history.zig`'s quiet-history update reads, not the row base;
 `pc`/`to` are the mover's identity and destination, matching upstream's own locals at the
 same point, including their reassignment to the king's square for castling) — with the
 checkers scan, `setExtraBitboards` and the repetition walk still to run as free lead
 time before any of these lines are read. This second round
-takes an optional `move_do.PrefetchBank` (table + cluster count + the shared-history
-pointer): `null` for every non-search make (`doMoveState` — perft, root building,
+takes an optional `move_do.PrefetchBank` (the shared-history pointer): `null` for every
+non-search make (`doMoveState` — perft, root building,
 tablebase walks, tests — and `search_acc.verifyDoMove`'s TT-move verification make, which
 is unmade before any node runs on it); only `doMoveAcc`, the real search move-maker,
 builds one. **Mate scores are re-based across the table boundary** (`search.valueToTt` /

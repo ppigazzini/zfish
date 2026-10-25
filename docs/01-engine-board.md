@@ -145,8 +145,10 @@ recomputed, never copied.
 
 The optional `bank: ?PrefetchBank` is issued right after every key this move touches
 is final, before the checkers scan / `setExtraBitboards` / repetition walk that follow
-it — so those give the six prefetch lines (the exact-key TT cluster, the four correction
-bundles, and the pawn-history entry) free lead time before anything reads them. The
+it — so those give the five prefetch lines (the four correction bundles and the
+pawn-history entry) free lead time before anything reads them. The child's TT cluster is
+not among them: the search hints it once, before the make (upstream ed2f9bdce removed the
+exact-key repeat as a duplicate). The
 pawn-history line is the specific `[pc][to]` **slot** the next node's quiet-history
 update reads, not the row base: a row is 1024 entries (2 KiB, 32 lines), so prefetching
 offset 0 lands on the wrong line for any `(pc, to)` whose slot is past the first one.
