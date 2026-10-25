@@ -269,6 +269,9 @@ pub fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         // on the first clocked search, so the depth search before it must leave it untouched:
         // advancing it from -1 to 0 made this search see an empty clock and move at depth 1.
         .{ .label = "after-depth  ", .pre = sp ++ "\ngo depth 5", .cmds = sp ++ " moves e2e4\ngo wtime 10000 btime 10000" },
+        // One legal move. Its half-second cap is in milliseconds and has to be scaled into
+        // nodes like the clock it caps; unscaled it capped the search at 500 nodes.
+        .{ .label = "single-move  ", .cmds = "position fen 7k/8/8/8/8/r7/1N6/K7 w - - 0 1\ngo wtime 120000 btime 120000" },
     };
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);

@@ -8,3 +8,4 @@ white-asym   depth=13 score=cp 20 nodes=14156 bestmove=e2e4 ponder=e7e5
 black-mtg    depth=21 score=cp -38 nodes=380728 bestmove=e7e6 ponder=d2d4
 movestogo-1  depth=29 score=cp 19 nodes=5264620 bestmove=d2d4 ponder=g8f6
 after-depth  depth=20 score=cp -26 nodes=443944 bestmove=e7e5 ponder=g1f3
+single-move  depth=22 score=cp -3 nodes=304811 bestmove=a1b1 ponder=a3c3
