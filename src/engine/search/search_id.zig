@@ -104,7 +104,6 @@ pub fn ssContext(wl: *const worker_layout.WorkerLayout, out: *SsCtx) void {
 
     out.is_mainthread = @intFromBool(wl.thread_idx == 0);
     out.root_moves_empty = @intFromBool(wl.root_moves.len == 0);
-    out.npmsec = @intFromBool(wl.limits.npmsec != 0);
     out.limits_depth = wl.limits.depth;
     out.skill_enabled = @intFromBool(skill_enabled);
 }

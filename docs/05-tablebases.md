@@ -422,7 +422,7 @@ the position was set up with a non-optimal 50-move counter.
 Two things narrow that deadline. The half-overhead is **divided by MultiPV**, because every
 reported line is extended and N lines each spending half of it is how the extension loses on
 time; with the divisor the whole report stays inside the one budget a single line had. And
-under **`nodestime`** there is no deadline at all: the walk's `doMove` calls never reach the
+under **`nodestime`**, once the side to move has a clock to convert, there is no deadline at all: the walk's `doMove` calls never reach the
 global node counter, so the clock it would abort against cannot advance from them, and
 aborting would only make the reported PV depend on wall time. `Move Overhead 0` under a clock
 is the one case that refuses before doing any work, since every later check would abort anyway.

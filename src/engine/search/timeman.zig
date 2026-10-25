@@ -61,7 +61,11 @@ pub fn init(input: TimemanInput) TimemanOutput {
         .time_ms = input.time_ms,
         .inc_ms = input.inc_ms,
         .start_time = input.start_time,
-        .npmsec = input.npmsec,
+        // The LIMIT, not the option: it is set below only once there is a clock to convert,
+        // as upstream sets `limits.npmsec` past its no-clock return. Two readers act on it --
+        // the post-search node-budget advance and the tablebase PV deadline -- and a search
+        // with no clock of its own, `go depth N` under nodestime, must reach neither.
+        .npmsec = 0,
         .movetime_ms = input.movetime_ms,
         .available_nodes = input.available_nodes,
         .cyclic_budget = input.cyclic_budget,
@@ -124,6 +128,7 @@ pub fn init(input: TimemanInput) TimemanOutput {
 
         output.time_ms = output.available_nodes;
         output.inc_ms *= input.npmsec;
+        output.npmsec = input.npmsec;
         move_overhead *= input.npmsec;
     }
 
@@ -424,6 +429,23 @@ test "timeman: nodestime converts movetime into nodes" {
     var off = base;
     off.movetime_ms = 500;
     try std.testing.expectEqual(@as(i64, 500), init(off).movetime_ms);
+}
+
+// Pin where the limit is set. With no clock of its own the search must leave `npmsec` at zero:
+// the main thread then skips the node-budget advance, and `available_nodes` stays -1 for the
+// next clocked search to initialise. Setting it anyway advanced -1 to 0, so a clocked search
+// after `go depth N` under nodestime read a zero budget and moved at depth 1.
+test "timeman: the npmsec limit is set only past the no-clock return" {
+    var in = base;
+    in.npmsec = 600;
+    try std.testing.expectEqual(@as(i64, 600), init(in).npmsec);
+
+    var no_clock = in;
+    no_clock.time_ms = 0;
+    try std.testing.expectEqual(@as(i64, 0), init(no_clock).npmsec);
+    try std.testing.expectEqual(@as(u8, 1), init(no_clock).use_nodes_time);
+
+    try std.testing.expectEqual(@as(i64, 0), init(base).npmsec);
 }
 
 test "timeman: npmsec != 0 enables nodes-time mode" {

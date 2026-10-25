@@ -241,7 +241,9 @@ pub fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 /// budget -> arch/OS-invariant. Drive the engine via the Interactive read-to-bestmove
 /// path since this is an async search -- a feed-all-then-quit pipe would truncate it (the
 /// batch hazard the search-modes gate also avoids).
-const NodestimeRow = struct { label: []const u8, cmds: []const u8 };
+/// One nodestime row: `cmds` is the search the golden pins. `pre`, when set, is a search run
+/// to its own bestmove first in the same process, for state one search leaves the next.
+const NodestimeRow = struct { label: []const u8, cmds: []const u8, pre: []const u8 = "" };
 pub fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const end = "position fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
@@ -263,6 +265,10 @@ pub fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         // movestogo 1 is the last move before the control, the branch that hands the whole
         // remaining budget to one search rather than dividing it.
         .{ .label = "movestogo-1  ", .cmds = sp ++ "\ngo wtime 10000 btime 10000 movestogo 1" },
+        // A clocked search after one with no clock of its own. The node budget is initialised
+        // on the first clocked search, so the depth search before it must leave it untouched:
+        // advancing it from -1 to 0 made this search see an empty clock and move at depth 1.
+        .{ .label = "after-depth  ", .pre = sp ++ "\ngo depth 5", .cmds = sp ++ " moves e2e4\ngo wtime 10000 btime 10000" },
     };
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
@@ -270,6 +276,11 @@ pub fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         var s: Interactive = undefined;
         try s.init(io, gpa, bin);
         s.send("setoption name Threads value 1\nsetoption name nodestime value 600\n");
+        if (r.pre.len != 0) {
+            s.send(r.pre);
+            s.send("\n");
+            if (!s.fillUntil("\nbestmove")) fail("nodestime: {s}: no bestmove from the first search", .{r.label});
+        }
         s.send(r.cmds);
         s.send("\n");
         _ = s.fillUntil("\nbestmove");
