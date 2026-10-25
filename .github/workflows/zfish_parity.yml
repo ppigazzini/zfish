@@ -204,9 +204,8 @@ jobs:
   # master is a moving target that may break at any time through no fault of this repo.
   #
   # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand,
-  # after the port builds and passes under it locally. Today the port is master-clean on the
-  # Linux host (build + bench 1559611 + every gate `parity` aggregates, plus test and fuzz);
-  # the cross-version spellings it relies on are tabled in docs/08-idiomatic-zig.md.
+  # after the port builds under it locally and `zig build signature` passes; the
+  # cross-version spellings it relies on are tabled in docs/08-idiomatic-zig.md.
   zig-master-compat:
     name: Zig master compatibility (non-blocking)
     runs-on: ubuntu-latest
@@ -221,7 +220,7 @@ jobs:
       # in-flight work rather than on our regressions.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.18.0-dev.2+faa537cf9
+          version: 0.18.0-dev.567+7f0281900
 
       - name: Cache NNUE network
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
