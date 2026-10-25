@@ -1,10 +1,9 @@
 // Provide the threat-index lookup tables of the full-threat feature set.
 //
 // Split from nnue_feature.zig on the 500-line lint: everything here is comptime
-// table construction (index_lut1/index_lut2/offsets and the threat_lut1/threat_lut2
-// tables the index formulas read) plus the piece/square constants the builders and
-// the index formulas share. nnue_feature.zig re-imports the lot; no logic changed
-// in the move.
+// table construction (the threat_lut1/threat_lut2 tables the index formulas read, built
+// in one pass) plus the piece/square constants the builder and the index formulas share.
+// nnue_feature.zig re-imports the lot; no logic changed in the move.
 
 const std = @import("std");
 const dims = @import("nnue_dimensions");
@@ -31,90 +30,75 @@ const colorOf = nnue_feature_bb.colorOf;
 const pawnPushOrAttacks = nnue_feature_bb.pawnPushOrAttacks;
 const pawnAttacksOnly = nnue_feature_bb.pawnAttacksOnly;
 const pseudoAttacks = nnue_feature_bb.pseudoAttacks;
-const makePieceIndicesType = nnue_feature_bb.makePieceIndicesType;
-const makePieceIndicesPawn = nnue_feature_bb.makePieceIndicesPawn;
-fn indexLut2Array() [16][64][64]u8 {
-    @setEvalBranchQuota(200000);
-    const knight_attacks = makePieceIndicesType(knight_piece_type);
-    const bishop_attacks = makePieceIndicesType(bishop_piece_type);
-    const rook_attacks = makePieceIndicesType(rook_piece_type);
-    const queen_attacks = makePieceIndicesType(queen_piece_type);
-    const king_attacks = makePieceIndicesType(king_piece_type);
+const squareBb = nnue_feature_bb.squareBb;
 
-    var indices = std.mem.zeroes([16][64][64]u8);
-    indices[w_pawn] = makePieceIndicesPawn(w_pawn);
-    indices[b_pawn] = makePieceIndicesPawn(b_pawn);
-    indices[w_knight] = knight_attacks;
-    indices[b_knight] = knight_attacks;
-    indices[w_bishop] = bishop_attacks;
-    indices[b_bishop] = bishop_attacks;
-    indices[w_rook] = rook_attacks;
-    indices[b_rook] = rook_attacks;
-    indices[w_queen] = queen_attacks;
-    indices[b_queen] = queen_attacks;
-    indices[w_king] = king_attacks;
-    indices[b_king] = king_attacks;
-    return indices;
-}
-
-const HelperOffsets = struct {
-    cumulative_piece_offset: u32,
-    cumulative_offset: u32,
+/// Hold the two tables a threat index sums -- upstream's ThreatLUTs.
+const ThreatLuts = struct {
+    /// [attacker][attacked][from < to]
+    lut1: [16][16][2]u32,
+    /// [piece type][from * 64 + to]
+    lut2: [8][64 * 64]u16,
 };
 
-fn initThreatOffsets() struct { first: [16]HelperOffsets, second: [16][64]u32 } {
-    @setEvalBranchQuota(200000);
-    var indices = std.mem.zeroes([16]HelperOffsets);
-    var local_offsets = std.mem.zeroes([16][64]u32);
-    var cumulative_offset: u32 = 0;
-    for (0..all_pieces.len) |piece_index| {
-        const piece = all_pieces[piece_index];
-        var cumulative_piece_offset: u32 = 0;
+/// Build both threat tables in one pass -- upstream's `init_threat_luts` (a1e94f955). The
+/// lut2 walk already runs each piece type's feature count up, from by from, so lut1 reads
+/// that total instead of recounting it per piece. A white and a black attacker of one type
+/// share a plane: a pawn's two colours attack in opposite directions, and `to < from` says
+/// which one moved, so the pawn plane counts the black pawn's attacks below `from` and the
+/// white pawn's above -- and the two colours' totals agree, so the white walk counts both.
+fn initThreatLuts() ThreatLuts {
+    @setEvalBranchQuota(4_000_000);
+    var tables: ThreatLuts = .{ .lut1 = std.mem.zeroes([16][16][2]u32), .lut2 = std.mem.zeroes([8][64 * 64]u16) };
+    var offsets = std.mem.zeroes([8]u32);
+
+    for ([_]u8{ pawn_piece_type, knight_piece_type, bishop_piece_type, rook_piece_type, queen_piece_type, king_piece_type }) |pt| {
+        var offset: u32 = 0;
         for (0..64) |from| {
-            local_offsets[piece][from] = cumulative_piece_offset;
-            if (typeOf(piece) != pawn_piece_type) {
-                cumulative_piece_offset += constexprPopcount(pseudoAttacks(typeOf(piece), from));
+            for (0..64) |to| {
+                const attacks = if (pt != pawn_piece_type)
+                    pseudoAttacks(pt, from)
+                else if (to < from)
+                    pawnAttacksOnly(black, from)
+                else
+                    pawnAttacksOnly(white, from);
+                tables.lut2[pt][from * 64 + to] = @intCast(offset + constexprPopcount((squareBb(to) - 1) & attacks));
+            }
+
+            if (pt != pawn_piece_type) {
+                offset += constexprPopcount(pseudoAttacks(pt, from));
             } else if (from >= sq_a2 and from <= sq_h7) {
-                const attacks = if (piece < 8) pawnAttacksOnly(white, from) else pawnAttacksOnly(black, from);
-                cumulative_piece_offset += constexprPopcount(attacks);
+                offset += constexprPopcount(pawnAttacksOnly(white, from));
             }
         }
-        indices[piece] = .{
-            .cumulative_piece_offset = cumulative_piece_offset,
-            .cumulative_offset = cumulative_offset,
-        };
-        cumulative_offset += @as(u32, num_valid_targets[piece]) * cumulative_piece_offset;
+        offsets[pt] = offset;
     }
-    return .{ .first = indices, .second = local_offsets };
-}
 
-fn initIndexLuts() [16][16][2]u32 {
-    @setEvalBranchQuota(200000);
-    var indices = std.mem.zeroes([16][16][2]u32);
-    for (0..all_pieces.len) |attacker_idx| {
-        const attacker = all_pieces[attacker_idx];
-        for (0..all_pieces.len) |attacked_idx| {
-            const attacked = all_pieces[attacked_idx];
+    var cumulative_offset: u32 = 0;
+    for (all_pieces) |attacker| {
+        const attacker_type = typeOf(attacker);
+        const cumulative_piece_offset = offsets[attacker_type];
+        const valid_targets: u32 = @intCast(num_valid_targets[attacker]);
+
+        for (all_pieces) |attacked| {
             const enemy = (attacker ^ attacked) == 8;
-            const attacker_type = typeOf(attacker);
             const attacked_type = typeOf(attacked);
             const map_value = full_map[attacker_type - 1][attacked_type - 1];
             const semi_excluded = attacker_type == attacked_type and (enemy or attacker_type != pawn_piece_type);
-            const excluded = map_value < 0;
-            if (excluded) {
-                indices[attacker][attacked][0] = full_dimensions;
-                indices[attacker][attacked][1] = full_dimensions;
+            // An excluded pair has no feature: its slot would be negative, and a u32 refuses it.
+            if (map_value < 0) {
+                tables.lut1[attacker][attacked] = .{ full_dimensions, full_dimensions };
                 continue;
             }
 
-            const feature_slot: u32 = @intCast(colorOf(attacked) * (num_valid_targets[attacker] / 2) + map_value);
-            const feature = helper_offsets[attacker].cumulative_offset + feature_slot * helper_offsets[attacker].cumulative_piece_offset;
-
-            indices[attacker][attacked][0] = feature;
-            indices[attacker][attacked][1] = if (semi_excluded) full_dimensions else feature;
+            const feature_slot: u32 = @intCast(colorOf(attacked) * (valid_targets / 2) + map_value);
+            const feature = cumulative_offset + feature_slot * cumulative_piece_offset;
+            tables.lut1[attacker][attacked] = .{ feature, if (semi_excluded) full_dimensions else feature };
         }
+
+        cumulative_offset += valid_targets * cumulative_piece_offset;
     }
-    return indices;
+
+    return tables;
 }
 
 pub const piece_square_index = [2][16]u32{
@@ -208,40 +192,16 @@ pub const full_map = [6][6]i32{
     .{ -1, -1, -1, -1, -1, -1 },
 };
 
-pub const helper_offsets_and_offsets = initThreatOffsets();
-pub const helper_offsets = helper_offsets_and_offsets.first;
-pub const offsets = helper_offsets_and_offsets.second;
-pub const index_lut1 = initIndexLuts();
-pub const index_lut2 = indexLut2Array();
+const threat_luts = initThreatLuts();
 
-/// Flatten index_lut1 by the byte a dirty-threat record already carries in bits 16-23,
-/// `attacker << 4 | attacked`: threat_lut1[pair * 2 + less] -- upstream b877fbde5's
-/// ThreatLUTs.lut1, read through `&lut1[0][0]`.
-pub const threat_lut1: [16 * 16 * 2]u32 align(64) = @bitCast(index_lut1);
+/// Flatten lut1 by the byte a dirty-threat record already carries in bits 16-23,
+/// `attacker << 4 | attacked`: threat_lut1[pair * 2 + less] -- upstream's ThreatLUTs.lut1,
+/// read through `&lut1[0][0]` (b877fbde5).
+pub const threat_lut1: [16 * 16 * 2]u32 align(64) = @bitCast(threat_luts.lut1);
 
-/// Fold the per-from offset into one u16 plane per attacker piece TYPE -- upstream
-/// b877fbde5's ThreatLUTs.lut2: threat_lut2[type][from * 64 + to]. A white and a black
-/// attacker of one type share their offsets and their within-from indices, except a pawn,
-/// whose two colours attack in opposite directions; `to < from` says which one moved, so the
-/// pawn plane reads the black pawn's indices below `from` and the white pawn's above.
-pub const threat_lut2: [8][64 * 64]u16 align(64) = blk: {
-    @setEvalBranchQuota(4_000_000);
-    var planes = std.mem.zeroes([8][64 * 64]u16);
-    for (all_pieces[0..6]) |white_piece| {
-        const pt = typeOf(white_piece);
-        const black_piece = white_piece + 8;
-        for (0..64) |from| {
-            if (offsets[white_piece][from] != offsets[black_piece][from])
-                @compileError("threat_lut2: the two colours' offsets differ");
-            for (0..64) |to| {
-                const source = if (pt == pawn_piece_type and to < from) black_piece else white_piece;
-                const merged: u32 = offsets[white_piece][from] + index_lut2[source][from][to];
-                planes[pt][from * 64 + to] = @intCast(merged);
-            }
-        }
-    }
-    break :blk planes;
-};
+/// Read one u16 plane per attacker piece TYPE, with the per-from offset folded in --
+/// upstream's ThreatLUTs.lut2: threat_lut2[type][from * 64 + to] (b877fbde5).
+pub const threat_lut2: [8][64 * 64]u16 align(64) = threat_luts.lut2;
 
 pub const ps_nb: u32 = 11 * 64;
 /// FullThreats::Dimensions (SFNNv16): the threat feature count, also PP_3Wide's IndexBase.
