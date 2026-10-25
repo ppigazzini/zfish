@@ -151,6 +151,69 @@ const fixtures = [_]Fixture{
     },
 };
 
+/// One crafted pair: a whole `.rtbw` and `.rtbz`, written verbatim.
+///
+/// THE ONE EXCEPTION TO "MUTATE A REAL TABLE", and it is bounded by what it exists for. A
+/// symmetric table with pawns is not in the 3-man corpus CI fetches, and the defect below is a
+/// HEADER contradiction -- the side-to-move flag of a file that no position can ever be probed
+/// against -- so a file that is nothing but a valid header reaches it. Each sub-table is
+/// single-valued, which is what lets 80 bytes load at all: no btree, no blocks, no payload.
+const Crafted = struct {
+    name: []const u8,
+    stem: []const u8,
+    fen: []const u8,
+    wdl: []const u8,
+    dtz: []const u8,
+    why: []const u8,
+};
+
+/// KPvKP's own first 30 bytes of each file: magic, the flags byte (HasPawns, not Split -- the
+/// table is symmetric), and four files of order and piece nibbles, word-aligned.
+const kpvkp_wdl_header = [30]u8{
+    0x71, 0xe8, 0x23, 0x5d, 0x42, 0x33, 0x22, 0x11, 0x99, 0x66, 0xee, 0x33, 0x11, 0x11, 0x99,
+    0x66, 0xee, 0x22, 0x11, 0x11, 0x99, 0xee, 0x66, 0x33, 0x22, 0x11, 0x99, 0xee, 0x66, 0x00,
+};
+const kpvkp_dtz_header = [30]u8{
+    0xd7, 0x66, 0x0c, 0xa5, 0x42, 0x01, 0x03, 0x01, 0x09, 0x06, 0x0e, 0x03, 0x02, 0x01, 0x09,
+    0x06, 0x0e, 0x03, 0x01, 0x01, 0x09, 0x06, 0x0e, 0x03, 0x01, 0x01, 0x09, 0x06, 0x0e, 0x00,
+};
+
+/// Pad a crafted file to 80 bytes, the shortest length `size % 64 == 16` admits, after one
+/// single-valued sub-table per file: its flags byte, then the stored value.
+fn craftedFile(comptime header: [30]u8, comptime flags: u8, comptime value: u8) [80]u8 {
+    var b: [80]u8 = @splat(0);
+    b[0..30].* = header;
+    for (0..4) |f| {
+        b[30 + 2 * f] = flags;
+        b[31 + 2 * f] = value;
+    }
+    return b;
+}
+
+const crafted = [_]Crafted{
+    .{
+        .name = "symmetric-dtz-black",
+        .stem = "KPvKP",
+        .fen = "8/8/8/3p4/8/2K5/3P4/7k w - - 0 1",
+        // WDL: won for the side to move everywhere (stored 4 = win), so no pawn move ever
+        // keeps the result and the DTZ probe is always reached. DTZ: single-valued and flagged
+        // black to move (0x81) on every file.
+        .wdl = &craftedFile(kpvkp_wdl_header, 0x80, 4),
+        .dtz = &craftedFile(kpvkp_dtz_header, 0x81, 1),
+        .why = "a symmetric pawn DTZ table storing black -- probeDtz recursed until the stack ran out",
+    },
+};
+
+/// Write both files of a crafted pair into the fixture directory.
+fn writeCrafted(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, c: Crafted) !void {
+    const w = try gpa.print("{s}.rtbw", .{c.stem});
+    defer gpa.free(w);
+    const z = try gpa.print("{s}.rtbz", .{c.stem});
+    defer gpa.free(z);
+    try dir.writeFile(io, .{ .sub_path = w, .data = c.wdl });
+    try dir.writeFile(io, .{ .sub_path = z, .data = c.dtz });
+}
+
 /// Copy `stem`.rtbw out of syzygy/, apply the edits, and write it into the fixture directory.
 /// Return false when the source table is absent, which is a SKIP rather than a pass.
 fn writeFixture(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, f: Fixture) !bool {
@@ -180,7 +243,7 @@ fn writeFixture(gpa: std.mem.Allocator, io: Io, dir: Io.Dir, f: Fixture) !bool {
 /// Single-threaded and depth-limited on purpose. This gate exists to prove a PARSER stays inside
 /// its arrays; giving it threads or a deep search would trade that signal for wall clock and for
 /// memory this box has no reason to spend.
-fn driveFixture(gpa: std.mem.Allocator, io: Io, bin: []const u8, f: Fixture, fen: []const u8) !void {
+fn driveFixture(gpa: std.mem.Allocator, io: Io, bin: []const u8, f: struct { name: []const u8, why: []const u8 }, fen: []const u8) !void {
     const script = try gpa.print(
         \\setoption name Threads value 1
         \\setoption name SyzygyPath value {s}
@@ -243,11 +306,25 @@ pub fn runMalformed(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
             fen = s.fen;
         };
         if (fen.len == 0) fail("malformed: fixture '{s}' names an unknown stem '{s}'", .{ f.name, f.stem });
-        driveFixture(gpa, io, bin, f, fen) catch
+        driveFixture(gpa, io, bin, .{ .name = f.name, .why = f.why }, fen) catch
             fail("malformed: fixture '{s}' ({s}) -- the harness could not drive it", .{ f.name, f.why });
         done += 1;
     }
 
-    std.debug.print("malformed: OK ({d} mutated tables, every one survived: clean exit + a legal bestmove)\n", .{done});
+    for (crafted) |c| {
+        // Alone in the directory, so the pair is the only table the probe can read.
+        for (stems) |s| {
+            var buf: [64]u8 = undefined;
+            const p = std.mem.print(&buf, "{s}.rtbw", .{s.name}) catch unreachable;
+            dir.deleteFile(io, p) catch {};
+        }
+        writeCrafted(gpa, io, dir, c) catch
+            fail("malformed: crafted pair '{s}' could not be written", .{c.name});
+        driveFixture(gpa, io, bin, .{ .name = c.name, .why = c.why }, c.fen) catch
+            fail("malformed: crafted pair '{s}' ({s}) -- the harness could not drive it", .{ c.name, c.why });
+        done += 1;
+    }
+
+    std.debug.print("malformed: OK ({d} bad tables, every one survived: clean exit + a legal bestmove)\n", .{done});
     std.process.exit(0);
 }
