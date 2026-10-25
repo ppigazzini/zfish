@@ -113,11 +113,9 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     // in the engine.
     @atomicStore(u64, ctx.nodes, @atomicLoad(u64, ctx.nodes, .monotonic) +% 1, .monotonic);
     const out = nnue_acc.stackPush(ctx.acc_stack);
-    // The real search make: pass a PrefetchBank so doMove issues the exact-key TT and
-    // correction/pawn-history prefetches from inside the make (move_do.issuePrefetches).
+    // The real search make: pass a PrefetchBank so doMove issues the correction and
+    // pawn-history prefetches from inside the make (move_do.issuePrefetches).
     const bank = move_do.PrefetchBank{
-        .table = ctx.table,
-        .cluster_count = ctx.cluster_count,
         .shared = shared_history.sharedOf(search_common.workerHistories(ctx.worker)),
     };
     doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats, bank);

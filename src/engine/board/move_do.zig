@@ -3,7 +3,7 @@
 // Own the mutating side of the board: applying and reverting moves on a live
 // Position -- do/undo-null, doMove/undoMove, the board+DirtyThreats mutators, and
 // putPiece. Every dependency is a leaf (board_core primitives, the zobrist keys,
-// state_setup.setExtraBitboards, legality.attackersTo, plus the tt_types/shared_history_types/
+// state_setup.setExtraBitboards, legality.attackersTo, plus the shared_history_types/
 // worker_histories POD leaves doMove's optional PrefetchBank reads), so move_do imports no
 // position.zig -- no cycle. position.zig re-exports the public entry points
 // (doMove/undoMove/doNullMove/undoNullMove/putPiece) so the search + FEN-setup
@@ -28,7 +28,6 @@ const movePieceQuiet = move_do_pieces.movePieceQuiet;
 const swapPiece = move_do_pieces.swapPiece;
 pub const putPiece = move_do_pieces.putPiece;
 const position_types = @import("position_types");
-const tt_types = @import("tt_types");
 const shared_history_types = @import("shared_history_types");
 const worker_histories = @import("worker_histories");
 
@@ -136,30 +135,22 @@ pub inline fn adjustKey50(pos: *const Position) u64 {
     return position_types.adjustKey50(pos.st.key, pos.st.rule50);
 }
 
-/// Mirror tt.firstEntryIndex's mul-hi64 sharding without importing tt.zig itself: tt.zig
-/// depends on worker_layout (for its resize/clear paths), so an import here would reach
-/// back toward the board zone through it. The formula is one line and load-bearing only in
-/// the sense that it must keep matching tt.zig's -- both are asserted bit-identical by the
-/// bench signature, which reads the real probe through tt.firstEntryIndex.
-inline fn ttFirstEntryIndex(key: u64, cluster_count: usize) usize {
-    return @intCast((@as(u128, key) * @as(u128, cluster_count)) >> 64);
-}
-
-/// Bundle the prefetch-only handles doMove issues from inside the make, mirroring upstream's
-/// `Position::do_move(m, newSt, givesCheck, tt, historyBank)` (position.cpp:987). Null means
-/// "not a search make": doMoveState (perft, the root builder, tablebase walks, tests) and the
-/// qsearch TT-move verification make (search_acc.verifyDoMove, matching upstream's own
-/// no-prefetch overload at search.cpp:882) all pass null and skip the six prefetches below.
-/// Only the real search move-maker (search_acc.doMoveAcc) passes one.
+/// Bundle the prefetch-only handle doMove issues from inside the make, mirroring upstream's
+/// `Position::do_move(m, newSt, givesCheck, dirties, history)`. Null means "not a search
+/// make": doMoveState (perft, the root builder, tablebase walks, tests) and the qsearch
+/// TT-move verification make (search_acc.verifyDoMove, matching upstream's own no-prefetch
+/// overload) all pass null and skip the five prefetches below. Only the real search
+/// move-maker (search_acc.doMoveAcc) passes one.
+///
+/// No TT handle: the child's cluster is hinted once, before the make, by doMoveAcc. A second
+/// hint here on the exact key landed on the same line for every move but a castling, an en
+/// passant or a promotion, and upstream ed2f9bdce removed it as the duplicate it is.
 pub const PrefetchBank = struct {
-    table: [*]tt_types.TtCluster,
-    cluster_count: usize,
     shared: *shared_history_types.SharedHistories,
 };
 
 inline fn issuePrefetches(pos: *const Position, pc: u8, to: u8, bank: PrefetchBank) void {
     const hint: std.lang.PrefetchOptions = .{ .rw = .read, .locality = 3, .cache = .data };
-    @prefetch(&bank.table[ttFirstEntryIndex(adjustKey50(pos), bank.cluster_count)], hint);
     const mask = bank.shared.size_minus1;
     @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.pawn_key & mask))], hint);
     @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.minor_piece_key & mask))], hint);
@@ -337,17 +328,14 @@ pub fn doMove(
 
     new_st.key = k;
 
-    // Prefetch the child's TT cluster on its EXACT key, plus its four correction bundles
-    // and the [pc][to] slot of its pawn-history row (the slot the NEXT node's quiet-
-    // history update reads, history.zig:56 -- not the row base), from the point every
-    // key this move touches (material_key, pawn_key, minor_piece_key, non_pawn_key are
-    // all already final above) is settled --
-    // mirroring upstream's do_move (position.cpp:1006-1010). The checkers scan,
-    // setExtraBitboards and the repetition walk still run below, which is free lead time for
-    // these lines to arrive by the time the next node's probe/eval reads them. The
-    // pre-make APPROXIMATE-key TT hint (search_acc.doMoveAcc, upstream search.cpp:642) is
-    // issued separately and earlier, and is deliberately wrong for castling/en passant/
-    // promotion; this one is exact.
+    // Prefetch the child's four correction bundles and the [pc][to] slot of its
+    // pawn-history row (the slot the NEXT node's quiet-history update reads, history.zig:56
+    // -- not the row base), from the point every key this move touches (material_key,
+    // pawn_key, minor_piece_key, non_pawn_key are all already final above) is settled --
+    // mirroring upstream's do_move. The checkers scan, setExtraBitboards and the repetition
+    // walk still run below, which is free lead time for these lines to arrive by the time the
+    // next node's eval reads them. The child's TT cluster is not among them: doMoveAcc hints
+    // it before the make, on an approximate key (see PrefetchBank).
     if (bank) |b| issuePrefetches(pos, pc, to, b);
 
     new_st.captured_piece = captured;

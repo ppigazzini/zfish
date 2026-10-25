@@ -688,7 +688,7 @@ prefetch as a small loss, never as a win. Adjudicate one on `perf_counters` cycl
 tier that runs, or on a fastchess Elo match, and treat any Ir or nps reading of it as the
 instrument rather than the change.
 
-Two placement rules, both mirroring upstream's `position.cpp:1008,1014-1018`:
+Two placement rules, both mirroring upstream's `Position::do_move`:
 
 - **Issue it where the address becomes final, not where the consumer sits.** The hints
   live *inside* `doMove` (`move_do.zig`), at the point the child's keys are final —
@@ -704,9 +704,12 @@ Two placement rules, both mirroring upstream's `position.cpp:1008,1014-1018`:
 The limit, and it binds hard: more prefetching is not better. Porting upstream's full
 six-hint block reproduces its cache-miss improvement, costs 0.5–0.9% instructions, and read
 **−10.1 ±18.2 Elo** over 1000 self-play games — certain cost, unproven benefit. The block
-is nonetheless carried in full (`move_do.zig`'s six, plus the three continuation-correction
+is nonetheless carried in full (`move_do.zig`'s five, plus the three continuation-correction
 hints in `search_acc.zig` and the pre-make approximate TT hint in `tt.zig`), because an
-upstream algorithm is the spec here and that Elo reading does not refute it. What the
+upstream algorithm is the spec here and that Elo reading does not refute it. The sixth
+in-make hint, the child's TT cluster on its exact key, went when upstream `ed2f9bdce` did:
+the pre-make hint already names that line for every move but a castling, an en passant or
+a promotion. What the
 measurement buys is the rule for a hint zfish would add on its OWN account: each such site
 earns its place on its own measurement, not by analogy with these.
 
