@@ -27,6 +27,10 @@ comptime {
     std.debug.assert(@sizeOf(LR) == 3);
 }
 
+/// Count the symbols a 12-bit btree field can name -- upstream's SymCount. A table may declare
+/// no more than this many.
+pub const sym_count: usize = 1 << 12;
+
 /// Hold a partial index into blockLength[] (SF SparseEntry: `char block[4]; offset[2]`, read LE at
 /// access time -- byte arrays so it is exactly 6 bytes with no padding).
 pub const SparseEntry = extern struct { block: [4]u8, offset: [2]u8 };

@@ -23,7 +23,8 @@ const flag_single_value = decode.flag_single_value;
 
 /// Port SF `set_sizes`: parse the header for one PairsData starting at `buf[pos]`, allocate
 /// base64[] and symlen[], set the file pointers, and advance `pos` past the btree.
-/// group_len/group_idx must already be filled (setGroups). Return an error only on OOM.
+/// group_len/group_idx must already be filled (setGroups). Return `error.CorruptTable` on a
+/// header the file cannot back or the decoder cannot walk, and an allocator error on OOM.
 pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *usize) !void {
     // Keep runtime safety on over this header parse even in ReleaseFast. Every byte read here is
     // at a file-derived offset, the file is untrusted, and this runs once per table at load --
@@ -139,6 +140,11 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
     if (buf.len - p < 2) return error.CorruptTable;
     const symlen_size: usize = rdU16(buf[p..]);
     p += 2;
+    // Refuse more symbols than a 12-bit btree field can name, as upstream 7316ef4e8 does. The
+    // count is a file-stated u16, and upstream's fixed 4096-entry tables are what it would
+    // overrun; symlen[] here is sized from the count, so the refusal is about agreeing on which
+    // tables are corrupt, not about a buffer.
+    if (symlen_size > probe.sym_count) return error.CorruptTable;
     // Carve the btree with a bound: symlen_size is a file-stated u16, so it can promise far more
     // entries than the file carries. @alignCast is a no-op here (LR is [3]u8, alignment 1) and
     // must stay that way -- a wider LR would need the offset aligned, not just cast.
@@ -363,6 +369,37 @@ test "setSizes refuses a header that outruns the file" {
     d = PairsData{};
     pos = 0;
     try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &stub, &pos));
+}
+
+test "setSizes refuses a symbol count past what a 12-bit field can name" {
+    const a = std.testing.allocator;
+    // The same one-symbol-length header as the test below, then a count of `n` leaves, every
+    // one carried by the file -- so the only thing wrong is the count.
+    var buf: [14 + (probe.sym_count + 1) * @sizeOf(probe.LR)]u8 = undefined;
+    @memset(&buf, 0);
+    buf[1] = 6; // sizeof_block log
+    buf[2] = 6; // span log
+    std.mem.writeInt(u32, buf[4..8], 1, .little); // blocks_num
+    buf[8] = 1; // max_sym_len
+    buf[9] = 1; // min_sym_len
+    var e: usize = 14;
+    while (e < buf.len) : (e += 3) {
+        buf[e + 1] = 0xF0; // right == 0xFFF: a leaf
+        buf[e + 2] = 0xFF;
+    }
+
+    // At the limit the table loads.
+    std.mem.writeInt(u16, buf[12..14], probe.sym_count, .little);
+    var d = PairsData{};
+    var pos: usize = 0;
+    try setSizes(a, &d, &buf, &pos);
+    probe.freeOwned(&d, a);
+
+    // One past it is refused, although the file carries every entry it names.
+    std.mem.writeInt(u16, buf[12..14], probe.sym_count + 1, .little);
+    d = PairsData{};
+    pos = 0;
+    try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &buf, &pos));
 }
 
 test "setSizes refuses a btree entry naming a symbol past the tree" {
