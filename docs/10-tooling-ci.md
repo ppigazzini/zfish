@@ -202,7 +202,8 @@ is reshaped (the shape `build/main.zig` already uses):
 | `tools/parity/structured_diff.zig` | parse an `info`/`bestmove` line into a typed record, report WHICH field drifted, print the golden diff. The one unit-testable file here; the rest drive a real engine. |
 | `tools/parity/session.zig` | hold one engine as a live process and read to a mark, for every gate that must not truncate its own search. |
 | `tools/parity/golden_shell.zig` | the goldens for what the shell prints: bench info lines, driver emits, search modes, FEN refusals, `d`/`flip`, the `uci` option list, `export_net`. |
-| `tools/parity/golden_search.zig` | the goldens for what the search and board compute: search fingerprints, perft, the eval trace, nodestime, `go mate N`, Chess960, the bench matrix. |
+| `tools/parity/golden_search.zig` | the goldens for what the search and board compute: search fingerprints, perft, the eval trace, `go mate N`, Chess960, the bench matrix. |
+| `tools/parity/golden_nodestime.zig` | the nodestime golden: the time-management node budget, one process per row, a row optionally running a search to its own bestmove before the one it pins. |
 | `tools/parity/golden_tb.zig` | the Syzygy goldens (see [05-tablebases](05-tablebases.md)). |
 | `tools/parity/gate_runtime.zig` | the gates needing real threads and a real clock: `mt-sanity`, `stress`, `time-mgmt`, `async`, and `signature`. |
 | `tools/parity/gate_malformed.zig` | the hostile-input battery behind `parity-malformed`: copy a real 3-man table, mutate named header fields and payload bytes, require a refusal rather than a crash. |

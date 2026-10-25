@@ -182,7 +182,7 @@ fn fallibleMain(init: std.process.Init) !void {
         .eval => try parity.golden_search.buildEval(gpa, io, bin),
         .misc => try parity.golden_shell.buildMisc(gpa, io, bin),
         .@"export-net" => try parity.golden_shell.buildExportNet(gpa, io, bin),
-        .nodestime => try parity.golden_search.buildNodestime(gpa, io, bin),
+        .nodestime => try parity.golden_nodestime.buildNodestime(gpa, io, bin),
         .@"uci-options" => try parity.golden_shell.buildUciOptions(gpa, io, bin),
         .mate => try parity.golden_search.buildMate(gpa, io, bin),
         .chess960 => try parity.golden_search.buildChess960(gpa, io, bin),
