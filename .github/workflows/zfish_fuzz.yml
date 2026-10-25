@@ -144,11 +144,11 @@ jobs:
       - name: Fetch the NNUE net
         run: zig build net
 
-      # pyproject.toml declares requires-python >= 3.14; run the harness on what
+      # pyproject.toml declares requires-python >= 3.15; run the harness on what
       # it declares, not on whatever python3 the runner image ships.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: Build (ReleaseSafe)
         run: zig build -Darch=x86-64-sse41-popcnt -Doptimize=safe
