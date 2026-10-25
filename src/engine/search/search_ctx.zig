@@ -41,7 +41,6 @@ pub fn searchCbTtContext(wl: *const worker_layout.WorkerLayout, out_table: *?[*]
 pub const SsCtx = struct {
     is_mainthread: u8,
     root_moves_empty: u8,
-    npmsec: u8,
     limits_depth: i32,
     skill_enabled: u8,
 };

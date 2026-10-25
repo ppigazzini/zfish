@@ -176,9 +176,9 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     ssSetStop(wl);
     ssWaitFinished(wl);
 
-    // Read the live limit, not `ctx`: `ssTmInit` is what writes `limits.npmsec`, from the
-    // `nodestime` option, and it runs after `ssContext` took its snapshot. Upstream reads the
-    // field here too, after `tm.init` (search.cpp:235).
+    // Read the live limit: `ssTmInit` writes `limits.npmsec` -- the `nodestime` option, and
+    // only when the side to move has a clock to convert -- as upstream's `tm.init` does, and
+    // upstream reads the field here too. A search with no clock of its own advances nothing.
     if (wl.limits.npmsec != 0) ssNpmsecAdvance(wl);
 
     var best: ?*worker_layout.WorkerLayout = wl;

@@ -585,6 +585,10 @@ set, both `checkTime` and `idElapsed` read the **pool's** node count
 `threads.nodes_searched()`) instead of `time_source.now()`, `timeman.init` converts the
 time budget into a node budget, and `ssNpmsecAdvance` debits that pool node count from
 `tm.available_nodes` after the search. This makes a time-limited search reproducible.
+The debit reads `limits.npmsec`, which `init` sets only past its no-clock return, as
+upstream sets it: a `go depth N` or `go movetime N` leaves `available_nodes` at -1 for the
+next clocked search to initialise. Debiting there turned -1 into 0, and the clocked search
+after it moved at depth 1 on an empty budget (the `nodestime` gate's `after-depth` row).
 
 A **cyclic** control (40/10 and friends) tops the clock up every N moves, which a real clock
 gets for free and a node budget does not: `timeman.init` therefore records what one cycle is
