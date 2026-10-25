@@ -172,6 +172,9 @@ fn fallibleMain(init: std.process.Init) !void {
     const check = std.meta.stringToEnum(Check, check_name) orelse
         fail("parity_harness: unknown check '{s}'", .{check_name});
 
+    // A tablebase gate whose set is absent SKIPs under best effort and refuses otherwise.
+    parity.tb_tables.requireOrSkip(gpa, io, init.minimal.environ, check_name, mode);
+
     const live = switch (check) {
         .@"output-golden" => try parity.golden_shell.buildOutputGolden(gpa, io, bin),
         .@"driver-golden" => try parity.golden_shell.buildDriverGolden(gpa, io, bin),

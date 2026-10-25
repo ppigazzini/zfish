@@ -31,6 +31,8 @@ pub const GoldenGate = struct {
     update_desc: []const u8,
     /// Needs the fetched 3-man Syzygy set.
     needs_tb: bool = false,
+    /// Needs the fetched 5-man cursed-win Syzygy set as well.
+    needs_tb5: bool = false,
     in_parity: bool = true,
     /// Also in the OS-portable subset (no tablebases, no Linux-only fetch).
     in_portable: bool = false,
@@ -102,11 +104,11 @@ pub const golden = [_]GoldenGate{
     // Run the per-position search-fingerprint differential harness. Localize a
     // bench-signature mismatch to a single position + drifted field.
     .{ .check = "search-parity", .step = "search-parity", .update_step = "search-parity-update", .golden = "tools/search_parity.golden", .check_desc = "Diff per-position bench search fingerprints against the committed golden", .update_desc = "Regenerate tools/search_parity.golden from the current binary", .in_portable = true },
-    // Pin cursed-win / blessed-loss / 50-move (tb-cursed golden; M-SZ-5). Run LOCAL ONLY -- needs ~40 MB of
-    // 5-man tables staged into resources/syzygy5/ (see buildTbCursed's comment), which the 3-man CI set
-    // never contains, so this is NOT wired into `parity`. Pin WDL+DTZ of a KNNvKP cursed win
-    // (+1/122) and its blessed-loss mirror (-1/-115) == the upstream oracle.
-    .{ .check = "tb-cursed", .step = "tb-cursed", .update_step = "tb-cursed-update", .golden = "tools/tb_cursed.golden", .check_desc = "LOCAL: diff cursed-win/blessed-loss WDL+DTZ (needs resources/syzygy5/ 5-man tables) vs golden", .update_desc = "LOCAL: regenerate tools/tb_cursed.golden from the current binary", .in_parity = false },
+    // Pin cursed-win / blessed-loss / 50-move (tb-cursed golden; M-SZ-5). Needs the ~24 MB 5-man
+    // set `tb5` fetches into resources/syzygy5/, so it is kept OUT of `parity` -- every local run of
+    // the aggregate would pay for it -- and CI runs it as its own step. Pin WDL+DTZ of a KNNvKP
+    // cursed win (+1/122) and its blessed-loss mirror (-1/-115) == the upstream oracle.
+    .{ .check = "tb-cursed", .step = "tb-cursed", .update_step = "tb-cursed-update", .golden = "tools/tb_cursed.golden", .check_desc = "Diff cursed-win/blessed-loss WDL+DTZ (the 5-man set in resources/syzygy5/) against the golden", .update_desc = "Regenerate tools/tb_cursed.golden from the current binary", .needs_tb = true, .needs_tb5 = true, .in_parity = false },
     // Pin the Syzygy DTZ probe (tb-dtz golden; M-SZ-3a). Reuse the tb-wdl 3-man battery but pin the
     // `d`-command `Tablebases DTZ: N (state)` line == upstream oracle -- exercising do_probe_table
     // <DTZ>, the DTZ value map, and the CHANGE_STM 1-ply search (KQvK-btm). Keep Linux-only; needs `tb`.
@@ -167,6 +169,8 @@ pub const Context = struct {
     net_step: *std.Build.Step,
     /// The 3-man Syzygy fetch, depended on only by rows that set `needs_tb`.
     tb_step: *std.Build.Step,
+    /// The 5-man Syzygy fetch, depended on only by rows that set `needs_tb5`.
+    tb5_step: *std.Build.Step,
     /// Absolute path for `tools/<x>.golden`, supplied by build.zig's repoPath.
     goldenPath: *const fn (*std.Build, []const u8) []const u8,
 };
@@ -180,11 +184,13 @@ pub fn register(ctx: Context) std.StringHashMap(*std.Build.Step.Run) {
 
         const check_cmd = addHarnessRun(ctx.b, ctx.harness, ctx.stockfish, ctx.install_step, ctx.net_step, g.check, path, "check");
         if (g.needs_tb) check_cmd.step.dependOn(ctx.tb_step);
+        if (g.needs_tb5) check_cmd.step.dependOn(ctx.tb5_step);
         const check_step = ctx.b.step(g.step, g.check_desc);
         check_step.dependOn(&check_cmd.step);
 
         const update_cmd = addHarnessRun(ctx.b, ctx.harness, ctx.stockfish, ctx.install_step, ctx.net_step, g.check, path, "update");
         if (g.needs_tb) update_cmd.step.dependOn(ctx.tb_step);
+        if (g.needs_tb5) update_cmd.step.dependOn(ctx.tb5_step);
         const update_step = ctx.b.step(g.update_step, g.update_desc);
         update_step.dependOn(&update_cmd.step);
 

@@ -182,17 +182,32 @@ jobs:
       # resolve `SyzygyPath value syzygy` relative to it; run them anywhere else and they
       # report with-tb == no-tb, which reads as a divergence and is not one).
       #
-      # tb-cursed is skipped BY NAME, not by listing the other twenty: it needs the 5-man
-      # tables no CI lane fetches, and --skip keeps picking up gates added later, where a
-      # positional list would quietly stop covering them. It stays a local-only gate --
-      # docs/10-tooling-ci.md records that those go stale silently and must be run by hand
-      # each sync.
+      # tb-cursed joins the audit when the 5-man fetch below succeeded, and is skipped BY NAME
+      # when it did not -- --skip keeps picking up gates added later, where a positional list
+      # would quietly stop covering them. ZFISH_TB_BEST_EFFORT is NOT set here, deliberately:
+      # under it a gate with no tables exits 0, and the audit would score that skip as the
+      # oracle AGREEING. The 5-man download is best effort through the step's outcome instead.
+      # Restore only: the parity lane is the cache's one writer, and saves only a complete fetch.
+      - name: Restore the Syzygy tables
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            resources/syzygy
+            resources/syzygy5
+          key: syzygy-3man-5man-${{ hashFiles('tools/fetch_tb.zig') }}
+      - name: Fetch the 5-man Syzygy tables (best effort; tb-cursed leaves the audit without them)
+        id: tb5
+        continue-on-error: true
+        run: zig build tb5
       - name: Adjudicate the goldens against the pristine oracle
         env:
           ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
+          TB5_FETCH: ${{ steps.tb5.outcome }}
         run: |
           zig build tb-init
-          if out="$(bash tools/upstream_golden_audit.sh --skip tb-cursed 2>&1)"; then
+          skip=()
+          [ "$TB5_FETCH" = success ] || skip=(--skip tb-cursed)
+          if out="$(bash tools/upstream_golden_audit.sh "${skip[@]}" 2>&1)"; then
             status=0
           else
             status=$?

@@ -482,7 +482,7 @@ The gates live in `tools/parity/golden_tb.zig`, each diffed against a golden in 
 | `tb-dtz` | `tools/tb_dtz.golden` | the same battery, pinning the `Tablebases DTZ:` line — including the `change_stm` 1-ply path via KQvK with black to move, and the two states only a shared `dtz_state` produces: a winning zeroing move (2) and a mated side to move (-1). |
 | `tb-root` | `tools/tb_root.golden` | root DTZ ranking: `go` on a TB win, pinning the emitted **score** and **tbhits** == oracle. Deliberately *not* pinned: the bestmove and node count — the oracle early-returns on a `root_in_tb` decisive win while zfish still searches, so among equally-optimal TB moves it may pick a different (also winning) one; gating that would be fake parity. |
 | `tb-search` | `tools/tb_search.golden` | the in-search Step 7 probe: bench one 4-man position per file (each bigger than the 3-man tables, so the root searches normally and Step 7 fires at the 3-man nodes captures reach), pinning the node count **with** `SyzygyPath` and **without** — both == oracle — plus a third, node-limited count that pins the probe's time-check-counter reset, which a depth-limited bench cannot see. Bit-exact node-count parity for the in-tree probe. |
-| `tb-cursed` | `tools/tb_cursed.golden` | **local-only**: cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Needs ~40 MB of 5-man tables staged into `resources/syzygy5/`, which the 3-man CI set never contains, so it is not in the `parity` aggregate (`in_parity = false` in `build/gates.zig`; the staging recipe is in `buildTbCursed`'s comment in `tools/parity/golden_tb.zig`). |
+| `tb-cursed` | `tools/tb_cursed.golden` | cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Reads the ~24 MB 5-man set `zig build tb5` fetches into `resources/syzygy5/` (the list is `tools/fetch_tb.zig`'s), so it is not in the `parity` aggregate (`in_parity = false` in `build/gates.zig`) — CI runs it as its own step in the parity lane. |
 
 `tb-init`, `tb-wdl`, `tb-dtz`, `tb-root`, and `tb-search` are all wired into the `parity`
 aggregate. Each has a matching `-update` step that regenerates its golden from the current
@@ -531,8 +531,9 @@ defect that moves 130 of 1422 probe values leaves `tb-wdl`, `tb-dtz`, `tb-root` 
 cannot close that gap either — its codes fit the bucket index, so the escape path the
 mutation broke never fires on it, and the same mutation is invisible across all 1422
 positions when only `resources/syzygy` is loaded. `tb-cursed` is the sole carrier for
-`decompressPairs`, it is local-only, and it has already sat red for a week unnoticed once.
-Run it by hand after ANY edit to `decode.zig` or `decode_header.zig`.
+`decompressPairs`; it sat red for a week unnoticed once, while it was local-only, and the
+parity lane runs it on every push now. Still run it by hand after ANY edit to `decode.zig` or
+`decode_header.zig` -- outside `parity`, nothing local reminds you.
 
 Unit tests run under `zig build test` without any table file: `encode.zig` checks the
 geometry against known mathematics (`Binomial[k][n] == C(n,k)`, 462 king-pair encodings,

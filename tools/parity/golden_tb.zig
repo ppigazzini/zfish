@@ -261,16 +261,14 @@ pub fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-/// tb-cursed (LOCAL ONLY): validate the cursed-win / blessed-loss / 50-move logic on real DTZ>100
-/// positions, which need 4-5-man tables the 3-man CI set never contains. Pin the `d`-command WDL +
-/// DTZ == the upstream oracle for a KNNvKP cursed win (WDL +1, DTZ 122 -- a win that is a draw
-/// under the 50-move rule) and its blessed-loss mirror (WDL -1, DTZ -115). Exercise the cursed
-/// branches of map_score<DTZ> (x2 plies) and probe_dtz (the dtz+100*cursed*sign arithmetic). NOT in
-/// the `parity` aggregate: it requires ~40 MB of 5-man tables staged into resources/syzygy5/
-/// locally, e.g. (from resources/):
-///   for t in KNNvKP KNNvK KNNvKQ KNNvKR KNNvKB KNNvKN KNvKP KNvKQ KNvKR KNvKB KNvKN \
-///   KPvKN KQvKN KRvKN KBvKN; do for e in wdl:rtbw dtz:rtbz; do curl -s -o syzygy5/$t.${e#*:} \
-///   https://tablebase.lichess.ovh/tables/standard/3-4-5-${e%:*}/$t.${e#*:}; done; done
+/// tb-cursed: validate the cursed-win / blessed-loss / 50-move logic on real DTZ>100 positions,
+/// which need 4-5-man tables the 3-man set never contains. Pin the `d`-command WDL + DTZ == the
+/// upstream oracle for a KNNvKP cursed win (WDL +1, DTZ 122 -- a win that is a draw under the
+/// 50-move rule) and its blessed-loss mirror (WDL -1, DTZ -115). Exercise the cursed branches of
+/// map_score<DTZ> (x2 plies) and probe_dtz (the dtz+100*cursed*sign arithmetic). Read the ~24 MB
+/// 5-man set `zig build tb5` fetches into resources/syzygy5/ -- tools/fetch_tb.zig owns the list,
+/// and the golden is the oracle's answer under exactly that set -- so NOT in the `parity`
+/// aggregate; CI runs it as its own step.
 pub fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const runs = [_]struct { label: []const u8, fen: []const u8 }{
         .{ .label = "cursed-win  ", .fen = "8/8/8/3k4/p7/8/2N5/N3K3 w - - 0 1" },

@@ -757,8 +757,8 @@ containers, and the count is toolchain-specific, so a Zig upgrade legitimately m
 Re-derive with `tools/perf_budget.sh update` and carry the measurement in the commit body.
 A skip exits **127**, never 0, so "could not measure" cannot be read as "did not regress" —
 and being local-only it carries the staleness failure mode `docs/10-tooling-ci.md` records
-for `tb-cursed`, so run it by hand after a toolchain bump, a perf commit, **or an upstream
-resync** — a resync moves the node count the row is keyed against, and `perf_budget.sh`
+for `tb-cursed` (local-only too, until CI began fetching its tables), so run it by hand after a
+toolchain bump, a perf commit, **or an upstream resync** — a resync moves the node count the row is keyed against, and `perf_budget.sh`
 refuses on a node mismatch rather than comparing across two different workloads.
 
 **Attribute cost with `tools/perf_fingerprint.py compare`, never by reading a profile

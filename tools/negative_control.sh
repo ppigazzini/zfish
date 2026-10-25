@@ -150,8 +150,22 @@ PY
 
 fail_rig() { printf '  RIG   %s -- %s\n' "$1" "$2"; printf '        This is a RIG FAULT, not a gate verdict.\n'; RIG=$((RIG + 1)); }
 
-DETECTED=0; MISSED=0; RIG=0; RAN=0
+DETECTED=0; MISSED=0; RIG=0; RAN=0; SKIPPED=0
 MUTATED=()
+NARROWED=()
+
+# A gate that reads the 3-man corpus narrows when the corpus is absent, and the defect its row
+# plants lives in the half it no longer runs -- so the row cannot be asked to go red. Under
+# ZFISH_TB_BEST_EFFORT (CI, beside a tablebase fetch that may fail without failing the lane) the
+# row is SKIPPED, loudly and never as a verdict; without it an absent corpus is a rig fault. The
+# corpus test is the gate's own: both stems parity-malformed mutates.
+needs_corpus() { [ "$1" = parity-malformed ]; }
+corpus_absent() { [ ! -f resources/syzygy/KQvK.rtbw ] || [ ! -f resources/syzygy/KRvK.rtbw ]; }
+narrowed() {
+    local g
+    for g in ${NARROWED[@]+"${NARROWED[@]}"}; do [ "$g" = "$1" ] && return 0; done
+    return 1
+}
 
 printf 'negative-control: bounded at %ss per gate run\n' "$TIMEOUT"
 
@@ -162,6 +176,15 @@ for row in "${ROWS[@]}"; do
     wanted "$gate" || continue
     if ! timeout "$TIMEOUT" zig build "$gate" >/dev/null 2>&1; then
         fail_rig "$gate" "the gate is RED BEFORE any mutation; nothing here would mean anything"
+        continue
+    fi
+    # Ask after the build: the gate's own run is what fetches the corpus.
+    if needs_corpus "$gate" && corpus_absent; then
+        if [ -n "${ZFISH_TB_BEST_EFFORT:-}" ]; then
+            NARROWED+=("$gate")
+        else
+            fail_rig "$gate" "the 3-man corpus is absent, so the gate cannot run the half this row mutates (zig build tb)"
+        fi
     fi
 done
 [ "$RIG" -eq 0 ] || { printf 'negative-control: REFUSED -- %d gate(s) not green to begin with\n' "$RIG"; exit 2; }
@@ -169,6 +192,11 @@ done
 for row in "${ROWS[@]}"; do
     IFS='|' read -r gate file find repl desc <<<"$row"
     wanted "$gate" || continue
+    if narrowed "$gate"; then
+        printf '  SKIP  %-12s %-44s corpus absent (best effort) -- NOT a verdict\n' "$gate" "$desc"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+    fi
     RAN=$((RAN + 1))
 
     mkdir -p "$BACKUP_DIR/$(dirname "$file")"
@@ -214,6 +242,7 @@ done
 for row in "${ROWS[@]}"; do
     IFS='|' read -r gate _ _ _ _ <<<"$row"
     wanted "$gate" || continue
+    narrowed "$gate" && continue
     timeout "$TIMEOUT" zig build "$gate" >/dev/null 2>&1 ||
         fail_rig "$gate" "still RED after restore -- the tree did not come back"
 done
@@ -225,3 +254,5 @@ if [ "$MISSED" -ne 0 ]; then
     printf 'negative-control: %d of %d gate(s) detected their mutation, %d MISSED\n' "$DETECTED" "$RAN" "$MISSED"; exit 1
 fi
 printf 'negative-control: %d of %d gate(s) detected their mutation, tree restored and green\n' "$DETECTED" "$RAN"
+[ "$SKIPPED" -eq 0 ] ||
+    printf 'negative-control: %d row(s) SKIPPED -- their tablebase corpus was not fetched; those gates were NOT proven able to fail\n' "$SKIPPED"
