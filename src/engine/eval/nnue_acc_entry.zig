@@ -43,9 +43,9 @@ const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
 /// Diff a refresh-cache entry against a board and write the K32Q2 removed/added index
-/// lists -- the first half of upstream's update_accumulator_refresh_cache, split out
-/// because update_accumulator_hybrid needs the SAME diff twice, against two different
-/// (entry, board) pairs, and neither of them is `pos` for the old bucket.
+/// lists -- upstream's append_changed_psq_indices (6706f98a8). The refresh needs it once
+/// and update_accumulator_hybrid twice, against two different (entry, board) pairs, and
+/// neither of the hybrid's is `pos` for the old bucket.
 pub fn entryDiffIndices(
     entry_pieces: []const u8,
     entry_piece_bb: u64,
