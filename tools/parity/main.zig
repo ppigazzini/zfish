@@ -19,6 +19,7 @@ pub const structured_diff = @import("structured_diff.zig");
 pub const session = @import("session.zig");
 pub const golden_shell = @import("golden_shell.zig");
 pub const golden_search = @import("golden_search.zig");
+pub const golden_nodestime = @import("golden_nodestime.zig");
 pub const golden_tb = @import("golden_tb.zig");
 pub const gate_runtime = @import("gate_runtime.zig");
 pub const gate_state = @import("gate_state.zig");
