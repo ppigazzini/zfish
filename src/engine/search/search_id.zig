@@ -364,13 +364,19 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     return best;
 }
 /// Swap rootMoves[0] with the RootMove whose pv[0]==move, and report whether anything moved:
-/// a move already first, or one not in the list, leaves the order as it was.
+/// a move already first, or one not in the list, leaves the order as it was. A losing pick
+/// scored below the line it displaced is reported as a lower bound: its mated-in distance
+/// was only searched far enough to lose to the best line, so it is shorter than the truth
+/// (upstream c5452e1f8).
 pub fn skillSwapBest(id: *const ZfishIdState, move: u16) bool {
     var i: usize = 0;
     while (i < id.root_moves_count and id.root_moves[i].pv.at(0) != move) : (i += 1) {}
     if (i >= id.root_moves_count or i == 0) return false;
+    const best_score = id.root_moves[0].score;
     const tmp = id.root_moves[0];
     id.root_moves[0] = id.root_moves[i];
     id.root_moves[i] = tmp;
+    if (idIsLoss(id.root_moves[0].score) and id.root_moves[0].score < best_score)
+        id.root_moves[0].inexact_lower = true;
     return true;
 }
