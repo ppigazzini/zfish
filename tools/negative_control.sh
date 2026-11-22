@@ -99,7 +99,7 @@ ROWS=(
     # "stop at once" and starts meaning "there is no limit". Every value gate reads identically
     # -- none of them sends `movetime 0`, and a search that never ends produces no line to
     # diff. It is only a HANG, which is the one thing the rest of this battery cannot express.
-    "liveness|src/shell/uci_parse.zig|clampClock(&notice, allocator, \"movetime\", v, 1)|clampClock(&notice, allocator, \"movetime\", v, 0)|a movetime of zero stops bounding the search"
+    "liveness|src/shell/uci_parse.zig|clampClock(&notice, allocator, \"movetime\", v, 1, 1)|clampClock(&notice, allocator, \"movetime\", v, 0, 0)|a movetime of zero stops bounding the search"
     # The type gate. Give NodeKind the fourth variant it exists to forbid -- a non-PV root,
     # which no call site produces and no meaning names. Nothing else can see it: adding an
     # unused enum variant changes no value, so every golden, the anchor and the whole search

@@ -72,8 +72,10 @@ pub const ParsedLimits = struct {
 /// arbitrary i64 times fifty.
 ///
 /// The bound is 1e12 ms -- about 31 years, past any real time control, and far enough below the
-/// top that every product timeman forms stays inside an i64. A negative clock is bounded at 0
-/// for the same reason: `go wtime -50000000000` underflows the same expression.
+/// top that every product timeman forms stays inside an i64. A negative clock is bounded from
+/// below for the same reason: `go wtime -50000000000` underflows the same expression. A
+/// negative wtime or btime reads as 1, not 0, as upstream sanitizes it since 23df82905: zero
+/// for the side to move means no time management, and a clock that ran out is not that.
 pub const max_clock_ms: i64 = 1_000_000_000_000;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
@@ -117,10 +119,12 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
     var iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
 
     // Bound one clock into [lo, max_clock_ms] and report it if it moved. See max_clock_ms.
-    // `lo` is 0 for every clock but `movetime`, which takes 1 -- see there.
+    // `lo` is 0 for every clock but `movetime`, which takes 1 -- see there. A clock under
+    // `lo` reads as `below`: 1 for wtime, btime and movetime (upstream 23df82905), `lo` for
+    // the increments, which upstream leaves alone.
     const clampClock = struct {
-        fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64, lo: i64) !i64 {
-            const bounded = std.math.clamp(given, lo, max_clock_ms);
+        fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64, lo: i64, below: i64) !i64 {
+            const bounded = if (given < lo) below else @min(given, max_clock_ms);
             if (bounded != given) {
                 const line = try a.print(
                     "{s} {d} is outside [{d}, {d}]; using {d}\n",
@@ -168,28 +172,28 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
             break;
         } else if (std.mem.eql(u8, token, "wtime")) {
             if (parseI64(iter.next())) |v| {
-                result.wtime = try clampClock(&notice, allocator, "wtime", v, 0);
+                result.wtime = try clampClock(&notice, allocator, "wtime", v, 0, 1);
             } else {
                 result.bad_token = "wtime";
                 break;
             }
         } else if (std.mem.eql(u8, token, "btime")) {
             if (parseI64(iter.next())) |v| {
-                result.btime = try clampClock(&notice, allocator, "btime", v, 0);
+                result.btime = try clampClock(&notice, allocator, "btime", v, 0, 1);
             } else {
                 result.bad_token = "btime";
                 break;
             }
         } else if (std.mem.eql(u8, token, "winc")) {
             if (parseI64(iter.next())) |v| {
-                result.winc = try clampClock(&notice, allocator, "winc", v, 0);
+                result.winc = try clampClock(&notice, allocator, "winc", v, 0, 0);
             } else {
                 result.bad_token = "winc";
                 break;
             }
         } else if (std.mem.eql(u8, token, "binc")) {
             if (parseI64(iter.next())) |v| {
-                result.binc = try clampClock(&notice, allocator, "binc", v, 0);
+                result.binc = try clampClock(&notice, allocator, "binc", v, 0, 0);
             } else {
                 result.bad_token = "binc";
                 break;
@@ -233,7 +237,7 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
                 // meaning for zero -- that test is shared with the nodestime path, whose
                 // unit-mismatch is deliberate and must not be touched (see search_control.zig).
                 // One millisecond is the smallest limit that still stops.
-                result.movetime = try clampClock(&notice, allocator, "movetime", v, 1);
+                result.movetime = try clampClock(&notice, allocator, "movetime", v, 1, 1);
             } else {
                 result.bad_token = "movetime";
                 break;
@@ -348,8 +352,20 @@ test "parseLimits bounds a clock the protocol had no right to send" {
     {
         const l = parseLimits("wtime -50000000000 btime 1000");
         defer freeLimits(l);
-        try testing.expectEqual(@as(i64, 0), l.wtime);
+        try testing.expectEqual(@as(i64, 1), l.wtime);
         try testing.expect(l.clamp_notice != null);
+    }
+
+    // A negative clock is one that ran out, so it reads as 1 ms (upstream 23df82905); zero
+    // keeps meaning "no clock", and an increment is bounded at 0, which upstream leaves alone.
+    {
+        const l = parseLimits("wtime 0 btime -1 winc -5 movetime -7");
+        defer freeLimits(l);
+        try testing.expectEqual(@as(i64, 0), l.wtime);
+        try testing.expectEqual(@as(i64, 1), l.btime);
+        try testing.expectEqual(@as(i64, 0), l.winc);
+        try testing.expectEqual(@as(i64, 1), l.movetime);
+        try testing.expect(std.mem.find(u8, l.clamp_notice.?, "wtime") == null);
     }
 
     // movetime takes the same UPPER bound: it is compared against the same budgets.

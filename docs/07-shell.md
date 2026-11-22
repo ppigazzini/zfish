@@ -121,7 +121,9 @@ facing the other way. It is not a defect in timeman: `time_left` multiplies a cl
 to 51, and no formula written in `i64` can hold an arbitrary `i64` times fifty.
 `parseLimits` clamps each clock to `[0, max_clock_ms]` — 1e12 ms, about 31 years, past any real
 time control and far enough below the top that every product timeman forms stays inside an
-`i64` — and reports the ones it moved. **`movetime` is the one clock whose floor is 1, not 0**,
+`i64` — and reports the ones it moved. A NEGATIVE `wtime` or `btime` reads as 1, not 0, as
+upstream sanitizes it: zero for the side to move means no time management, and a clock that
+ran out is not that. **`movetime` is the one clock whose floor is 1, not 0**,
 and the difference is not cosmetic: `checkTime` reads `lim_movetime != 0`, so a zero there does
 not mean "stop at once", it means there is no limit at all — and `bench <tt> <thr> 0 default
 movetime` passes the figure straight through, where the UCI thread then sits inside its own
