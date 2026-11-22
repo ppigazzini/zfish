@@ -77,9 +77,9 @@ pub fn halfRequiresRefresh(diff: HalfDiff, perspective: u8, block_before: u8, bl
 }
 
 pub fn fullMakeIndex(params: FullThreatParams) u32 {
-    const orientation: i32 = @as(i32, orient_tbl[params.king_square]) ^ @as(i32, 56 * params.perspective);
-    const from_oriented: usize = @intCast(@as(u8, params.from_sq) ^ @as(u8, @intCast(orientation)));
-    const to_oriented: usize = @intCast(@as(u8, params.to_sq) ^ @as(u8, @intCast(orientation)));
+    const orientation: u8 = orient_tbl[params.king_square] ^ (56 *% params.perspective);
+    const from_oriented: usize = params.from_sq ^ orientation;
+    const to_oriented: usize = params.to_sq ^ orientation;
     const swap: u8 = 8 * params.perspective;
     const attacker_oriented: usize = params.attacker ^ swap;
     const attacked_oriented: usize = params.attacked ^ swap;
