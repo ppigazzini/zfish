@@ -423,16 +423,20 @@ only off-check, and only when the probe's value actually exceeds `ss.static_eval
 writers clamp into ±`CORRECTION_HISTORY_LIMIT/4`.
 
 **The transposition table** (`tt.zig`, layout in `state/tt_types.zig`) is a flat array
-of `TtCluster`, each holding `cluster_size` `TtEntry` records plus padding. Both structs
+of `TtCluster`, each holding a `keys` word and `cluster_size` `TtEntry` records. Both structs
 are `extern`, and that is load-bearing twice over: a plain Zig struct leaves field order
 unspecified and this toolchain *does* reorder it, which would break upstream's stated
 "fields in the order `probe()` accesses them" property, and would let a future compiler
 change the cluster stride that the table sizing arithmetic depends on. A comptime block
 asserts every `@offsetOf` plus upstream's own `sizeof(Cluster) == 32`.
 
+The cluster's `keys` word packs the three entries' **tags** — the low `key_bits` (21) bits
+of each position key, entry `i` at bit `21 * i` — since upstream ff3a6c508 widened them from
+16 bits inside each entry; the cluster is found by the key's *high* bits, so the tag is what
+disambiguates within it. Each entry is then eight bytes:
+
 | Field | Width | Holds |
 | --- | --- | --- |
-| `key16` | `u16` | the low 16 bits of the position key — the cluster is found by the *high* bits, so these are what disambiguates within it |
 | `depth8` | `u8` | the depth, **biased** by the `depth_none` offset so the unsearched value maps to 0 |
 | `gen_bound8` | `u8` | three fields in one byte: generation in bits 0–4, bound in bits 5–6, is-PV in bit 7 |
 | `move16`, `value16`, `eval16` | | the stored move, the mate-corrected value, the raw static eval |
@@ -440,9 +444,13 @@ asserts every `@offsetOf` plus upstream's own `sizeof(Cluster) == 32`.
 `depth8` being biased is what makes `depth8 != 0` the occupancy test, and that single fact
 is why the saturating subtraction below is not optional.
 
-`probeTable` walks the cluster comparing `key16`, and returns the hit data *and* a writer
-pointer — so a node probes once and stores through the same slot, rather than re-deriving
-the address. On a miss the writer is the **replacement victim**, chosen by minimising
+`probeTable` compares the key's tag with all three at once — xor it into every block, and
+upstream's borrow trick `(x - lsb) & ~x & msb` sets bit 20 of the first block that matched,
+exactly, since nothing below a match can borrow — and returns the hit data *and* a writer
+pointer, so a node probes once and stores through the same slot, rather than re-deriving
+the address. Upstream's writer is a (cluster, index) pair, because a store rewrites the
+tag word as well as the entry; zfish keeps one pointer and `entrySave` recovers both
+halves from the address, which is why `TtCluster` is aligned to its own 32 bytes. On a miss the writer is the **replacement victim**, chosen by minimising
 `depth8 - 8 * relativeAge`: depth is worth keeping, but each generation of staleness is
 worth eight plies of it, so a deep entry from an old search loses to a shallow fresh one.
 `entryRelativeAge` subtracts modulo the 5-bit generation field, so the counter wrapping is

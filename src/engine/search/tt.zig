@@ -2,6 +2,8 @@ const std = @import("std");
 const tt_types = @import("tt_types");
 
 const cluster_size = tt_types.cluster_size;
+const key_bits = tt_types.key_bits;
+const key_mask: u64 = (1 << key_bits) - 1;
 const value_none: i16 = 32002;
 const generation_bits: u8 = 5;
 const generation_mask: u8 = (1 << generation_bits) - 1;
@@ -38,9 +40,9 @@ pub const TtReadOutput = struct {
 };
 
 /// Carry the probe result the way upstream's `std::tuple<bool, TTData, TTWriter>` does: the
-/// writer is the ENTRY POINTER the walk already held, not an index into the cluster. An index
-/// makes the caller re-derive `base + i * 10` (two `lea`s the walk had already computed), and
-/// LLVM cannot fold that back through the struct return.
+/// writer is the ENTRY POINTER the walk already held, not upstream's (cluster, index) pair. A
+/// pair is a second word live across the whole node, and the store needs it once: entrySave
+/// recovers both halves from the address, since a cluster is aligned to its own size.
 pub const TtProbeOutput = struct {
     found: u8,
     writer_ptr: *TtEntry,
@@ -141,6 +143,17 @@ pub fn clearState(
     }
 }
 
+/// Return the cluster that holds `entry`: clusters are aligned to their own 32 bytes.
+fn clusterOf(entry: *TtEntry) *TtCluster {
+    return @ptrFromInt(@intFromPtr(entry) & ~@as(usize, @sizeOf(TtCluster) - 1));
+}
+
+/// Return the bit offset of `entry`'s tag in its cluster's `keys` word.
+fn tagShift(entry: *const TtEntry) u6 {
+    const slot = ((@intFromPtr(entry) & (@sizeOf(TtCluster) - 1)) - @offsetOf(TtCluster, "entry")) / @sizeOf(TtEntry);
+    return @intCast(slot * key_bits);
+}
+
 pub fn entrySave(
     entry: *TtEntry,
     key: u64,
@@ -153,17 +166,23 @@ pub fn entrySave(
     eval: i32,
     curr_generation: u8,
 ) void {
-    const key16: u16 = @truncate(key);
+    const cluster = clusterOf(entry);
+    const shift = tagShift(entry);
+    var keys = rlx(u64, &cluster.keys);
+    const stored_tag = (keys >> shift) & key_mask;
+    const tag = key & key_mask;
 
-    if (move16 != 0 or key16 != rlx(u16, &entry.key16)) {
+    if (move16 != 0 or tag != stored_tag) {
         setRlx(u16, &entry.move16, move16);
     }
 
-    if (bound == 3 or key16 != rlx(u16, &entry.key16) or
+    if (bound == 3 or tag != stored_tag or
         depth - depth_none + 2 * @as(i32, pv) > @as(i32, rlx(u8, &entry.depth8)) - 4 or
         entryRelativeAge(entry, curr_generation) != 0)
     {
-        setRlx(u16, &entry.key16, key16);
+        keys &= ~(key_mask << shift);
+        keys |= tag << shift;
+        setRlx(u64, &cluster.keys, keys);
         setRlx(u8, &entry.depth8, @intCast(depth - depth_none));
         setRlx(u8, &entry.gen_bound8, curr_generation | (bound << bound_shift) | (pv << pv_shift));
         setRlx(i16, &entry.value16, @intCast(value));
@@ -282,18 +301,22 @@ pub fn probe(
     generation: u8,
     depth_none: i32,
 ) TtProbeOutput {
-    const key16: u16 = @truncate(key);
+    // Compare the key's low 21 bits with all three tags at once (upstream ff3a6c508). The
+    // borrow trick sets bit 20 of the FIRST block that matches: no block below a match can
+    // borrow, so the lowest set bit is exact, and only blocks above it may carry garbage.
+    const key_lsb: u64 = 1 | (1 << key_bits) | (1 << (2 * key_bits));
+    const key_msb: u64 = key_lsb << (key_bits - 1);
+    const key_xors = rlx(u64, &cluster.keys) ^ (key_lsb * (key & key_mask));
+    const matches = (key_xors -% key_lsb) & ~key_xors & key_msb;
 
-    for (0..cluster_size) |entry_index| {
-        const entry = &cluster.entry[entry_index];
-        if (rlx(u16, &entry.key16) == key16) {
-            const depth8 = rlx(u8, &entry.depth8);
-            return .{
-                .found = if (depth8 != 0) 1 else 0,
-                .writer_ptr = entry,
-                .data = entryRead(entry, depth_none, depth8),
-            };
-        }
+    if (matches != 0) {
+        const entry = &cluster.entry[@ctz(matches) / key_bits];
+        const depth8 = rlx(u8, &entry.depth8);
+        return .{
+            .found = if (depth8 != 0) 1 else 0,
+            .writer_ptr = entry,
+            .data = entryRead(entry, depth_none, depth8),
+        };
     }
 
     var replace: *TtEntry = &cluster.entry[0];
@@ -369,6 +392,39 @@ test "TranspositionTable handle: layout and generation cycling" {
     const g0 = tt.generation();
     tt.newSearch();
     try std.testing.expect(tt.generation() != g0); // advance the generation by GENERATION_DELTA
+}
+
+test "tt: the probe matches the first of three 21-bit tags, and a store rewrites only its own" {
+    var cluster: TtCluster = std.mem.zeroes(TtCluster);
+    const key_a: u64 = 0xABCD_EF01_2345_6789;
+    const key_b: u64 = key_a ^ (1 << 20); // differs from key_a in bit 20 alone: 16 bits miss it
+    const key_c: u64 = key_a ^ (1 << 40); // differs above the tag: the same tag as key_a
+
+    // A miss on an empty cluster picks slot 0; store key_b there.
+    const miss = probe(&cluster, key_b, 0, -3);
+    try std.testing.expectEqual(@as(u8, 0), miss.found);
+    try std.testing.expectEqual(&cluster.entry[0], miss.writer_ptr);
+    entrySave(miss.writer_ptr, key_b, 10, 0, 1, 5, -3, 0x123, 7, 0);
+
+    // key_a misses key_b's tag and takes the next victim, slot 1 (slot 0 is deeper now).
+    const miss_a = probe(&cluster, key_a, 0, -3);
+    try std.testing.expectEqual(@as(u8, 0), miss_a.found);
+    try std.testing.expectEqual(&cluster.entry[1], miss_a.writer_ptr);
+    entrySave(miss_a.writer_ptr, key_a, 20, 0, 1, 6, -3, 0x456, 8, 0);
+
+    // Both tags sit in their own blocks, and the third block is still empty.
+    try std.testing.expectEqual(key_b & key_mask, cluster.keys & key_mask);
+    try std.testing.expectEqual(key_a & key_mask, (cluster.keys >> key_bits) & key_mask);
+    try std.testing.expectEqual(@as(u64, 0), cluster.keys >> (2 * key_bits));
+
+    const hit_b = probe(&cluster, key_b, 0, -3);
+    try std.testing.expectEqual(@as(u8, 1), hit_b.found);
+    try std.testing.expectEqual(@as(u16, 0x123), hit_b.data.move16);
+    const hit_a = probe(&cluster, key_a, 0, -3);
+    try std.testing.expectEqual(&cluster.entry[1], hit_a.writer_ptr);
+    try std.testing.expectEqual(@as(u16, 0x456), hit_a.data.move16);
+    // A key that agrees in the low 21 bits is the same tag: a collision, as upstream.
+    try std.testing.expectEqual(&cluster.entry[1], probe(&cluster, key_c, 0, -3).writer_ptr);
 }
 
 test "tt: depth penalty saturates at 0 instead of wrapping" {

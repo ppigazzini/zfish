@@ -1058,7 +1058,7 @@ nodes with identical node totals, and reverted:
 | share the seven distinct threat `comb` planes behind a pointer | **1.00247** | 133 KB of table down to 57 KB |
 | hand the accumulator's row loop an already-offset tile base | **1.00040** | one `add` per row instead of per tile |
 | carry a node's slider attack sets from its capture list to its quiet list | **1.00078** | 0.5 slider attack computations a node |
-| hoist `save`'s two `key16` reads into one local | **1.00016** | one load of the stored key instead of two |
+| hoist `save`'s two `key16` reads into one local | **1.00016** | one load of the stored key instead of two; moot since upstream ff3a6c508, whose store reads the cluster's tag word once to rewrite it |
 | widen the TT read output to `i32` at the load site | **1.00096** | the widen once, not at each consumer |
 
 The first is a **null statement swap** — two builders writing disjoint lists, exchanged — and
