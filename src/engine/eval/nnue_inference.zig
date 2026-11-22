@@ -33,14 +33,20 @@ const cache_line_size: usize = 64;
 const transformed_feature_bytes: usize = 1024;
 const square_count: usize = 64;
 const no_piece: u8 = 0;
+const pawn_piece_type: usize = 1;
 const queen_piece_type: usize = 5;
+const king_piece_type: usize = 6;
 
 const layerPtr = weight_storage.layerPtr;
 const ftPtr = weight_storage.ftPtr;
 
+/// Hold the `eval` trace: one value per STORED stack, the first `layer_stacks` of
+/// `positional` -- upstream's NnueEvalTrace.layerStacks (SFNNv20) -- and the stored stack
+/// the position evaluates with.
 pub const TraceOutput = struct {
     positional: [layer_stacks]i32,
     correct_bucket: usize,
+    layer_stacks: usize,
 };
 
 /// Run the NNUE network layer forward pass (NetworkArchitecture::propagate, SFNNv15). Layers:
@@ -132,7 +138,7 @@ pub fn evaluate(
     return @divTrunc(evaluateBucketRaw(pos, accumulator_stack, cache, layerStack(pos)), output_scale);
 }
 
-/// Score every layer stack over ONE transform -- upstream's trace_evaluate. The transformer
+/// Score every STORED layer stack over ONE transform -- upstream's trace_evaluate. The transformer
 /// has no bucket-dependent output since SFNNv17, so the input to every bucket is the same
 /// bytes and the same non-zero record; only the forward pass differs.
 pub fn traceEvaluate(
@@ -142,15 +148,15 @@ pub fn traceEvaluate(
 ) TraceOutput {
     var output = TraceOutput{
         .positional = @splat(0),
-        .correct_bucket = 0,
+        .correct_bucket = layerStack(pos),
+        .layer_stacks = weight_storage.storedLayerStacks(),
     };
-    output.correct_bucket = layerStack(pos);
 
     var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
     var nnz: nnue_accumulator_port.NnzOut = undefined;
     networkTransform(pos, accumulator_stack, cache, @ptrCast(&transformed), &nnz);
 
-    for (0..layer_stacks) |bucket| {
+    for (0..output.layer_stacks) |bucket| {
         output.positional[bucket] = @divTrunc(propagateBucket(bucket, @ptrCast(&transformed), &nnz), output_scale);
     }
 
@@ -172,15 +178,29 @@ fn evaluateBucketRaw(
     return propagateBucket(bucket, @ptrCast(&transformed), &nnz);
 }
 
-/// Select the layer stack -- upstream Network::evaluate's SFNNv18 bucket: the material
-/// bucket `(piece_count - 1) / 4`, times four, plus the queen bucket, 2 if the side to move
-/// has a queen and 1 if its opponent does.
+/// Select the layer stack -- upstream Network::layer_stack (SFNNv20). Four keys make one of
+/// `raw_layer_stacks` indices: the material band `(piece_count - 1) / 4`; the queen state,
+/// 2 if the side to move has a queen plus 1 if its opponent does; the pawn layout, 0 with
+/// pawns on both board halves (files a..d and e..h), 1 with pawns on one half only, 2 with
+/// none; and whether either side has two or more officers (pieces other than pawns and
+/// kings). The net's own table maps the key onto the stack it stores for it.
 fn layerStack(pos: *const Position) usize {
     const queens = pos.by_type_bb[queen_piece_type];
     const stm: usize = pos.side_to_move;
-    const queen_bucket = @as(usize, @intFromBool(pos.by_color_bb[stm] & queens != 0)) * 2 +
+    const band = (pieceCount(pos) - 1) / 4;
+    const queen_state = @as(usize, @intFromBool(pos.by_color_bb[stm] & queens != 0)) * 2 +
         @intFromBool(pos.by_color_bb[stm ^ 1] & queens != 0);
-    return (pieceCount(pos) - 1) / 4 * 4 + queen_bucket;
+
+    const queen_side: u64 = 0x0F0F0F0F0F0F0F0F; // files a..d
+    const pawns = pos.by_type_bb[pawn_piece_type];
+    const layout: usize = if (pawns == 0) 2 else if (pawns & queen_side != 0 and pawns & ~queen_side != 0) 0 else 1;
+
+    const not_officers = pawns | pos.by_type_bb[king_piece_type];
+    const officers_white = @popCount(pos.by_color_bb[0] & ~not_officers);
+    const officers_black = @popCount(pos.by_color_bb[1] & ~not_officers);
+    const many: usize = @intFromBool(@max(officers_white, officers_black) >= 2);
+
+    return weight_storage.layerStackIndex(((band * 4 + queen_state) * 3 + layout) * 2 + many);
 }
 
 fn pieceCount(pos: *const Position) usize {

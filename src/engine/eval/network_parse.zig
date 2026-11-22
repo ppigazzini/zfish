@@ -23,6 +23,8 @@ const layerPtr = weight_storage.layerPtr;
 pub const network_version: u32 = 0x6A448AFA; // upstream nnue_common.h Version (post-merge format)
 
 const layer_stacks = nnue_dims.layer_stacks;
+const raw_layer_stacks = nnue_dims.raw_layer_stacks;
+pub const LayerStackTable = weight_storage.LayerStackTable;
 
 fn layerBiasesBytes(idx: usize) usize {
     return weight_storage.layer_biases_bytes[idx];
@@ -64,12 +66,16 @@ pub fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
     if (header.hash_value != nnue_hash.networkHashValue()) {
         return false;
     }
+    // The table is read into a local and installed only once the whole file has parsed, so
+    // a refused table also writes nothing.
+    var table: LayerStackTable = undefined;
+    if (!readLayerStackTable(bytes, &offset, &table)) return false;
 
     if (!readFeatureTransformer(bytes, &offset)) {
         return clearLoadedAfterPartialWrite();
     }
 
-    for (0..layer_stacks) |bucket| {
+    for (0..table.stored) |bucket| {
         if (!readLayer(bucket, bytes, &offset)) {
             return clearLoadedAfterPartialWrite();
         }
@@ -79,6 +85,7 @@ pub fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
         return clearLoadedAfterPartialWrite();
     }
 
+    weight_storage.setLayerStackTable(&table);
     setLoadedState(current_name, header.description);
     // Trust the parse as the sole source of weights; correctness is verified end-to-end
     // by the eval gates (bench / search-parity), and the offset==bytes.len check above
@@ -102,6 +109,57 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
     const description = bytes[offset.* .. offset.* + description_len];
     offset.* += description_len;
     return .{ .hash_value = hash_value, .description = description };
+}
+
+/// Read the layer-stack table that follows the header -- upstream's read_parameters
+/// (SFNNv20): the tag, the raw key count, the stored stack count, then one u16 fallback per
+/// key. Refuse what upstream refuses: a wrong tag or raw count, no stored stack or more than
+/// the arena holds, a fallback past the keys, a stored count the self-mapped keys do not
+/// match, and a fallback onto a key that does not map to itself.
+fn readLayerStackTable(bytes: []const u8, offset: *usize, table: *LayerStackTable) bool {
+    @setRuntimeSafety(true);
+    if ((readU32Le(bytes, offset) orelse return false) != nnue_hash.layer_stack_table_hash) return false;
+    if ((readU32Le(bytes, offset) orelse return false) != raw_layer_stacks) return false;
+    const stored = readU32Le(bytes, offset) orelse return false;
+    if (stored == 0 or stored > layer_stacks) return false;
+    table.stored = stored;
+
+    if (bytes.len - offset.* < raw_layer_stacks * 2) return false;
+    for (&table.fallback) |*f| {
+        f.* = std.mem.readInt(u16, bytes[offset.*..][0..2], .little);
+        offset.* += 2;
+        if (f.* >= raw_layer_stacks) return false;
+    }
+
+    // Number the self-mapped keys in key order, then send every key to its fallback's
+    // number -- which must be one of them.
+    var count: u16 = 0;
+    for (table.fallback, 0..) |f, key| {
+        if (f == key) {
+            table.index[key] = count;
+            count += 1;
+        }
+    }
+    if (count != stored) return false;
+    for (table.fallback, 0..) |f, key| {
+        if (table.fallback[f] != f) return false;
+        table.index[key] = table.index[f];
+    }
+    return true;
+}
+
+/// Write the table back in the order readLayerStackTable reads it.
+pub fn appendLayerStackTable(out: *std.ArrayList(u8), a: std.mem.Allocator, table: *const LayerStackTable) !void {
+    var word: [4]u8 = undefined;
+    for ([_]u32{ nnue_hash.layer_stack_table_hash, raw_layer_stacks, @intCast(table.stored) }) |v| {
+        writeU32LeInto(&word, v);
+        try out.appendSlice(a, &word);
+    }
+    for (table.fallback) |f| {
+        var half: [2]u8 = undefined;
+        std.mem.writeInt(u16, &half, f, .little);
+        try out.appendSlice(a, &half);
+    }
 }
 
 // Transform one output bucket (FT). Reads weights from the feature-transformer
@@ -219,12 +277,21 @@ test "a load that half-overwrote the live net stops reporting the one it replace
     writeU32LeInto(&word, @intCast(desc.len));
     try blob.appendSlice(a, &word);
     try blob.appendSlice(a, desc);
-    // ...and nothing else, so the header and the hash both pass and the feature transformer
-    // is the first thing to fail -- which is the first thing that writes.
+    // ...then a valid layer-stack table, and nothing else, so the header, the hash and the
+    // table all pass and the feature transformer is the first thing to fail -- which is the
+    // first thing that writes.
+    try appendLayerStackTable(&blob, a, &oneStackTable());
 
     setLoadedState("previous.nnue", "the net that was loaded");
     try std.testing.expect(!loadNetworkBytes(blob.items, "half.nnue"));
     try std.testing.expectEqualStrings("", nnCurrent());
+
+    // A refused table has written nothing either.
+    setLoadedState("previous.nnue", "the net that was loaded");
+    blob.items[12 + desc.len] ^= 1; // the table's tag
+    try std.testing.expect(!loadNetworkBytes(blob.items, "bad-table.nnue"));
+    try std.testing.expectEqualStrings("previous.nnue", nnCurrent());
+    blob.items[12 + desc.len] ^= 1;
 
     // The other half of the contract: a net refused BEFORE anything is written must leave the
     // previous one named, because it is still live and still correct. A bad `setoption
@@ -235,6 +302,92 @@ test "a load that half-overwrote the live net stops reporting the one it replace
     try std.testing.expectEqualStrings("previous.nnue", nnCurrent());
 
     setLoadedState("", "");
+}
+
+/// Build the smallest valid table: key 0 stored, every other key falling back onto it.
+fn oneStackTable() LayerStackTable {
+    return .{ .stored = 1, .fallback = @splat(0), .index = @splat(0) };
+}
+
+/// Run readLayerStackTable over a table serialized from `table`, after `mutate` has edited
+/// the serialized bytes, and say whether it was accepted.
+fn tableAccepts(table: LayerStackTable, mutate: *const fn ([]u8) void) !?LayerStackTable {
+    const a = std.testing.allocator;
+    var blob: std.ArrayList(u8) = .empty;
+    defer blob.deinit(a);
+    try appendLayerStackTable(&blob, a, &table);
+    mutate(blob.items);
+    var offset: usize = 0;
+    var out: LayerStackTable = undefined;
+    if (!readLayerStackTable(blob.items, &offset, &out)) return null;
+    try std.testing.expectEqual(blob.items.len, offset);
+    return out;
+}
+
+fn keep(_: []u8) void {}
+
+test "the layer-stack table refuses each malformed field, one at a time" {
+    // A table with three stored keys (0, 7, 191): every other key falls back onto one.
+    var t = oneStackTable();
+    t.stored = 3;
+    for (&t.fallback, 0..) |*f, key| f.* = if (key < 7) 0 else if (key < 191) 7 else 191;
+    const ok = (try tableAccepts(t, &keep)).?;
+    try std.testing.expectEqual(@as(usize, 3), ok.stored);
+    try std.testing.expectEqual(@as(u16, 0), ok.index[6]);
+    try std.testing.expectEqual(@as(u16, 1), ok.index[7]);
+    try std.testing.expectEqual(@as(u16, 1), ok.index[100]);
+    try std.testing.expectEqual(@as(u16, 2), ok.index[191]);
+
+    const fallback0 = 12; // the first fallback's byte offset
+    const cases = [_]*const fn ([]u8) void{
+        struct { // wrong tag
+            fn f(b: []u8) void {
+                b[0] ^= 1;
+            }
+        }.f,
+        struct { // wrong raw count
+            fn f(b: []u8) void {
+                b[4] = 191;
+            }
+        }.f,
+        struct { // no stored stack
+            fn f(b: []u8) void {
+                @memset(b[8..12], 0);
+            }
+        }.f,
+        struct { // more stored stacks than the arena holds
+            fn f(b: []u8) void {
+                b[8] = 193;
+            }
+        }.f,
+        struct { // a stored count the self-mapped keys do not match
+            fn f(b: []u8) void {
+                b[8] = 2;
+            }
+        }.f,
+        struct { // a fallback past the keys
+            fn f(b: []u8) void {
+                b[fallback0 + 2 * 5] = 192;
+            }
+        }.f,
+        struct { // a fallback onto a key that does not map to itself
+            fn f(b: []u8) void {
+                b[fallback0 + 2 * 5] = 3;
+            }
+        }.f,
+    };
+    for (cases) |mutate| {
+        try std.testing.expectEqual(@as(?LayerStackTable, null), try tableAccepts(t, mutate));
+    }
+
+    // And a table one byte short.
+    const a = std.testing.allocator;
+    var blob: std.ArrayList(u8) = .empty;
+    defer blob.deinit(a);
+    try appendLayerStackTable(&blob, a, &t);
+    var offset: usize = 0;
+    var out: LayerStackTable = undefined;
+    try std.testing.expect(!readLayerStackTable(blob.items[0 .. blob.items.len - 1], &offset, &out));
 }
 
 test {

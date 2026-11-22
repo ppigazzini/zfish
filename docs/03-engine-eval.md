@@ -14,9 +14,9 @@ for the same position.
 | --- | --- |
 | **network load / parse / storage** | |
 | `network.zig` | the `Network` handle, the `load`/`save`/`verify` entry points and the directory search; re-exports the inference surface |
-| `network_parse.zig` | the READER: the file header, the feature transformer, the layer stacks — everything that walks an untrusted `.nnue` into the live weights. Split from `network.zig` on the 500-line lint along the seam that file already had, so what remains there is the option-facing face |
+| `network_parse.zig` | the READER: the file header, the layer-stack table, the feature transformer, the layer stacks — everything that walks an untrusted `.nnue` into the live weights. Split from `network.zig` on the 500-line lint along the seam that file already had, so what remains there is the option-facing face |
 | `nnue_parse.zig` | the `.nnue` byte format: the little-endian sections that write each blob region at the offset `nnue_dimensions.zig` owns, `weightIndexScrambled`, and the `write_parameters` serializer |
-| `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |
+| `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`), the loaded net's layer-stack table (`LayerStackTable`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |
 | `nnue_hash.zig` | the net-identity hashes: `hashBytes` (MurmurHash2-64A), the feature-transformer / architecture / network hash values, and the content hashes |
 | **feature transformer** | |
 | `nnue_feature.zig` | the FullThreats feature set and K32H3 indexing: `halfMakeIndex`, `halfBlock`, `fullMakeIndex`, the changed/active index lists (including the both-perspectives producer), and the refresh predicates; re-exports the PP_3Wide surface |
@@ -47,11 +47,22 @@ for the same position.
 ## The network
 
 A net file is a flat binary: a 12-byte header (`u32` version, `u32` structure hash,
-`u32` description length) followed by the description, the feature-transformer blob,
-and then one blob per layer stack. `network_parse.zig` pins the version
-(`network_version = 0x6A448AFA`) and, in `loadNetworkBytes`, rejects any file whose
-structure hash differs from `nnue_hash.networkHashValue()` — the hash is derived from the architecture
-constants, so a net built for a different architecture cannot load.
+`u32` description length) followed by the description, the layer-stack table, the
+feature-transformer blob, and then one blob per STORED layer stack. `network_parse.zig`
+pins the version (`network_version = 0x6A448AFA`) and, in `loadNetworkBytes`, rejects any
+file whose structure hash differs from `nnue_hash.networkHashValue()` — the hash is derived
+from the architecture constants and the table's tag, so a net built for a different
+architecture cannot load.
+
+The layer-stack table (SFNNv20, `readLayerStackTable`) is a `u32` tag
+(`nnue_hash.layer_stack_table_hash`), the raw key count (192), the count of stacks the
+file stores, and one `u16` fallback per key: a key that falls back onto itself is a stored
+stack, and every other key evaluates with its fallback's. The reader refuses what upstream
+refuses — a wrong tag or key count, no stored stack or more than the arena holds, a
+fallback past the keys, a stored count the self-mapped keys do not match, a fallback onto
+a key that is not stored — and does so before anything is written, so a refused table
+leaves the previous net live and named. It builds the table into a local and installs it
+(`nnue_weight_storage.setLayerStackTable`) only once the whole file has parsed.
 
 `network.load` resolves the `EvalFile` name (defaulting to
 `default_eval_file_name`, the single source of truth for the net's name) against
@@ -66,7 +77,8 @@ three candidates in order:
 Each candidate is skipped once a net of that name is already current. `loadUserNet`
 maps the file read-only (POSIX `mmap`; Windows and an unmappable filesystem fall
 back to a whole-file read into an arena) and hands the bytes to `loadNetworkBytes`,
-which walks header → feature transformer → the 32 layer stacks and requires the
+which walks header → layer-stack table → feature transformer → the stored layer stacks
+and requires the
 consumed byte count to equal the file length exactly. The parse copies every weight
 into the Zig-owned storage, so the mapping is released as soon as it returns.
 
@@ -118,9 +130,10 @@ injected large-block seam the platform backs with huge pages, and which falls ba
 to a page-backed allocator in a headless build; see [06-platform.md](06-platform.md). `nnue_weight_storage.zig` sits below
 both `network.zig` and `nnue_inference.zig` so the I/O half and the compute half
 share an owner without importing each other. There are exactly two arenas: the
-feature-transformer blob, and ONE contiguous block holding all 32 buckets'
-fc_0/fc_1/fc_2 biases+weights at comptime offsets — mirroring upstream's in-line
-`NetworkArchitecture network[LayerStacks]` member. Keep it one block: splitting the
+feature-transformer blob, and ONE contiguous block with room for every stack a net may
+store (`nnue_dimensions.layer_stacks`), each stack's fc_0/fc_1/fc_2 biases+weights at
+comptime offsets — mirroring upstream's in-line `NetworkArchitecture
+network[LayerStacks]` member; the parse fills the first `stored` of them. Keep it one block: splitting the
 layer stack into per-part huge-page allocations puts every part at the same address
 bits modulo the huge-page alignment, aliasing the inference weights into a handful
 of last-level cache sets (measured as ~5 extra LL misses per eval).
@@ -193,10 +206,15 @@ permutation upstream instead folds into the weights at load time. It records whi
 bitset, see below) in the same pass, while the values are still in registers. Nothing it
 produces depends on the layer-stack bucket.
 
-Above the transformer sit **32 layer stacks** (`nnue_dimensions.layer_stacks`), selected
-by material and queens (`nnue_inference.layerStack`, upstream SFNNv18): `bucket =
-(piece_count - 1) / 4 * 4 + queen_bucket`, where the queen bucket is 2 if the side to move
-has a queen plus 1 if its opponent does. Each stack is
+Above the transformer sit the **layer stacks**, selected by a key of 192 values
+(`nnue_dimensions.raw_layer_stacks`; `nnue_inference.layerStack`, upstream SFNNv20's
+`layer_stack`): `((band * 4 + queens) * 3 + layout) * 2 + many`, where the band is
+`(piece_count - 1) / 4`, `queens` is 2 if the side to move has a queen plus 1 if its
+opponent does, `layout` is 0 with pawns on both board halves (files a–d and e–h), 1 with
+pawns on one half and 2 with none, and `many` says whether either side has two or more
+officers (pieces other than pawns and kings). The net trains only the keys a game
+reaches, so it does not store 192 stacks: its table maps each key onto a stored one
+(`nnue_weight_storage.layerStackIndex`). Each stack is
 
 ```
 fc_0 (1024 -> 32) -> ac_sqr_0 | ac_0 -> fc_1 (64 -> 32) -> ac_sqr_1 | ac_1 -> fc_2 (128 -> 1)
@@ -550,9 +568,11 @@ Activations are `sqrClippedReLU` (`min(127, (clamp(x, -32768, 32767)^2) >> shift
 (`clamp(x >> shift, 0, 127)`), written into a 128-byte `concat` that `fc_1` and
 `fc_2` read. `evaluateBucketRaw` runs the transform and then `propagateBucket`, and
 `evaluate` divides that by `output_scale` — one value, as upstream's `Network::evaluate`
-returns. The `eval` trace (`traceEvaluate`) transforms ONCE and runs every bucket's
-forward pass over the same bytes, which is sound only because the transformer's output
-no longer depends on the bucket.
+returns. The `eval` trace (`traceEvaluate`) transforms ONCE and runs every STORED
+stack's forward pass over the same bytes, which is sound only because the transformer's
+output no longer depends on the bucket; it prints one row per stored stack and marks the
+one the key maps to, as upstream's does since SFNNv20. The verify banner likewise sizes the
+net by the stored stacks.
 
 `evaluate.zig` turns it into the final score. `scaleEvaluation` is upstream's
 `scale_evaluation`. It normalises the net value and `simpleEval` (the side to move's material

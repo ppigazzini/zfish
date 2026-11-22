@@ -241,17 +241,17 @@ fn buildNnueTrace(
     nnue_acc.stackReset(accumulators);
 
     const trace = network_port.traceEvaluate(pos, accumulators, caches);
-    // Size by the trace's own row, which the eval sizes by its layer-stack count.
-    const layer_stacks = trace.positional.len;
-    var positional_cp: [layer_stacks]i32 = undefined;
+    // Size by the trace's own row, which the eval sizes by the most stacks a net may store,
+    // and print the stacks this net stores (upstream's NnueEvalTrace.layerStacks).
+    var positional_cp: [trace.positional.len]i32 = undefined;
 
-    for (0..layer_stacks) |bucket| {
+    for (0..trace.layer_stacks) |bucket| {
         positional_cp[bucket] = uci_wdl.toCp(trace.positional[bucket], summary.wdl_material);
     }
 
     return nnue_misc_mod.formatTrace(.{
         .side_to_move_white = summary.side_to_move_white,
-        .bucket_count = layer_stacks,
+        .bucket_count = trace.layer_stacks,
         .correct_bucket = trace.correct_bucket,
         .positional_raw = &trace.positional,
         .positional_cp = &positional_cp,

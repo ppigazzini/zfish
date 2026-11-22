@@ -63,11 +63,16 @@ pub const psq_blocks: usize = 3;
 pub const psq_block_dimensions: usize = 32 * 11 * 64;
 pub const psq_feature_dimensions: usize = psq_blocks * psq_block_dimensions;
 
-/// Count the layer stacks above the transformer (upstream LayerStacks). SFNNv18 selects
-/// one by piece count AND queen presence, `(piece_count - 1) / 4 * 4 + queen_bucket`, so
-/// the count is the eight material buckets times four queen states. Every file that walks
-/// or sizes the stacks reads this one.
-pub const layer_stacks: usize = 8 * 4;
+/// Count the layer-stack KEYS (upstream RawLayerStacks, SFNNv20): eight material bands x four
+/// queen states x three pawn layouts x whether either side has two officers. The net does
+/// not store a stack per key -- it ships a table mapping each key onto one it trained
+/// (`nnue_weight_storage.LayerStackTable`).
+pub const raw_layer_stacks: usize = 8 * 4 * 3 * 2;
+
+/// Bound the stacks a net may store (upstream LayerStacks, which SFNNv20 sets to
+/// RawLayerStacks). The arena is sized by it; a net stores at most this many and the parse
+/// reads only the count its table declares. Every file that sizes the stacks reads this one.
+pub const layer_stacks: usize = raw_layer_stacks;
 
 /// Align every region on a cache line, which is what upstream's `alignas(CacheLineSize)`
 /// on each member spells. The accumulator arena carries the same alignment for the same

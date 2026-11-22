@@ -155,11 +155,16 @@ pub fn layerStackContentHash(
     return h;
 }
 
+/// Tag the layer-stack table that follows the header (upstream Network::LayerStackTableHash,
+/// SFNNv20). The file states it again in front of the table, and it folds into the
+/// structure hash, so a net without the table cannot load.
+pub const layer_stack_table_hash: u32 = 0x5A7AB1E5;
+
 /// Compute Network::hash (network.h): the evaluation-function structure hash embedded in
 /// the file header, FeatureTransformer::get_hash_value xor
-/// NetworkArchitecture::get_hash_value.
+/// NetworkArchitecture::get_hash_value xor the layer-stack table's tag.
 pub fn networkHashValue() u32 {
-    return featureTransformerHashValue() ^ architectureHashValue();
+    return featureTransformerHashValue() ^ architectureHashValue() ^ layer_stack_table_hash;
 }
 
 /// Compute the eval-file identity hash (matches upstream): combine the byte hashes of

@@ -12,7 +12,45 @@ const std = @import("std");
 const page_alloc = @import("page_alloc");
 
 const layer_stacks_n = @import("nnue_dimensions").layer_stacks;
+const raw_layer_stacks = @import("nnue_dimensions").raw_layer_stacks;
 const layers_per_stack = 3;
+
+/// Map every layer-stack key onto a stack the net stores -- upstream's
+/// `layerStackFallback` / `layerStackIndex` / `storedLayerStacks` (SFNNv20). `fallback` is
+/// the file's own table, a key per key; a key that maps to itself is a stored stack, and
+/// `index` numbers the stored stacks in key order and sends every other key to its
+/// fallback's number. The parse builds and validates one (`network_parse`) and installs it
+/// with the loaded-net identity, once the whole file has parsed.
+pub const LayerStackTable = struct {
+    stored: usize,
+    fallback: [raw_layer_stacks]u16,
+    index: [raw_layer_stacks]u16,
+};
+
+var layer_stack_table: LayerStackTable = .{
+    .stored = 0,
+    .fallback = @splat(0),
+    .index = @splat(0),
+};
+
+pub fn setLayerStackTable(table: *const LayerStackTable) void {
+    layer_stack_table = table.*;
+}
+
+pub fn layerStackTable() *const LayerStackTable {
+    return &layer_stack_table;
+}
+
+/// Name the stored stack a key evaluates with.
+pub fn layerStackIndex(key: usize) usize {
+    return layer_stack_table.index[key];
+}
+
+/// Count the stacks the loaded net stores -- what the parse reads, the trace prints and the
+/// banner sizes.
+pub fn storedLayerStacks() usize {
+    return layer_stack_table.stored;
+}
 
 /// Track the loaded-net identity: the current EvalFile name, its description, and the
 /// initialized flag. The load path owns these.
@@ -126,8 +164,9 @@ pub fn layerStorage(bucket: usize, idx: usize, part: LayerPart, n: usize) ?[*]u8
         // Zero the arena once: page_alloc hands it out uninitialized, the parse writes
         // only the exact bias/weight part lengths, and alignPart opens padding gaps
         // between parts (fc_2's 4-byte biases in a 64-byte slot). The zero keeps the
-        // gap bytes deterministic. ~1.1 MB once, vs the ~106 MB FT arena the parse
-        // tiles gaplessly (comptime-asserted in nnue_parse) and needs no fill for.
+        // gap bytes deterministic. One fill at the first load, sized for every stack a net
+        // may store (upstream's `network[LayerStacks]` holds them all too), vs the FT arena
+        // the parse tiles gaplessly (comptime-asserted in nnue_parse) and needs no fill for.
         @memset(layer_arena.?[0 .. stack_stride * layer_stacks_n], 0);
     }
     return layer_arena.? + bucket * stack_stride + part_offsets[idx][@backingInt(part)];
