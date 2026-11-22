@@ -536,7 +536,7 @@ no longer depends on the bucket.
 `scale_evaluation`. It normalises the net value and `simpleEval` (the side to move's material
 balance, `208 * pawn difference + non-pawn difference`) each into [-1024, 1024] with
 `x * 1024 / (|x| + 1024)`, takes their product over 512 as the CORRELATION, and adds
-`nnue * correl / 65536 + optimism * correl / 16384` to the net value — agreement
+`(nnue + optimism) * correl / 65536` to the net value — agreement
 between the net and material favours the side that is winning, disagreement the one
 that is not. That sum `v` grows by `material * v / 90649`, with material
 `521 * pawns + non-pawn material` over both colours — the same integer as scaling by

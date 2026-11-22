@@ -72,7 +72,7 @@ pub fn scaleEvaluation(input: EvalInput) i32 {
     const correl = @divTrunc(se_norm * nnue_norm, 512);
 
     // When winning, boost easy positions, and vice versa.
-    var v = nnue + @divTrunc(nnue * correl, 65536) + @divTrunc(input.optimism * correl, 16384);
+    var v = nnue + @divTrunc((nnue + input.optimism) * correl, 65536);
 
     // Scale the combined evaluation by total material. `v * (90649 + material) / 90649` is the
     // same integer: material is never negative, so `v * material` shares v's sign and the
@@ -202,7 +202,7 @@ test "scaleEvaluation: alignment truncates toward zero like C++ int division" {
     input.pawn_count = .{ 8, 7 }; // white a pawn up, white to move: simple_eval = 208
     // se_norm = 208*1024/1232 = 172, nnue_norm = -300*1024/1324 = -232,
     // alignment = 172 * -232 / 512 = -77 (trunc, not -78),
-    // base = -300 + (-300*-77)/65536 + (-40*-77)/16384 = -300 + 0 + 0 = -300,
+    // base = -300 + (-300 + -40) * -77 / 65536 = -300 + 26180 / 65536 = -300 + 0 = -300,
     // v = -300 * (90649 + 521*15 + 13978) / 90649 = -300 * 112442 / 90649 = -372.
     try std.testing.expectEqual(@as(i32, -372), scaleEvaluation(input));
     input.side_to_move = 1; // the same board from black's view: simple_eval = -208
