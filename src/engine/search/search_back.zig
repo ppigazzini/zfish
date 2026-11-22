@@ -364,7 +364,7 @@ pub inline fn runBack(nd: anytype) i32 {
     if (move_count == 0) {
         best_value = if (nd.excluded_move != 0) alpha else if (nd.ss.in_check) qMatedIn(nd.ss.ply) else q_value_draw;
     } else if (best_move != 0) {
-        updateAllStats(nd.ctx.worker, nd.pos_ptr, nd.ss_ptr, best_move, nd.prev_sq, &quiets_searched, n_quiets, &captures_searched, n_captures, depth, nd.tt_move, @intFromBool(nd.pv_node));
+        updateAllStats(nd.ctx.worker, nd.pos_ptr, nd.ss_ptr, best_move, nd.prev_sq, &quiets_searched, n_quiets, &captures_searched, n_captures, depth, nd.tt_move);
         if (!nd.pv_node) ttMoveHistoryUpdate(nd.w, search.ttMoveHistoryMatchBonus(best_move == nd.tt_move));
     } else if (!nd.prior_capture and nd.prev_sq != @as(i32, sq_none)) {
         const psq: u8 = @intCast(nd.prev_sq);

@@ -264,7 +264,6 @@ pub fn updateAllStats(
     n_captures: usize,
     depth: i32,
     tt_move: u16,
-    pv_node: u8,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos = pos_ptr;
@@ -276,10 +275,11 @@ pub fn updateAllStats(
     var bonus = search.statBonus(depth, is_tt != 0, ss_prev.stat_score);
     const malus = search.statMalus(depth);
 
-    // upstream 645b636df: at non-PV nodes, scale the best-move bonus by the number of searched moves.
-    // Match upstream's `bonus += bonus * uint64_t(N) / 256` EXACTLY: the mul/div are UNSIGNED (int promoted
-    // to uint64_t), which differs from signed when bonus < 0; the u64 sum narrows back to i32.
-    if (pv_node == 0) {
+    // Scale the best-move bonus by the number of searched moves (upstream 645b636df), at PV
+    // nodes too since e7ab6d448. Match upstream's `bonus += bonus * uint64_t(N) / 256`
+    // EXACTLY: the mul/div are UNSIGNED (int promoted to uint64_t), which differs from signed
+    // when bonus < 0; the u64 sum narrows back to i32.
+    {
         const n: u64 = @intCast(n_quiets + n_captures);
         const bu: u64 = @bitCast(@as(i64, bonus));
         bonus = @bitCast(@as(u32, @truncate(bu +% ((bu *% n) / 256))));
