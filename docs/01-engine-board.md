@@ -424,7 +424,9 @@ to move attacks, by piece type through rook, and all of it in `threats[0]` — U
 marked by an empty `threats[0]`, and `movegen.threatsBy` fills them on first read
 (upstream's lazy `threats_by`, 6a9ec5c33): an empty total is never a real one, since the
 side not to move always has a king. A node that never generates a king move, tests one
-for legality or scores a quiet never pays for them.
+for legality or scores a quiet never pays for them -- and the generators ask only once the
+king has a target square to mask (upstream 6572ff80a), so a capture list whose king has
+nothing to take does not fill them either.
 
 ## Zobrist, repetition, FEN
 

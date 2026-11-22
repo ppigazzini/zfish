@@ -188,8 +188,11 @@ fn generateAll(
     }
 
     if (kind == .evasions) target = ~piecesColor(pos, us);
-    target &= ~threatsBy(pos, all_pieces);
-    splatMoves(writer, ksq, bitboard.attacks(king, ksq, 0) & target);
+    // Read the attacked set only when the king has a square to mask (upstream 6572ff80a):
+    // the read fills the threat sets on first use, so a king with no target skips the fill.
+    const king_targets = bitboard.attacks(king, ksq, 0) & target;
+    if (king_targets != 0)
+        splatMoves(writer, ksq, king_targets & ~threatsBy(pos, all_pieces));
 
     if (kind == .quiets and canCastleAny(pos, us)) {
         inline for (.{ kingSideRight(us), queenSideRight(us) }) |right| {
