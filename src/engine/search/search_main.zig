@@ -337,7 +337,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (cut_node and search.nullMoveEvalBonus(ss.static_eval, ss.prior_nmp_fail_high) >= search.nullMoveThreshold(beta, depth, improving) and
             excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and search.nullMoveBetaOk(beta))
         {
-            var r = search.nullMoveReduction(depth, ss.static_eval, beta, ctx.worker.thread_idx);
+            var r = search.nullMoveReduction(depth, ss.static_eval, beta, ss.ply, ctx.worker.thread_idx);
             // Halve the reduction while hunting a mate (upstream 513ce0752).
             r -= @divTrunc(@as(i32, @intFromBool(seek_mate)) * r, 2);
             // Touch no accumulator for null moves: call pos.do_null_move, mark the

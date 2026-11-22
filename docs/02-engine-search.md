@@ -227,7 +227,8 @@ child. It runs only on a cut-node whose static eval clears `nullMoveThreshold`, 
 excluded move, with non-pawn material for the side to move, at or above
 `ctx.nmp_min_ply`, and with `nullMoveBetaOk(beta)` — a flat `beta >= -2000` floor rather
 than the `!isLoss(beta)` test the other steps use. The stricter floor is load-bearing:
-`nullMoveReduction` scales `R` with how far the static eval clears beta, and without it
+`nullMoveReduction` scales `R` with how far the static eval clears beta — one ply per 256,
+capped at half the node's ply (upstream 3e8fde754) — and without it
 that deeper reduction costs mate finds when beta is already in decisive territory. An
 odd-numbered worker reduces one ply less, so Lazy SMP's helpers search different trees. While
 `seekMate` holds, `R` is halved after it is computed.

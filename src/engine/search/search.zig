@@ -286,12 +286,15 @@ pub fn nullMoveEvalBonus(static_eval: i32, prior_nmp_fail_high: i32) i32 {
 }
 
 /// Deepen the null-move reduction when the static eval already towers over beta:
-/// the more the position is winning, the less the null search needs to prove.
-/// C++ `(ss->staticEval - beta) / 256` truncates toward zero, so use @divTrunc;
-/// the clamp to 0 makes the two rounding directions agree anyway. An odd-numbered worker
-/// reduces one ply less (upstream 61c687178), so Lazy SMP's helpers diverge further.
-pub fn nullMoveReduction(depth: i32, static_eval: i32, beta: i32, thread_idx: usize) i32 {
-    return 7 + @divTrunc(depth, 3) + @max(@divTrunc(static_eval - beta, 256), 0) - @as(i32, @intCast(thread_idx & 1));
+/// the more the position is winning, the less the null search needs to prove -- but never
+/// by more than half the ply (upstream 3e8fde754), so a shallow node cannot hand the null
+/// search away. C++ `(ss->staticEval - beta) / 256` truncates toward zero, so use
+/// @divTrunc; the clamp to 0 makes the two rounding directions agree anyway. An
+/// odd-numbered worker reduces one ply less (upstream 61c687178), so Lazy SMP's helpers
+/// diverge further.
+pub fn nullMoveReduction(depth: i32, static_eval: i32, beta: i32, ply: i32, thread_idx: usize) i32 {
+    return 7 + @divTrunc(depth, 3) + std.math.clamp(@divTrunc(static_eval - beta, 256), 0, @divTrunc(ply, 2)) -
+        @as(i32, @intCast(thread_idx & 1));
 }
 
 /// Gate Step 10 on beta being outside the decisive range. This margin is stricter
@@ -408,21 +411,27 @@ test "toCorrectedStaticEval: correction is a >>17 add, then clamp" {
 // WHICH term moved, and cannot tell a transcription slip from an intended retune at all.
 test "nullMoveReduction: the excess is measured from beta and steps every 256" {
     // R = 7 + depth/3 + max((static_eval - beta) / 256, 0); depth 9 -> 7 + 3 = 10.
-    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 0, 0, 0));
-    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 255, 0, 0)); // under the step
-    try std.testing.expectEqual(@as(i32, 11), nullMoveReduction(9, 256, 0, 0)); // exactly one step
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 0, 0, 20, 0));
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 255, 0, 20, 0)); // under the step
+    try std.testing.expectEqual(@as(i32, 11), nullMoveReduction(9, 256, 0, 20, 0)); // exactly one step
 
     // The excess is relative to beta, not to zero: 700 - 100 = 600 -> +2.
-    try std.testing.expectEqual(@as(i32, 12), nullMoveReduction(9, 700, 100, 0));
+    try std.testing.expectEqual(@as(i32, 12), nullMoveReduction(9, 700, 100, 20, 0));
 
     // A static eval BELOW beta must never shorten R. @divTrunc would hand back a negative
     // term here, so the @max(.., 0) is what stops a losing node from being searched deeper
     // than an equal one.
-    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, -5000, 0, 0));
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, -5000, 0, 20, 0));
+
+    // The static-eval term stops at half the ply: 3000 over beta is 11 steps, but ply 6
+    // allows 3 and ply 7 allows 3 too (C++ int division), ply 0 none at all.
+    try std.testing.expectEqual(@as(i32, 13), nullMoveReduction(9, 3000, 0, 6, 0));
+    try std.testing.expectEqual(@as(i32, 13), nullMoveReduction(9, 3000, 0, 7, 0));
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 3000, 0, 0, 0));
 
     // An odd worker reduces one ply less; an even one, the main thread included, does not.
-    try std.testing.expectEqual(@as(i32, 9), nullMoveReduction(9, 0, 0, 1));
-    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 0, 0, 2));
+    try std.testing.expectEqual(@as(i32, 9), nullMoveReduction(9, 0, 0, 20, 1));
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 0, 0, 20, 2));
 }
 
 test "seekMate: the threshold falls with root depth, and the score is read by magnitude" {
