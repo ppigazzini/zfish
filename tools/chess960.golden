@@ -1,9 +1,9 @@
-search frc-start depth=18 score=cp 15 nodes=300084 bestmove=e2e4
-search frc-mid   depth=23 score=cp 18 nodes=300264 bestmove=c2c3
+search frc-start depth=19 score=cp 23 nodes=300124 bestmove=e2e4
+search frc-mid   depth=20 score=cp 7 nodes=300304 bestmove=c2c3
 castle-OO Fen: qbrnnkrb/pppppppp/8/8/8/8/PPPPPPPP/QBRNNRKB b g - 1 1
-castle-OO Key: 2261F8BCBD142D44
-eval frc-start Final evaluation      +0.19 (white side) [with scaled NNUE, ...]
-eval frc-mid   Final evaluation      +0.28 (white side) [with scaled NNUE, ...]
+castle-OO Key: 0529B030E9DCED11
+eval frc-start Final evaluation      +0.13 (white side) [with scaled NNUE, ...]
+eval frc-mid   Final evaluation      +0.21 (white side) [with scaled NNUE, ...]
 sloppy-castling opt-off Nodes searched: 8 e1c1=false
 sloppy-castling opt-on  Nodes searched: 8 e1c1=false
 dup-castling-token 0 Fen: 4k3/8/8/8/8/8/8/RR1K4 w B - 0 1
