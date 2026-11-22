@@ -202,7 +202,7 @@ pub inline fn runBack(nd: anytype) i32 {
                 lmr_depth += @divTrunc(history, search.lmrDivisor(depth));
                 const fv = search.quietFutilityValue(nd.ss.static_eval, lmr_depth, nd.ss.static_eval > alpha);
                 if (!nd.ss.in_check and lmr_depth < 12 and fv <= alpha) {
-                    if (best_value <= fv and !qIsDecisive(best_value) and !qIsWin(fv)) best_value = fv;
+                    if (best_value <= fv and !qIsWin(fv)) best_value = fv;
                     continue;
                 }
                 if (lmr_depth < 0) lmr_depth = 0;
