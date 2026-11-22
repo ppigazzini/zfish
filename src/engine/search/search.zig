@@ -112,20 +112,32 @@ pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
     return v;
 }
 
-/// Report whether the ROOT is already hunting a mate: the current PV line's score clears
-/// 750 + 220000 / root_depth^2, a curve that falls towards 750 as the iteration deepens
-/// (2950 at depth 10, 1609 at 16, 838 at 50). It replaced a step -- depth 16 or more and a
-/// score past 2000 -- that a line evaluated just under 2000 could sit below for every
-/// iteration (upstream a35e229e). The depth condition on Step 9 is what finds mates, so it is
-/// not tunable -- but the question it was asked to answer, "is this line worth searching
+/// Return the score a root line must clear to hunt a mate: 750 + 220000 / root_depth^2, a
+/// curve that falls towards 750 as the iteration deepens (2950 at depth 10, 1609 at 16, 838
+/// at 50). It replaced a step -- depth 16 or more and a score past 2000 -- that a line
+/// evaluated just under 2000 could sit below for every iteration (upstream a35e229e). Compute
+/// it once per iteration, as upstream does since 72d52bbec. Leave both constants alone when
+/// tuning: they buy mate finding, not strength.
+pub fn seekMateThreshold(root_depth: i32) i32 {
+    std.debug.assert(root_depth > 0);
+    return 750 + @divTrunc(220000, root_depth * root_depth);
+}
+
+/// Report whether the ROOT is already hunting a mate on a line: its PREVIOUS score clears
+/// `threshold` (`seekMateThreshold`). The depth condition on Step 9 is what finds mates, so it
+/// is not tunable -- but the question it was asked to answer, "is this line worth searching
 /// deep", is answered better at the root than per node. A LUT over abs(eval) + abs(beta) used
 /// to step the cutoff from 19 down to 13 (upstream fa8b6add); one root-level predicate that
 /// swaps 19 for 6 finds the same mates through a far smaller tree, and it is the same
 /// predicate that stops the singular extension re-searching a line the root has already
-/// resolved. Leave both constants alone when tuning: they buy mate finding, not strength.
-pub fn seekMate(root_depth: i32, root_move_score: i32) bool {
-    std.debug.assert(root_depth > 0);
-    return absInt(root_move_score) >= 750 + @divTrunc(220000, root_depth * root_depth);
+/// resolved.
+///
+/// Read the previous score, never the live one (upstream 72d52bbec, 2035dded2): a MultiPV
+/// line past the first carries -VALUE_INFINITE after every fail low, which cleared the
+/// threshold from depth 3 on, and on the first line the two are equal when this runs. A line
+/// with no score yet never hunts a mate.
+pub fn seekMate(threshold: i32, previous_score: i32) bool {
+    return previous_score != -value_inf and absInt(previous_score) >= threshold;
 }
 
 fn absInt(v: i32) i32 {
@@ -418,28 +430,28 @@ test "nullMoveReduction: the excess is measured from beta and steps every 256" {
 test "seekMate: the threshold falls with root depth, and the score is read by magnitude" {
     // The curve upstream's commit message quotes, each point read either side of it:
     // 750 + 220000 / d^2 at d = 10, 16, 20, 50.
-    try std.testing.expect(seekMate(10, 2950));
-    try std.testing.expect(!seekMate(10, 2949));
-    try std.testing.expect(seekMate(16, 1609));
-    try std.testing.expect(!seekMate(16, 1608));
-    try std.testing.expect(seekMate(20, 1300));
-    try std.testing.expect(!seekMate(20, 1299));
-    try std.testing.expect(seekMate(50, 838));
-    try std.testing.expect(!seekMate(50, 837));
+    try std.testing.expect(seekMate(seekMateThreshold(10), 2950));
+    try std.testing.expect(!seekMate(seekMateThreshold(10), 2949));
+    try std.testing.expect(seekMate(seekMateThreshold(16), 1609));
+    try std.testing.expect(!seekMate(seekMateThreshold(16), 1608));
+    try std.testing.expect(seekMate(seekMateThreshold(20), 1300));
+    try std.testing.expect(!seekMate(seekMateThreshold(20), 1299));
+    try std.testing.expect(seekMate(seekMateThreshold(50), 838));
+    try std.testing.expect(!seekMate(seekMateThreshold(50), 837));
 
     // The division truncates: 220000 / 49 is 4489.79, so depth 7 asks for 5239, not 5240.
-    try std.testing.expect(seekMate(7, 5239));
-    try std.testing.expect(!seekMate(7, 5238));
+    try std.testing.expectEqual(@as(i32, 5239), seekMateThreshold(7));
 
     // A root move being MATED counts the same as mating: the sign must not matter.
-    try std.testing.expect(seekMate(16, -1609));
-    try std.testing.expectEqual(seekMate(20, 3000), seekMate(20, -3000));
+    try std.testing.expect(seekMate(seekMateThreshold(16), -1609));
+    try std.testing.expectEqual(seekMate(1300, 3000), seekMate(1300, -3000));
 
-    // A root move that has no score yet (-VALUE_INFINITE, 32001) reads as a mate hunt once
-    // the threshold drops under it -- from depth 3 (25194), never at 2 (55750). That is
-    // upstream's behaviour: the PV line is scored by the iteration before.
-    try std.testing.expect(!seekMate(2, -value_inf));
-    try std.testing.expect(seekMate(3, -value_inf));
+    // A line with no score yet (-VALUE_INFINITE, 32001) never hunts a mate, though from
+    // depth 3 (25194) the threshold sits under its magnitude: a MultiPV line carries that
+    // score after every fail low (upstream 72d52bbec).
+    try std.testing.expect(seekMateThreshold(3) < value_inf);
+    try std.testing.expect(!seekMate(seekMateThreshold(3), -value_inf));
+    try std.testing.expect(seekMate(seekMateThreshold(3), value_inf - 1));
 
     // The two cutoffs Step 9 chooses between.
     try std.testing.expectEqual(@as(i32, 19), futilityDepth(false));

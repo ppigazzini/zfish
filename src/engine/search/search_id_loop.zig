@@ -141,6 +141,9 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     {
         id.root_depth.* += 1;
 
+        // Leave it alone when tuning: it buys mate finding, not strength.
+        const seek_mate_threshold = search.seekMateThreshold(id.root_depth.*);
+
         if (main_thread) {
             tot_best_move_changes /= 2;
             uci_pv_sent = false;
@@ -190,7 +193,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
             // Ask once per root line, not per node, whether this line is hunting a mate
             // (upstream 513ce0752): the answer holds through every aspiration re-search.
-            ctx.seek_mate = search.seekMate(id.root_depth.*, id.root_moves[id.pv_idx.*].score);
+            ctx.seek_mate = search.seekMate(seek_mate_threshold, id.root_moves[id.pv_idx.*].previous_score);
 
             id.optimism[us] = search.optimism(avg);
             id.optimism[us ^ 1] = -id.optimism[us];

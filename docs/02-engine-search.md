@@ -203,10 +203,13 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 | 22–24 | Record a new best move; resolve mate/stalemate and the fail-high bookkeeping; write the entry to the TT |
 
 **`seekMate`** is the one predicate read from the ROOT rather than from the node. The
-iterative-deepening loop asks `search.seekMate(root_depth, root_moves[pv_idx].score)` once
-per root line, before its aspiration searches, and leaves the answer in `QCtx.seek_mate`,
-so every re-search of the line reads the same value however the root move's score moves
-in between. It holds once the line scores past `750 + 220000 / root_depth²` — a curve
+iterative-deepening loop asks `search.seekMate(threshold, root_moves[pv_idx].previous_score)`
+once per root line, before its aspiration searches, and leaves the answer in
+`QCtx.seek_mate`, so every re-search of the line reads the same value however the root
+move's score moves in between. It reads the PREVIOUS score because a MultiPV line past the
+first carries `-VALUE_INFINITE` after a fail low, and that value never seeks a mate. It
+holds once the line scored past `search.seekMateThreshold`, `750 + 220000 / root_depth²`,
+computed once per iteration — a curve
 that falls from 2950 at depth 10 through 1609 at 16 towards 750, so a decisive win or a
 mate, in either direction, triggers it sooner the deeper the root has gone. It replaced a
 step (depth 16 and a flat 2000) that a line evaluated just under 2000 could sit beneath
