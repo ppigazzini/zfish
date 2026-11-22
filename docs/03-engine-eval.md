@@ -19,20 +19,20 @@ for the same position.
 | `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |
 | `nnue_hash.zig` | the net-identity hashes: `hashBytes` (MurmurHash2-64A), the feature-transformer / architecture / network hash values, and the content hashes |
 | **feature transformer** | |
-| `nnue_feature.zig` | the FullThreats feature set and K32Q2 indexing: `halfMakeIndex`, `fullMakeIndex`, the changed/active index lists (including the both-perspectives producer), and the refresh predicates; re-exports the PP_3Wide surface |
+| `nnue_feature.zig` | the FullThreats feature set and K32H3 indexing: `halfMakeIndex`, `halfBlock`, `fullMakeIndex`, the changed/active index lists (including the both-perspectives producer), and the refresh predicates; re-exports the PP_3Wide surface |
 | `nnue_feature_pp.zig` | the PP_3Wide (pawn-pair) feature set: `ppMakeIndex`, its active/changed producers, and the both-perspectives topology walk |
-| `nnue_feature_write_avx512.zig` | `writeIndices` — the AVX512VBMI+VBMI2 vector fast path for the refresh-time K32Q2 removed/added index write |
+| `nnue_feature_write_avx512.zig` | `writeIndices` — the AVX512VBMI+VBMI2 vector fast path for the refresh-time K32H3 removed/added index write |
 | `nnue_feature_bb.zig` | the bitboard/attack math and comptime index tables `nnue_feature.zig` builds on |
-| `nnue_feature_luts.zig` | the full-threat feature set's threat-index lookup tables — `threat_lut1` (flat, indexed by the record's attacker/attacked byte) and `threat_lut2` (one u16 plane per attacker piece type), both built in one comptime pass whose plane walk also yields each piece type's feature count, and the piece/square constants they share |
+| `nnue_feature_luts.zig` | the full-threat feature set's threat-index lookup tables — `threat_lut1` (flat, indexed by the record's attacker/attacked byte) and `threat_lut2` (one u16 plane per attacker piece type), both built in one comptime pass whose plane walk also yields each piece type's feature count; the K32H3 `king_buckets` and `half_offsets`; the one orientation table (`orient_tbl`) all three feature sets read; and the piece/square constants they share |
 | `nnue_ft.zig` | the two typed `FeatureTransformer` weight accessors (psq, threat + pawn-pair), over the byte offsets `nnue_dimensions.zig` owns — it derives none of its own |
 | **accumulator** | |
-| `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the `AccumulatorStack` handle, and every state/diff accessor |
+| `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the per-slot K32H3 block record, the `AccumulatorStack` handle, every state/diff accessor, and `findLastUsable` |
 | `nnue_acc_update.zig` | the update algorithm: `evaluateSide`, the refresh path, and the fused incremental step |
 | `nnue_acc_entry.zig` | the two steps that start from a refresh-cache ENTRY: the entry diff both of them share, and `updateHybrid`, the same-half king move |
 | `nnue_acc_both.zig` | `applyCombinedBoth` — one ply taken for BOTH perspectives, decoding each diff once |
 | `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `applyRefreshFused` and `applyHybridDelta` — all of them expressed through one sign-comptime int8 row applier, `tileRows` (upstream's `apply_psq_features`/`apply_threat_features` over `apply_feature_single`), except on the SSSE3 tier, where they pair their rows instead (`WeightRows`, below) |
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
-| `nnue_refresh_cache.zig` | the per-(opponent-queen state, king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
+| `nnue_refresh_cache.zig` | the per-(K32H3 block, king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
 | `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 tiers that also carry VBMI2, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
 | `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`), `transform` and its per-perspective half `transformPerspective` — the clipped-ReLU transform, which writes the NNZ record as it packs |
 | **inference** | |
@@ -133,11 +133,26 @@ The net has **three feature sets**. Their dimensions are pinned in
 
 | Feature set | Dimensions | Index | Weights |
 | --- | --- | --- | --- |
-| PSQ (K32Q2: 32 own-king buckets × opponent-queen presence, horizontally mirrored) | `psq_feature_dimensions = 45056` | `halfMakeIndex` — `square ^ half_offsets[(queen * 2 + perspective) * 64 + ksq][pc]`, one comptime row holding orientation + `piece_square_index` + `king_buckets` + `queen_offset` | `i8` |
+| PSQ (K32H3: 3 piece-square blocks × 32 own-king buckets, horizontally mirrored) | `psq_feature_dimensions = 67584` (`psq_blocks` × `psq_block_dimensions = 22528`) | `halfMakeIndex` — `square ^ half_offsets[perspective * 64 + ksq][pc]`, one comptime row holding orientation + `piece_square_index` + `king_buckets`; the index is relative to its block | `i8` |
 | Threats (full threats: attacker × attacked × from × to) | `threat_dimensions = 59808` | `fullMakeIndex` — LUT over the oriented attacker/attacked pair and move | `i8` |
 | Pawn pairs (PP_3Wide: pairs of pawns on the same or an adjacent file, ranks 2–7) | `pp_dimensions = 4560` | `ppMakeIndex` — triangular index of the two oriented pawn ids, base `pp_index_base = 59808` | `i8` |
 
-Together they are the net's 109424 input dimensions (`network.verify`). The threat and
+**K32H3's block** is a property of the board and the perspective, not of the square
+(`nnue_feature.halfBlock`, upstream SFNNv19): 2 while the perspective's opponent has a
+queen, else 1 while any rook or queen is on the board, else 0. The weights are stored
+block-major — each block one contiguous run of `32 × 704` rows — so the index leaves the
+block out and the block picks the run: `nnue_ft.featureTransformerPsqWeights(ft, block)`,
+upstream's `psq_weights(block)`. Every psq kernel takes that block's base pointer, and
+because no index spans blocks the `u16` index lists stay lossless even though the whole
+feature count is past 65536 (`nnue_acc_layout` pins it on the block size).
+
+All three sets read **one orientation table** (`nnue_feature_luts.orient_tbl`, upstream's
+`OrientTBL`): a king on files a–d is mirrored onto e–h. Before SFNNv19 the threat and
+pawn-pair sets mirrored the other way round — a king on a–d kept its orientation — so
+that change moves every threat and pair index of a king on either half, and no index
+formula shows it.
+
+Together they are the net's 131952 input dimensions (`network.verify`). The threat and
 pawn-pair sets are **concatenated** — pawn-pair indices continue past the last threat
 index (`pp_index_base == threat_dimensions`) — so they share one weight region and one
 changed/active index list. `nnue_dimensions.zig` owns all three cardinalities and
@@ -206,12 +221,14 @@ divides it by `output_scale = 16` before returning.
 `AccumulatorStack` (`nnue_acc_layout.zig`) is a raw, 64-aligned byte arena embedded
 in each `Worker` — one state per ply, `max_stack_size = 247`. A state holds both
 perspectives' `i16` accumulation, a per-perspective `computed` flag, and the ply's diff
-records. There is **one combined accumulator** (K32Q2 +
+records. There is **one combined accumulator** (K32H3 +
 Threats + PawnPairs summed), living in the `psq_feature` storage slot.
 
 The search drives it from `src/engine/search/search_acc.zig`: `doMoveAcc` calls
-`stackPush` to claim the next slot and hands its `DirtyPiece` / `DirtyThreats`
-records to `doMove`, which records the move's changed features while making it
+`stackPush(stack, pos)` to claim the next slot — which also records each perspective's
+K32H3 block as the board stands BEFORE the move, two bytes in the padding behind the psq
+diff (upstream's `push(pos)` and `blockBefore`) — and hands its `DirtyPiece` /
+`DirtyThreats` records to `doMove`, which records the move's changed features while making it
 (`DirtyThreats` also carries the before/after pawn bitboards the pawn-pair set diffs);
 `undoMoveAcc` calls `stackPop`. Nothing is computed on the way down — states are
 pushed uncomputed, and `evaluateAcc` triggers the work only when a node actually
@@ -227,8 +244,8 @@ side up alone, then take that common suffix once (`nnue_acc_both.zig`,
 `applyCombinedBoth`). What is shared is what does not depend on the perspective: the
 dirty-threat records with their add/remove routing, and the pawn-pair topology — which
 squares changed, which partners each pairs with, in what order. What stays
-per-perspective is the orientation every index is read under, the K32Q2 indices, and the
-accumulator arithmetic. Each list ends up holding exactly what its own separate walk
+per-perspective is the orientation every index is read under, the K32H3 indices and
+block, and the accumulator arithmetic. Each list ends up holding exactly what its own separate walk
 produced, in the same order.
 
 Two details make that work. The threat routing bit is shared because bit 31 of a route
@@ -241,12 +258,15 @@ Otherwise `evaluateSide` runs once per perspective. `evaluate` has already calle
 `findLastUsable` (`nnue_acc_layout.zig`) once per perspective and passes the index in; it
 walks back from the top of the stack for the nearest state that is either already computed
 or requires a refresh. It tests **only** the PSQ refresh
-condition (the moved piece is that perspective's king, or an opponent queen was captured
-or promoted to — `nnue_feature.halfRequiresRefresh`), because a threat refresh — the king
-crossing the board's centre file — is a strict subset of it, so the combined accumulator
-always refreshes as a unit. Every walk then reads the king square and the opponent-queen
-state off the live position: no ply it crosses can have changed either, since such a ply
-is exactly where the walk stops.
+condition (the moved piece is that perspective's king, or the block the slot recorded
+before its ply is not the live block — `nnue_feature.halfRequiresRefresh`), because a
+threat refresh — the king crossing the board's centre file — is a strict subset of it, so
+the combined accumulator always refreshes as a unit. Every slot is judged against the
+LIVE block rather than the block of the slot above it (upstream `4d829bf8a`): a slot the
+walk passes kept its block, so every slot it reaches was left in the live one, and the
+two tests stop on the same slot. Every walk then reads the king square and the block off
+the live position: no ply it crosses can have changed either, since such a ply is
+exactly where the walk stops.
 
 ```mermaid
 flowchart TD
@@ -261,14 +281,14 @@ flowchart TD
     F --> G
 ```
 
-**Hybrid.** A king move rebuckets every K32Q2 index, so it would normally force a full
+**Hybrid.** A king move rebuckets every K32H3 index, so it would normally force a full
 refresh — but the threat and pawn-pair orientation depends only on which **half** of the
 board the king stands on. A king move that stays on its half therefore keeps that whole
-accumulation, and only the K32Q2 half has to change buckets. Both buckets are reachable
-from the refresh cache under the queen state the move kept, so the step is
+accumulation, and only the K32H3 half has to change buckets. Both buckets are reachable
+from the refresh cache under the block the move kept, so the step is
 
 ```
-target = computed − <old-bucket K32Q2> + <new-bucket K32Q2> + <this ply's threat/pp delta>
+target = computed − <old-bucket K32H3> + <new-bucket K32H3> + <this ply's threat/pp delta>
 ```
 
 `nnue_acc_entry.zig` owns it (`updateHybrid`), together with the entry diff that the
@@ -277,21 +297,22 @@ exists nowhere: the step reconstructs it by undoing the king move on a copy of t
 array — the only board the accumulator builds rather than reads, and the reason the step
 is bounded below by `hybridApplicable`'s `min_pc_count_hybrid = 15` pieces. Below that, summing the threat and
 pair features outright beats reconstructing the source bucket. Castling is excluded
-because it relocates a rook as well, and so is a king that takes the opponent's queen:
-that changes the queen state, and `computed` was accumulated under the other one.
-Upstream tests the captured-piece byte alone, which a quiet king move leaves stale;
-`hybridApplicable` reads it only behind the capture square, which can change which route
-runs on such a byte but never the accumulator either route computes.
+because it relocates a rook as well, and so is a king move whose capture changes the
+perspective's block — the last rook, or the opponent's only queen: `computed` was
+accumulated in the other block's rows. `hybridApplicable` tests that as upstream does,
+the block the slot recorded before the move against the live one, so it reads no
+captured-piece byte at all.
 
 `hybridApplicable`'s conditions are not all the same kind, and the bench separates
 most of them. Dropping the same-half test **moves the node count**; so does allowing
 castling — both are correctness conditions, and the step computes a different accumulator
 without them. Dropping the piece-count bound leaves the count **unchanged**: that one is
-purely the cost threshold it is described as. Dropping the queen-capture guard ALSO leaves
+purely the cost threshold it is described as. Dropping the block guard ALSO leaves
 the count unchanged, and that one is a correctness condition the bench cannot reach: no
-bench position has a king take a queen with fifteen pieces left. `headless_search.zig`'s
-*"an opponent-queen change evaluates incrementally as it does rebuilt"* test is what
-fails without it, alongside the capture and promotion terms of the refresh predicate.
+bench position has a king change its block by a capture with fifteen pieces left.
+`headless_search.zig`'s *"a K32H3 block change evaluates incrementally as it does
+rebuilt"* test is what fails without it. Dropping the block term of the refresh predicate
+is not blind — the bench moves, and that test fails with it.
 Re-derive this rather than trusting it — mutate the predicate and run `zig build signature`
 and `zig build test`.
 
@@ -409,27 +430,27 @@ value, dodging an LLVM 22 miscompile of the per-row subtract
 ([08-idiomatic-zig.md](08-idiomatic-zig.md)).
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
-(`nnue_refresh_cache.zig`) holds one entry per (opponent-queen state, king square,
-perspective) — upstream's `cache[opponentHasQueen][ksq][perspective]` — the
+(`nnue_refresh_cache.zig`) holds one entry per (K32H3 block, king square,
+perspective) — upstream's `cache[psqBlock][ksq][perspective]` — the
 accumulation and the board (plus its occupancy bitboard) that produced it. `refreshCombined` diffs the entry's stored board against the current
 one with two 32-byte vector compares into a changed-square bitboard, splits it into
-removed/added K32Q2 rows by the cached and current occupancy (upstream's
+removed/added K32H3 rows by the cached and current occupancy (upstream's
 `get_changed_pieces` shape). At `nnue_feature.use_avx512_nnue_feature` (AVX512VBMI +
 AVX512VBMI2 — `nnue_feature_write_avx512.zig`) both removed/added index lists are
-written in one vector pass, as upstream's `K32Q2::write_indices` does: since
-`piece_square_index`, `king_buckets` and the queen offset are all multiples of 64 while
+written in one vector pass, as upstream's `K32H3::write_indices` does: since
+`piece_square_index` and `king_buckets` are multiples of 64 while
 `orient` and the square only ever use the low 6 bits, no carry crosses bit 6, so
-`(square ^ orient) + psi[pc] + bucket + queen == square ^ (psi[pc] + bucket + queen + orient)` —
+`(square ^ orient) + psi[pc] + bucket == square ^ (psi[pc] + bucket + orient)` —
 `compress` packs the changed squares/pieces into 32-lane vectors, a 16-bit
-`permutexvar` gathers each active feature's `psi[pc] + bucket + queen + orient` from a
+`permutexvar` gathers each active feature's `psi[pc] + bucket + orient` from a
 per-piece table built once per call, and one XOR against the compressed squares
 produces every index at once. Below that tier, the scalar loop calls
 `halfMakeIndex` per changed square, upstream's own non-vector path — which since upstream
 `bf450596` rests on the same identity: `nnue_feature_luts.half_offsets` holds
-`psi[pc] + bucket + queen + orient` for every (queen state, perspective, king square,
-piece) at comptime, so a
+`psi[pc] + bucket + orient` for every (perspective, king square, piece) at comptime, so a
 scalar index is one XOR and one load, and a comptime check refuses any entry whose low six
-bits are not the orientation. `refreshCombined`
+bits are not the orientation, or that leaves its block. Both paths produce an index
+relative to the block; the entry's block picks the rows. `refreshCombined`
 then collects every active threat row (`fullAppendActive`,
 with each attacker's targets pre-restricted to the piece types its map row can
 index — upstream's `pawnTargets`/`minorSliderTargets`/`queenTargets`) plus every
@@ -444,11 +465,12 @@ feature-transformer biases — the empty-board accumulator — and is called at 
 construction.
 
 A refresh happens when `findLastUsable` reaches a state that is not computed: either
-the bottom of the stack, or a ply whose diff says this perspective's king moved or an
-opponent queen was captured or promoted to (K32Q2 is keyed on both, so every index
-changes) — `nnue_feature.halfRequiresRefresh`, which `nnue_acc_layout.psqRequiresRefresh`
-calls rather than restating. A capture of one of two opponent queens refreshes too: the
-predicate reads the diff, not the board.
+the bottom of the stack, or a ply that moved this perspective's king or changed its block
+(K32H3 is keyed on both: the king square re-indexes every feature, the block moves every
+row) — `nnue_feature.halfRequiresRefresh`, which `nnue_acc_layout.psqRequiresRefresh`
+calls rather than restating. The predicate reads the block the slot recorded, never the
+diff's captured or promoted piece, so a capture of one of two opponent queens does not
+refresh: the block is still 2.
 
 ## Inference
 

@@ -68,12 +68,13 @@ fn combineHash(comptime hashes: []const u32) u32 {
 }
 
 /// Compute FeatureTransformer::get_hash_value: combine the feature-set hashes, xor the
-/// transformed dimensions. ThreatFeatureSet=full_threats (SFNNv16: 0x2e6b9d04),
-/// PairFeatureSet=pp_3wide (0x86f2b1dd), PSQFeatureSet=k32q2 (SFNNv18: 0x32b5e284),
-/// OutputDimensions=HalfDimensions=1024. Combine order matches upstream:
+/// transformed dimensions. ThreatFeatureSet=full_threats (SFNNv19: 0x2c41eaea),
+/// PairFeatureSet=pp_3wide (SFNNv19: 0x5c80fa69), PSQFeatureSet=k32h3 (SFNNv19: 0xab005cef),
+/// OutputDimensions=HalfDimensions=1024. SFNNv19 moved all three: K32H3 is a new feature set,
+/// and the threat and pair sets changed orientation. Combine order matches upstream:
 /// {threat, pair, psq}.
 pub fn featureTransformerHashValue() u32 {
-    return combineHash(&.{ 0x2e6b9d04, 0x86f2b1dd, 0x32b5e284 }) ^ (@as(u32, nnue_dims.half_dimensions) * 2);
+    return combineHash(&.{ 0x2c41eaea, 0x5c80fa69, 0xab005cef }) ^ (@as(u32, nnue_dims.half_dimensions) * 2);
 }
 
 /// Compute FeatureTransformer::get_content_hash. The raw-data hashes run in member-value

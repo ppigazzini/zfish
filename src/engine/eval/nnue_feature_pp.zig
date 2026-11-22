@@ -12,7 +12,7 @@ const nnue_feature_bb = @import("nnue_feature_bb.zig");
 const squareBb = nnue_feature_bb.squareBb;
 
 const luts = @import("nnue_feature_luts.zig");
-const orient_tbl_full = luts.orient_tbl_full;
+const orient_tbl = luts.orient_tbl;
 const pp_index_base = luts.pp_index_base;
 const pawn_pair_bb = luts.pawn_pair_bb;
 const white = luts.white;
@@ -28,7 +28,7 @@ fn makePawnId(color: u32, square: u32) u32 {
 
 /// PP_3Wide::make_index -- the triangular index of the unordered pawn-id pair, plus the base.
 pub fn ppMakeIndex(perspective: u8, color: u8, from: u8, to: u8, paired_color: u8, king_square: u8) u32 {
-    const orientation: u8 = @as(u8, @bitCast(orient_tbl_full[king_square])) ^ (56 *% @as(u8, perspective));
+    const orientation: u8 = orient_tbl[king_square] ^ (56 *% @as(u8, perspective));
     const from_o: u32 = @as(u32, from ^ orientation);
     const to_o: u32 = @as(u32, to ^ orientation);
     const color_o: u32 = color ^ perspective;

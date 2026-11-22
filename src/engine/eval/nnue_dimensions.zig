@@ -53,11 +53,15 @@ comptime {
 // ---- the blob layout those cardinalities determine ---------------------------
 
 /// Size the transformer's own arrays. `half_dimensions` is upstream's
-/// TransformedFeatureDimensions and `psq_feature_dimensions` is K32Q2::Dimensions: 32
-/// own-king buckets x 2 opponent-queen states x 704 piece-squares (SFNNv18). SFNNv17
-/// dropped the PSQTBuckets output, so no array here is sized by a bucket count.
+/// TransformedFeatureDimensions and `psq_feature_dimensions` is K32H3::Dimensions: three
+/// piece-square blocks (SFNNv19), each 32 own-king buckets x 704 piece-squares and stored
+/// contiguously, block-major -- a K32H3 index is relative to its block, and the block picks
+/// which run of rows it addresses. SFNNv17 dropped the PSQTBuckets output, so no array here
+/// is sized by a bucket count.
 pub const half_dimensions: usize = 1024;
-pub const psq_feature_dimensions: usize = 32 * 2 * 11 * 64;
+pub const psq_blocks: usize = 3;
+pub const psq_block_dimensions: usize = 32 * 11 * 64;
+pub const psq_feature_dimensions: usize = psq_blocks * psq_block_dimensions;
 
 /// Count the layer stacks above the transformer (upstream LayerStacks). SFNNv18 selects
 /// one by piece count AND queen presence, `(piece_count - 1) / 4 * 4 + queen_bucket`, so
@@ -89,6 +93,10 @@ pub const pp_only_weights_count = half_dimensions * pp_dimensions; // i8
 /// weights(psq), threatAndPpWeights.
 pub const biases_off = 0;
 pub const weights_off = roundUp(biases_count * 2, cache_line_bytes);
+/// Byte distance between two psq blocks' first rows -- upstream's `psq_weights(block)`
+/// steps `block_offset(block) * HalfDimensions` i8 rows. A multiple of the cache line, so
+/// every block keeps the region's alignment.
+pub const psq_block_weights_bytes = half_dimensions * psq_block_dimensions * 1;
 pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 1, cache_line_bytes);
 pub const ft_total_bytes = roundUp(threat_weights_off + threat_weights_count * 1, cache_line_bytes);
 /// Byte offset of the pp sub-region within the concatenated threat region.
@@ -102,6 +110,9 @@ comptime {
     std.debug.assert(weights_off == biases_off + biases_count * 2);
     std.debug.assert(threat_weights_off == weights_off + psq_weights_count * 1);
     std.debug.assert(ft_total_bytes == threat_weights_off + threat_weights_count * 1);
+    // Each psq block starts on a cache line, so the block-weight pointer keeps the
+    // region's align(64) type.
+    std.debug.assert(psq_block_weights_bytes % cache_line_bytes == 0);
 }
 
 // ---- tests ------------------------------------------------------------------

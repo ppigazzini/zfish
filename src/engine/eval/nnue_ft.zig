@@ -1,7 +1,7 @@
 // Reach into the NNUE feature-transformer weight blob.
 //
 // Hold the typed accessors that hand back [*]const pointers to each weight region
-// (psq and threat, both i8 since SFNNv18). Split out of nnue_accumulator.zig; pointer casts over the byte
+// (psq, per K32H3 block, and threat, both i8 since SFNNv18). Split out of nnue_accumulator.zig; pointer casts over the byte
 // offsets, std-free. The offsets themselves are NOT computed here: nnue_dimensions owns
 // the layout, and nnue_parse WRITES each region at those same declarations, so this
 // reads back exactly where the parse wrote. The accumulator core imports this and
@@ -30,9 +30,12 @@ pub const FeatureTransformer = opaque {};
 /// with an align(1) weight pointer, non-VEX SSE cannot fold a weight load into the
 /// consuming op's m128 operand (folding requires provable 16-byte alignment), which
 /// costs one extra movdqu per 16 weight bytes on the sse41 tier.
-pub fn featureTransformerPsqWeights(feature_transformer: *const FeatureTransformer) [*]align(nnue_align) const i8 {
+///
+/// The psq rows are addressed per K32H3 block -- upstream's `psq_weights(block)`: an index
+/// is relative to its block, so the block picks the run of rows the index lands in.
+pub fn featureTransformerPsqWeights(feature_transformer: *const FeatureTransformer, block: u8) [*]align(nnue_align) const i8 {
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
-    return @ptrCast(@alignCast(bytes + feature_transformer_weights_offset));
+    return @ptrCast(@alignCast(bytes + feature_transformer_weights_offset + @as(usize, block) * dims.psq_block_weights_bytes));
 }
 
 pub fn featureTransformerThreatWeights(feature_transformer: *const FeatureTransformer) [*]align(nnue_align) const i8 {

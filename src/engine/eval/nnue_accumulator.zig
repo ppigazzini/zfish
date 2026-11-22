@@ -94,7 +94,6 @@ const stackSize = layout.stackSize;
 pub const setStackSize = layout.setStackSize;
 const stateComputed = layout.stateComputed;
 const clearComputed = layout.clearComputed;
-const stateRequiresRefresh = layout.stateRequiresRefresh;
 const stateOffset = layout.stateOffset;
 const diffOffset = layout.diffOffset;
 const stateBytesConst = layout.stateBytesConst;
@@ -129,7 +128,7 @@ pub fn evaluate(
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
-    // Match upstream AccumulatorStack::evaluate: one combined (K32Q2 + Threats) pass per
+    // Match upstream AccumulatorStack::evaluate: one combined (K32H3 + Threats) pass per
     // perspective, not one per (feature, perspective) -- and when NEITHER perspective
     // needs a refresh, one pass for both, sharing the common suffix. The combined
     // accumulator lives in the psq_feature storage slot.
@@ -185,7 +184,7 @@ pub fn transform(
 ) void {
     evaluate(stack, pos, feature_transformer, cache);
 
-    // Read the single combined (K32Q2 + Threats) accumulator from the psq_feature slot.
+    // Read the single combined (K32H3 + Threats) accumulator from the psq_feature slot.
     // Carry the state's 64-byte alignment (arena base + nnue_align'd strides, pinned by
     // nnue_acc_layout's comptime asserts) in the type: non-VEX SSE folds the accumulator
     // loads into pminsw's m128 operand only when 16-byte alignment is provable.
@@ -396,12 +395,17 @@ pub fn stackReset(stack: *AccumulatorStack) void {
     setStackSize(bytes, 1);
 }
 
-pub fn stackPush(stack: *AccumulatorStack) StackPushOutput {
+/// Claim the next slot for a ply about to be made on `pos` -- upstream's
+/// `AccumulatorStack::push(pos)`. The position is read BEFORE the make: the slot records
+/// each perspective's K32H3 block as it stands now, which is what the walk compares the
+/// live block against to find where the block changed.
+pub fn stackPush(stack: *AccumulatorStack, pos: *const Position) StackPushOutput {
     const bytes = stackBytesMut(stack);
     const index = stackSize(stack);
     std.debug.assert(index < max_stack_size);
 
     clearComputed(bytes, psq_feature, index);
+    layout.setBlockBefore(bytes, index, pos);
     // threat_feature computed is write-only dead (see stackReset) -- no clear, no region.
 
     const dirty_threats: *ThreatDiffView = @ptrCast(@alignCast(diffBytesMut(threat_feature, index, stack)));

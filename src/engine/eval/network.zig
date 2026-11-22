@@ -25,7 +25,7 @@ const none_name = "None";
 /// Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
 /// constant. Keep a single source of truth: engine.zig imports this via the
 /// "network" module rather than re-declaring it (a net bump edits one line).
-pub const default_eval_file_name = "nn-c9e480e92425.nnue";
+pub const default_eval_file_name = "nn-d1ee674a62ca.nnue";
 
 /// Size one layer stack the way C++ lays out upstream's `NetworkArchitecture`, which is what
 /// the verify banner multiplies by LayerStacks: every affine layer is an alignas(64) bias

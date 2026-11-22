@@ -373,8 +373,8 @@ test "weightIndexScrambled's pair interleave matches the upstream ScrambledInput
 test "feature transformer layout offsets match the FeatureTransformer format" {
     try testing.expectEqual(@as(usize, 0), biases_off);
     try testing.expectEqual(@as(usize, 2048), weights_off);
-    try testing.expectEqual(@as(usize, 46139392), threat_weights_off);
-    try testing.expectEqual(@as(usize, 112052224), ft_total_bytes);
+    try testing.expectEqual(@as(usize, 69208064), threat_weights_off);
+    try testing.expectEqual(@as(usize, 135120896), ft_total_bytes);
 }
 
 test "parseFeatureTransformer rejects a blob that ends inside a section" {

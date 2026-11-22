@@ -112,7 +112,7 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     // NOT an atomic read-modify-write, which would put a lock-prefixed op on the hottest counter
     // in the engine.
     @atomicStore(u64, ctx.nodes, @atomicLoad(u64, ctx.nodes, .monotonic) +% 1, .monotonic);
-    const out = nnue_acc.stackPush(ctx.acc_stack);
+    const out = nnue_acc.stackPush(ctx.acc_stack, pos_ptr);
     // The real search make: pass a PrefetchBank so doMove issues the correction and
     // pawn-history prefetches from inside the make (move_do.issuePrefetches).
     const bank = move_do.PrefetchBank{

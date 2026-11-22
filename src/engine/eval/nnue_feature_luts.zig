@@ -106,13 +106,11 @@ pub const piece_square_index = [2][16]u32{
     .{ 0, 64, 192, 320, 448, 576, 640, 0, 0, 0, 128, 256, 384, 512, 640, 0 },
 };
 
-/// Space the 32 own-king buckets two piece-square blocks apart (K32Q2's `B(v) = v * 2 *
-/// PS_NB`): the second block of each bucket is the opponent-has-a-queen state, reached by
-/// adding `queen_offset`.
-const kb_stride: u32 = 2 * ps_nb;
-
-/// Offset a K32Q2 index into its bucket's second block when the opponent has a queen.
-pub const queen_offset: u32 = ps_nb;
+/// Space the 32 own-king buckets one piece-square block apart (K32H3's `B(v) = v * PS_NB`).
+/// A K32H3 index is relative to its block, so nothing interleaves between two buckets any
+/// more: SFNNv19 moved K32Q2's queen axis out of the index into whole runs of rows, one per
+/// block (`nnue_ft.featureTransformerPsqWeights`).
+const kb_stride: u32 = ps_nb;
 
 pub const king_buckets = [64]u32{
     28 * kb_stride, 29 * kb_stride, 30 * kb_stride, 31 * kb_stride, 31 * kb_stride, 30 * kb_stride, 29 * kb_stride, 28 * kb_stride,
@@ -125,7 +123,12 @@ pub const king_buckets = [64]u32{
     0 * kb_stride,  1 * kb_stride,  2 * kb_stride,  3 * kb_stride,  3 * kb_stride,  2 * kb_stride,  1 * kb_stride,  0 * kb_stride,
 };
 
-pub const orient_tbl_half = [64]u32{
+/// Orient a square for a king on `ksq`: reflect a king on files a..d so it lands on e..h --
+/// upstream's `OrientTBL` (nnue_common.h). ONE table for all three feature sets since
+/// SFNNv19: the threat and pawn-pair sets used to mirror the other way round (a king on
+/// a..d kept its orientation), and that flip is the half of the SFNNv19 change no index
+/// formula shows. Each caller applies the perspective's rank flip (`^ 56`) itself.
+pub const orient_tbl = [64]u8{
     7, 7, 7, 7, 0, 0, 0, 0,
     7, 7, 7, 7, 0, 0, 0, 0,
     7, 7, 7, 7, 0, 0, 0, 0,
@@ -136,44 +139,31 @@ pub const orient_tbl_half = [64]u32{
     7, 7, 7, 7, 0, 0, 0, 0,
 };
 
-/// Fold every term halfMakeIndex adds to the square into one entry per (opponent-queen
-/// state, perspective, king square, piece): upstream K32Q2::make_index's `offsets`, indexed
-/// [(queen * 2 + perspective) * 64 + ksq][piece]. The index then costs one xor and one load
-/// instead of two xors, three adds and three loads.
+/// Fold every term halfMakeIndex adds to the square into one entry per (perspective, king
+/// square, piece): upstream K32H3::make_index's `offsets`, indexed [perspective * 64 +
+/// ksq][piece]. The index then costs one xor and one load instead of two xors, two adds and
+/// three loads.
 ///
 /// The xor is only an add in disguise because the carry cannot reach the square's bits:
-/// piece_square_index, king_buckets and queen_offset are all multiples of 64 and the
-/// orientation is below 64, so the entry's low six bits ARE the orientation. The comptime
-/// check below holds that for every entry, and the largest (45055) is what makes u16
-/// lossless.
-pub const half_offsets: [2 * 2 * 64][16]u16 align(64) = blk: {
+/// piece_square_index and king_buckets are multiples of 64 and the orientation is below
+/// 64, so the entry's low six bits ARE the orientation. The comptime check below holds that
+/// for every entry, and that every index stays inside its K32H3 block.
+pub const half_offsets: [2 * 64][16]u16 align(64) = blk: {
     @setEvalBranchQuota(20_000);
-    var table: [2 * 2 * 64][16]u16 = undefined;
-    for (0..2) |q| {
-        for (0..2) |c| {
-            const flip: u32 = 56 * c;
-            for (0..64) |sq| {
-                const orient: u32 = orient_tbl_half[sq] ^ flip;
-                for (0..16) |pc| {
-                    const base = piece_square_index[c][pc] + king_buckets[sq ^ flip] + q * queen_offset;
-                    if (base % 64 != 0 or orient >= 64) @compileError("half_offsets: xor is not an add");
-                    table[(q * 2 + c) * 64 + sq][pc] = @intCast(base + orient);
-                }
+    var table: [2 * 64][16]u16 = undefined;
+    for (0..2) |c| {
+        const flip: u32 = 56 * c;
+        for (0..64) |sq| {
+            const orient: u32 = orient_tbl[sq] ^ flip;
+            for (0..16) |pc| {
+                const base = piece_square_index[c][pc] + king_buckets[sq ^ flip];
+                if (base % 64 != 0 or orient >= 64) @compileError("half_offsets: xor is not an add");
+                if (base + 64 > dims.psq_block_dimensions) @compileError("half_offsets: an index leaves its K32H3 block");
+                table[c * 64 + sq][pc] = @intCast(base + orient);
             }
         }
     }
     break :blk table;
-};
-
-pub const orient_tbl_full = [64]i8{
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
 };
 
 /// Pawn diagonal threats target only knights and rooks now (pawn-pawn relationships moved

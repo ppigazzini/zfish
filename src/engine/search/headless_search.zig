@@ -331,14 +331,13 @@ test "headless search: every accumulator update route is exercised" {
     try std.testing.expect(counts.shared > 0);
 }
 
-// Assert the K32Q2 queen axis survives every update route. A ply that changes an
-// opponent-queen state re-keys every index of the perspective it concerns, so the stack must
-// refresh rather than step -- and the hybrid king-move step must refuse a king that takes the
-// queen, since it carries the accumulation across under ONE queen state. Each case evaluates
+// Assert the K32H3 block survives every update route. A ply that changes a perspective's
+// block moves its whole accumulation onto another block's rows, so the stack must refresh
+// rather than step -- and the hybrid king-move step must refuse a king whose capture changes
+// the block, since it carries the accumulation across inside ONE block. Each case evaluates
 // the ply through the stack, whatever route the update picks, and requires the score a
-// from-scratch rebuild of the same board gives. The bench reaches the capture and promotion
-// terms but not the hybrid guard: no bench position has a king take a queen with fifteen
-// pieces left.
+// from-scratch rebuild of the same board gives. The bench does not reach the hybrid guard:
+// no bench position has a king change its block by a capture with fifteen pieces left.
 var walk_stack_buf: [worker_layout.accumulator_stack_size]u8 align(64) = undefined;
 var walk_cache_buf: [worker_layout.accumulator_caches_size]u8 align(64) = undefined;
 var fresh_stack_buf: [worker_layout.accumulator_stack_size]u8 align(64) = undefined;
@@ -352,7 +351,7 @@ fn rebuiltEval(pos: *const position.Position, biases: [*]const i16) i32 {
     return network.evaluate(pos, stack, cache);
 }
 
-test "headless search: an opponent-queen change evaluates incrementally as it does rebuilt" {
+test "headless search: a K32H3 block change evaluates incrementally as it does rebuilt" {
     position.initRuntime();
     if (network.ftPtr() == null) {
         const dir = "resources/";
@@ -364,12 +363,19 @@ test "headless search: an opponent-queen change evaluates incrementally as it do
     const promotion: u16 = 1 << 14;
     const to_queen: u16 = (5 - 2) << 12;
     const cases = [_]struct { fen: []const u8, from: u8, to: u8, flags: u16 }{
-        // Kxf2: the king takes the queen and stays on its half -- the hybrid step's shape.
+        // Kxf2: the king takes the queen and stays on its half -- the hybrid step's shape,
+        // block 2 -> 1 for white.
         .{ .fen = "rnb1kbnr/pppp1ppp/8/4p3/8/8/PPPPPqPP/RNBQKBNR w KQkq - 0 3", .from = 4, .to = 13, .flags = 0 },
-        // exd5: a pawn takes the queen.
+        // exd5: a pawn takes the queen, block 2 -> 1 for white.
         .{ .fen = "rnb1kbnr/ppp1pppp/8/3q4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 3", .from = 28, .to = 35, .flags = 0 },
-        // h8=Q: the first queen of its side arrives by promotion.
+        // h8=Q: the first queen of its side arrives by promotion, block 1 -> 2 for black.
         .{ .fen = "rnbqkbn1/pppppppP/8/8/8/8/PPPPPPP1/RNB1KBNR w KQq - 0 5", .from = 55, .to = 63, .flags = promotion | to_queen },
+        // bxc3: a pawn takes the last rook on the board, block 1 -> 0 for both sides, with
+        // no king move and no queen anywhere.
+        .{ .fen = "4k3/pppppppp/8/8/8/2r5/PP1PPPPP/4K3 w - - 0 1", .from = 9, .to = 18, .flags = 0 },
+        // Kxf2: the king takes the last rook and stays on its half with fifteen pieces left
+        // -- the hybrid step's shape again, block 1 -> 0 for white.
+        .{ .fen = "4k3/pppppppp/8/8/8/8/PPPPPr2/4K3 w - - 0 1", .from = 4, .to = 13, .flags = 0 },
     };
     const stack: *nnue_acc.AccumulatorStack = @ptrCast(&walk_stack_buf);
     const cache: *nnue_acc.RefreshCache = @ptrCast(&walk_cache_buf);
@@ -388,7 +394,7 @@ test "headless search: an opponent-queen change evaluates incrementally as it do
         const n = movegen.generateLegal(&p, &legal);
         try std.testing.expect(std.mem.findScalar(u16, legal[0..n], wanted) != null);
 
-        const out = nnue_acc.stackPush(stack);
+        const out = nnue_acc.stackPush(stack, &p);
         position.doMove(&p, wanted, &next, @intFromBool(position.givesCheck(&p, wanted)), out.dirty_piece, out.dirty_threats, null);
         try std.testing.expectEqual(rebuiltEval(&p, biases), network.evaluate(&p, stack, cache));
     }

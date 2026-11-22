@@ -60,7 +60,7 @@ inline fn loadVec(comptime T: type, comptime V: usize, comptime A: usize, p: [*]
 /// Apply one feature list to ONE accumulator tile -- upstream's `apply_psq_features` and
 /// `apply_threat_features`, which since SFNNv18 differ only in the list and the sign: every
 /// weight row is int8, widened to i16 on load the way upstream's `apply_feature_single`
-/// (`vec_convert_8_16`) does. `IT` is the list's element type -- u16 for the K32Q2 indices
+/// (`vec_convert_8_16`) does. `IT` is the list's element type -- u16 for the K32H3 indices
 /// (upstream d96c183f), u32 for the threat and pawn-pair ones.
 inline fn tileRows(
     comptime IT: type,
@@ -86,7 +86,7 @@ inline fn tileRows(
 /// accumulators for these models only, then recombines them with the wrong signs: the tile
 /// comes out near the NEGATED source once a list holds 4+ rows. LLVM 21 (Zig 0.16) and every
 /// other aarch64 model (generic, cortex, neoverse, oryon, ampere) compile it correctly, and
-/// every add is unaffected. Since SFNNv18 the K32Q2 rows are int8 too, so the refresh's
+/// every add is unaffected. Since SFNNv18 the K32H3 rows are int8 too, so the refresh's
 /// removed list takes this path as well. Linux aarch64 built with an apple model
 /// reproduces it under qemu-aarch64; drop this once that repro passes on the pinned Zig.
 const apple_tuned = blk: {
@@ -111,9 +111,9 @@ inline fn tileRow(
     acc.* = if (add) acc.* +% w else acc.* -% w;
 }
 
-/// Apply a K32Q2 list of KNOWN length one or two -- upstream's
+/// Apply a K32H3 list of KNOWN length one or two -- upstream's
 /// `apply_psq_features<sign, Incremental = true>` (8bc5caa2). A single ply's piece diff
-/// names at most two changed K32Q2 squares per direction and always at least one (the
+/// names at most two changed K32H3 squares per direction and always at least one (the
 /// moved piece leaves `from` and arrives at `to`; a capture or a promotion adds the second),
 /// so the counted loop's trip test is knowledge the caller already has. Peeling the first
 /// row hands it over: one unconditional apply, then one predicated one.
@@ -186,7 +186,7 @@ const Row = [*]align(64) const i8;
 /// Hold the int8 rows one apply adds or removes, as row pointers -- upstream's WeightRows. Rows
 /// of every feature set with the same sign go in one list, so nearly every row has a partner.
 const WeightRows = struct {
-    /// Fit a K32Q2 list (32 rows) plus a threat and pawn-pair list (256), as upstream's
+    /// Fit a K32H3 list (32 rows) plus a threat and pawn-pair list (256), as upstream's
     /// AllWeightRows sizes itself from the two MaxActiveDimensions.
     rows: [32 + 256]Row,
     len: usize,
@@ -237,7 +237,7 @@ const WeightRows = struct {
 };
 
 /// Refresh in ONE tiled pass -- upstream update_accumulator_refresh_cache's loop shape:
-/// load the finny-cache tile, apply the K32Q2 removed/added rows, store the psq-only
+/// load the finny-cache tile, apply the K32H3 removed/added rows, store the psq-only
 /// tile back to `cache`, then KEEP ADDING the active Threat rows in the same registers
 /// and store the combined tile to `state`. Replaces the dual-store pass plus a separate
 /// accumulate pass, which reloaded and rewrote the whole 2 KB row it had just
@@ -285,12 +285,12 @@ pub fn applyRefreshFused(
 }
 
 /// Take a same-half king move incrementally -- upstream's update_accumulator_hybrid
-/// (nnue_accumulator.cpp). A king move rebuckets every K32Q2 index, but the threat and
+/// (nnue_accumulator.cpp). A king move rebuckets every K32H3 index, but the threat and
 /// pawn-pair orientation depends only on which HALF of the board the king stands on, so a
-/// king move that stays on its half keeps that whole accumulation. Only the K32Q2 half
+/// king move that stays on its half keeps that whole accumulation. Only the K32H3 half
 /// has to change buckets, and both buckets are reachable from the refresh cache:
 ///
-///   target = computed - <old-bucket K32Q2> + <new-bucket K32Q2> + <this ply's thr/pp delta>
+///   target = computed - <old-bucket K32H3> + <new-bucket K32H3> + <this ply's thr/pp delta>
 ///
 /// One register per tile carries the destination-entry refresh, the bucket swap and the
 /// threat delta, so the 2 KB row is loaded once. `new_entry` is refreshed in place
@@ -368,7 +368,7 @@ pub fn applyHybridDelta(
 }
 
 /// Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
-/// one combined accumulator (K32Q2 + Threats), loaded per tile ONCE into a register,
+/// one combined accumulator (K32H3 + Threats), loaded per tile ONCE into a register,
 /// with both feature sets' removed/added weight rows applied in-register (every row int8,
 /// widened to i16), then stored ONCE. Replaces the two
 /// separate load/store round-trips (one per feature) of the split-accumulator design.

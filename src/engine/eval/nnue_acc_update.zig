@@ -70,26 +70,33 @@ const stateComputed = layout.stateComputed;
 const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
 const kingSquare = layout.kingSquare;
-const opponentHasQueen = layout.opponentHasQueen;
+const psqBlock = layout.psqBlock;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
+comptime {
+    // The refresh cache restates the block count, as it restates its other dimensions;
+    // hold the two together here, where both are imported.
+    if (nnue_refresh_cache.block_count != @import("nnue_dimensions").psq_blocks)
+        @compileError("nnue_refresh_cache.block_count must equal nnue_dimensions.psq_blocks");
+}
+
 // Call nnue_feature.halfMakeIndex per changed square and nnue_feature directly for the
 // full-threats active append; index parameters pass as an anonymous struct literal, which
 // a direct Zig call marshals correctly on every ABI (see the import note above).
 
-// Walk the stack once per perspective over the combined K32Q2 + Threats accumulator --
+// Walk the stack once per perspective over the combined K32H3 + Threats accumulator --
 // a direct port of upstream Stockfish's AccumulatorStack::evaluate_side. The single
 // combined accumulator lives in the psq_feature storage slot (the threat_feature
-// accumulation slot is now unused); find_last_usable uses ONLY the PSQ (K32Q2)
+// accumulation slot is now unused); find_last_usable uses ONLY the PSQ (K32H3)
 // refresh condition, because a threat refresh (king move across the center) is a
-// subset of a K32Q2 refresh, so the combined accumulator always refreshes together.
+// subset of a K32H3 refresh, so the combined accumulator always refreshes together.
 //
-// Every walk reads the opponent-queen state off the LIVE position, as it reads the king
-// square: no ply it steps across can have changed either, because a ply that does
-// requires a refresh and find_last_usable stops on it.
+// Every walk reads the K32H3 block off the LIVE position, as it reads the king square: no
+// ply it steps across can have changed either, because a ply that does requires a
+// refresh and find_last_usable stops on it.
 /// Count which route to the top slot each walk took. Every route AGREES on every
 /// value they produce -- that is the whole point of them -- and it is exactly what makes
 /// a dead one invisible: a route that stops running is answered correctly by the route
@@ -132,8 +139,8 @@ pub fn evaluate(
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
-    const last_white = findLastUsable(psq_feature, stack, white);
-    const last_black = findLastUsable(psq_feature, stack, black);
+    const last_white = findLastUsable(stack, white, psqBlock(pos, white));
+    const last_black = findLastUsable(stack, black, psqBlock(pos, black));
 
     // The shared-suffix route walks incrementally without reaching evaluateSide, so the
     // refresh-only ablation has to skip it here as well -- gating one entry point and not
@@ -161,8 +168,8 @@ fn forwardUpdateBoth(
     const size = stackSize(stack);
     const white_ksq = kingSquare(pos, white);
     const black_ksq = kingSquare(pos, black);
-    const white_opp_queen = opponentHasQueen(pos, white);
-    const black_opp_queen = opponentHasQueen(pos, black);
+    const white_block = psqBlock(pos, white);
+    const black_block = psqBlock(pos, black);
     const shared_begin = @max(white_begin, black_begin);
 
     const white_mask = nnue_feature.threatRouteMask(white, white_ksq, true);
@@ -171,18 +178,18 @@ fn forwardUpdateBoth(
     var next = white_begin + 1;
     while (next <= shared_begin) : (next += 1) {
         countPath(.forward);
-        applyCombined(stack, white, feature_transformer, white_ksq, white_opp_queen, white_mask, next, next - 1, true);
+        applyCombined(stack, white, feature_transformer, white_ksq, white_block, white_mask, next, next - 1, true);
     }
     next = black_begin + 1;
     while (next <= shared_begin) : (next += 1) {
         countPath(.forward);
-        applyCombined(stack, black, feature_transformer, black_ksq, black_opp_queen, black_mask, next, next - 1, true);
+        applyCombined(stack, black, feature_transformer, black_ksq, black_block, black_mask, next, next - 1, true);
     }
 
     next = shared_begin + 1;
     while (next < size) : (next += 1) {
         countPath(.shared);
-        applyCombinedBoth(stack, feature_transformer, white_ksq, black_ksq, white_opp_queen, black_opp_queen, white_mask, black_mask, next, next - 1);
+        applyCombinedBoth(stack, feature_transformer, white_ksq, black_ksq, white_block, black_block, white_mask, black_mask, next, next - 1);
     }
 }
 
@@ -196,7 +203,7 @@ pub fn evaluateSide(
 ) void {
     const size = stackSize(stack);
     const king_square = kingSquare(pos, perspective);
-    const opp_queen = opponentHasQueen(pos, perspective);
+    const block = psqBlock(pos, perspective);
 
     // Ablation (-Dacc-refresh-only): rebuild from the board every evaluation. Bit-exact by
     // the invariant the incremental chain rests on -- a refresh and a walk compute the same
@@ -204,7 +211,7 @@ pub fn evaluateSide(
     // Measures what the incremental path is worth, and, with -Dno-threat-record, what
     // do_move's recording costs: the records are dead on this path.
     if (comptime build_options.acc_refresh_only) {
-        refreshCombined(perspective, king_square, opp_queen, stack, pos, feature_transformer, cache);
+        refreshCombined(perspective, king_square, block, stack, pos, feature_transformer, cache);
         return;
     }
 
@@ -216,33 +223,33 @@ pub fn evaluateSide(
         var next = last_usable + 1;
         while (next < size) : (next += 1) {
             countPath(.forward);
-            applyCombined(stack, perspective, feature_transformer, king_square, opp_queen, route_mask, next, next - 1, true);
+            applyCombined(stack, perspective, feature_transformer, king_square, block, route_mask, next, next - 1, true);
         }
     } else {
         // A king move that stayed on its half of the board keeps the whole threat and
         // pawn-pair accumulation, so it can be taken incrementally off the previous slot
         // instead of refreshed from the board.
         const latest_index = size - 1;
-        if (size >= 2 and hybridApplicable(stack, pos, perspective, latest_index)) {
+        if (size >= 2 and hybridApplicable(stack, pos, perspective, block, latest_index)) {
             countPath(.hybrid);
-            updateHybrid(perspective, king_square, opp_queen, stack, pos, feature_transformer, cache, latest_index);
+            updateHybrid(perspective, king_square, block, stack, pos, feature_transformer, cache, latest_index);
             return;
         }
 
         countPath(.refresh);
-        refreshCombined(perspective, king_square, opp_queen, stack, pos, feature_transformer, cache);
+        refreshCombined(perspective, king_square, block, stack, pos, feature_transformer, cache);
 
         const route_mask = nnue_feature.threatRouteMask(perspective, king_square, false);
         var computed_index = size - 1;
         while (computed_index > last_usable) : (computed_index -= 1) {
             countPath(.backward);
-            applyCombined(stack, perspective, feature_transformer, king_square, opp_queen, route_mask, computed_index - 1, computed_index, false);
+            applyCombined(stack, perspective, feature_transformer, king_square, block, route_mask, computed_index - 1, computed_index, false);
         }
     }
 }
 
 /// Perform the fused refresh -- upstream's update_accumulator_refresh_cache: compute the
-/// K32Q2 changed rows against the finny cache entry and the active Threat rows, then
+/// K32H3 changed rows against the finny cache entry and the active Threat rows, then
 /// apply everything in ONE tiled pass. The cache entry receives the psq-only
 /// accumulation (in place, for next time) and the stack state receives psq + threats
 /// (the combined accumulator), with no second pass over the 2 KB row and no
@@ -250,14 +257,14 @@ pub fn evaluateSide(
 fn refreshCombined(
     perspective: u8,
     king_square: u8,
-    opp_queen: bool,
+    block: u8,
     stack: *AccumulatorStack,
     pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
     const latest_index = stackSize(stack) - 1;
-    const entry_ptr = cacheEntry(cache, opp_queen, king_square, perspective);
+    const entry_ptr = cacheEntry(cache, block, king_square, perspective);
     const entry_pieces = cacheEntryPiecesMut(entry_ptr);
 
     var removed: [psq_index_capacity]PsqIndex = undefined;
@@ -269,7 +276,6 @@ fn refreshCombined(
         pos.by_type_bb[0],
         perspective,
         king_square,
-        opp_queen,
         &removed,
         &added,
     );
@@ -293,7 +299,7 @@ fn refreshCombined(
         removed[0..removed_len],
         added[0..added_len],
         active.indices[0..active.len],
-        featureTransformerPsqWeights(feature_transformer),
+        featureTransformerPsqWeights(feature_transformer, block),
         featureTransformerThreatWeights(feature_transformer),
     );
 
@@ -304,7 +310,7 @@ fn refreshCombined(
 }
 
 /// Take one fused incremental step onto the combined accumulator -- a port of upstream's
-/// update_accumulator_incremental + apply_combined. Computes the PSQ (K32Q2) and
+/// update_accumulator_incremental + apply_combined. Computes the PSQ (K32H3) and
 /// Threat changed-feature index lists for this ply, then applies both to the single
 /// combined accumulation (psq_feature slot) in one load/store per tile.
 fn applyCombined(
@@ -312,7 +318,7 @@ fn applyCombined(
     perspective: u8,
     feature_transformer: *const FeatureTransformer,
     king_square: u8,
-    opp_queen: bool,
+    block: u8,
     route_mask: u32,
     target_index: usize,
     computed_index: usize,
@@ -321,7 +327,7 @@ fn applyCombined(
     std.debug.assert(stateComputed(stack, psq_feature, computed_index, perspective));
     std.debug.assert(!stateComputed(stack, psq_feature, target_index, perspective));
 
-    // --- PSQ (K32Q2) changed-feature indices ---
+    // --- PSQ (K32H3) changed-feature indices ---
     const psq_diff = if (forward)
         psqDiff(stateBytesConst(psq_feature, target_index, stack))
     else
@@ -340,7 +346,6 @@ fn applyCombined(
         .square = psq_diff.from,
         .piece = psq_diff.pc,
         .king_square = king_square,
-        .opponent_has_queen = opp_queen,
     }), forward);
     if (psq_diff.to != sq_none) {
         appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, nnue_feature.halfMakeIndex(.{
@@ -348,7 +353,6 @@ fn applyCombined(
             .square = psq_diff.to,
             .piece = psq_diff.pc,
             .king_square = king_square,
-            .opponent_has_queen = opp_queen,
         }), !forward);
     }
     if (psq_diff.remove_sq != sq_none) {
@@ -357,7 +361,6 @@ fn applyCombined(
             .square = psq_diff.remove_sq,
             .piece = psq_diff.remove_pc,
             .king_square = king_square,
-            .opponent_has_queen = opp_queen,
         }), forward);
     }
     if (psq_diff.add_sq != sq_none) {
@@ -366,7 +369,6 @@ fn applyCombined(
             .square = psq_diff.add_sq,
             .piece = psq_diff.add_pc,
             .king_square = king_square,
-            .opponent_has_queen = opp_queen,
         }), !forward);
     }
 
@@ -416,7 +418,7 @@ fn applyCombined(
         psq_added[0..psq_added_len],
         thr_removed[0..thr_removed_len],
         thr_added[0..thr_added_len],
-        featureTransformerPsqWeights(feature_transformer),
+        featureTransformerPsqWeights(feature_transformer, block),
         featureTransformerThreatWeights(feature_transformer),
     );
     stateBytesMut(psq_feature, target_index, stack)[computed_offset + perspective] = 1;

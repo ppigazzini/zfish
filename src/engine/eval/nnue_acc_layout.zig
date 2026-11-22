@@ -21,9 +21,8 @@ pub const pawn_piece_type: u8 = 1;
 pub const no_piece: u8 = 0;
 pub const sq_none: u8 = 64;
 pub const square_count: usize = 64;
-/// Match PieceType.king and PieceType.queen.
+/// Match PieceType.king.
 const king_piece_type: u8 = 6;
-const queen_piece_type: u8 = 5;
 pub const max_stack_size: usize = 247;
 /// Align the accumulator arena on the same cache line the weight blob's regions use,
 /// for the same SIMD reason. Derived, not restated: two independent spellings of 64
@@ -62,8 +61,8 @@ pub const transform_vec_width: usize = blk: {
 };
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
-/// K32Q2 changed/active index element type. u16 the way upstream's
-/// `K32Q2::IndexList` is (d96c183f), which is what lets the AVX-512 writer store its
+/// K32H3 changed/active index element type. u16 the way upstream's
+/// `K32H3::IndexList` is (d96c183f), which is what lets the AVX-512 writer store its
 /// 32 index words with one unmasked 512-bit store instead of widening them to u32 first.
 /// The comptime assert below is what keeps the narrowing honest.
 pub const PsqIndex = u16;
@@ -74,12 +73,13 @@ pub const threat_index_capacity: usize = 256;
 pub const threat_dimensions: u32 = dims.threat_dimensions;
 pub const psq_feature_dimensions: usize = dims.psq_feature_dimensions;
 comptime {
-    // Every K32Q2 index is < psq_feature_dimensions by construction (halfMakeIndex sums an
-    // oriented square, a piece-square base, a king bucket and the queen block), so narrowing the lists to
-    // PsqIndex is lossless only while the whole index space fits. A future arch that grows
-    // the feature count past 65536 must widen PsqIndex with it.
-    if (psq_feature_dimensions > std.math.maxInt(PsqIndex) + 1)
-        @compileError("PsqIndex is too narrow for psq_feature_dimensions");
+    // Every K32H3 index is < psq_block_dimensions by construction (halfMakeIndex sums an
+    // oriented square, a piece-square base and a king bucket, relative to its block), so
+    // narrowing the lists to PsqIndex is lossless only while one block's index space fits.
+    // The whole feature count is past 65536 since SFNNv19 and need not fit: no index spans
+    // blocks. A future arch that grows a block past 65536 must widen PsqIndex with it.
+    if (dims.psq_block_dimensions > std.math.maxInt(PsqIndex) + 1)
+        @compileError("PsqIndex is too narrow for psq_block_dimensions");
 }
 
 pub const HalfDiff = struct {
@@ -129,6 +129,11 @@ pub const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + col
 pub const computed_offset = color_count * half_dimensions * @sizeOf(i16);
 pub const accumulator_state_bytes = roundUp(accumulator_bytes, nnue_align);
 pub const psq_diff_offset = accumulator_bytes;
+/// Record each perspective's K32H3 block as the board stood BEFORE this slot's ply --
+/// upstream's `AccumulatorState::blockBefore`, one byte per colour, written by stackPush
+/// off the position it is handed. It rides directly after the psq diff, in the slack the
+/// stride already pads out, so the slot does not grow.
+pub const psq_block_offset = psq_diff_offset + @sizeOf(HalfDiff);
 /// The combined accumulator lives in the psq_feature slot (see nnue_acc_update.zig), so the
 /// threat slot holds ONLY its per-ply diff -- there is no threat accumulator to reserve a
 /// prefix for. Place the diff at offset 0: that sheds ~4160 B of dead padding per slot (threat
@@ -175,6 +180,9 @@ comptime {
     // end before the next state's accumulation begins.
     if (psq_diff_offset + @sizeOf(HalfDiff) > psq_state_stride)
         @compileError("the psq diff must fit inside psq_state_stride");
+    // So must the two block bytes behind it.
+    if (psq_block_offset + color_count > psq_state_stride)
+        @compileError("the K32H3 block record must fit inside psq_state_stride");
     // threatRequiresRefresh reads us/prev_ksq/ksq at threat_refresh_diff_offset + 0/1/2, so
     // that offset must land on ThreatDiffView's trailing scalars, not inside its list.
     if (threat_refresh_diff_offset - threat_diff_offset != @offsetOf(ThreatDiffView, "us"))
@@ -199,15 +207,22 @@ comptime {
         @compileError("ThreatDiffView / DirtyThreats field offsets mismatch");
 }
 
-pub fn findLastUsable(feature_kind: u8, stack: *const AccumulatorStack, perspective: u8) usize {
+/// Walk back from the top for the nearest slot that is computed or that forces a refresh
+/// -- upstream's find_last_usable_accumulator. Only the K32H3 condition is tested: a threat
+/// refresh (the king crossing the centre file) is a subset of it, so the combined
+/// accumulator always refreshes as a unit. `block` is the perspective's LIVE block, and
+/// every slot is judged against it rather than against the slot above (upstream
+/// 4d829bf8a): a slot the walk passes kept its block, so each one it reaches was left in
+/// the live block, and the two tests stop on the same slot.
+pub fn findLastUsable(stack: *const AccumulatorStack, perspective: u8, block: u8) usize {
     const size = stackSize(stack);
     var current = size - 1;
 
     while (current > 0) : (current -= 1) {
-        if (stateComputed(stack, feature_kind, current, perspective))
+        if (stateComputed(stack, psq_feature, current, perspective))
             return current;
 
-        if (stateRequiresRefresh(stack, feature_kind, current, perspective))
+        if (psqRequiresRefresh(stackBytes(stack), current, perspective, block))
             return current;
     }
 
@@ -244,15 +259,6 @@ pub fn clearComputed(bytes: [*]u8, feature_kind: u8, index: usize) void {
     @memset(bytes[stateOffset(feature_kind, index) + computed_offset ..][0..color_count], 0);
 }
 
-pub fn stateRequiresRefresh(stack: *const AccumulatorStack, feature_kind: u8, index: usize, perspective: u8) bool {
-    const bytes = stackBytes(stack);
-    return switch (feature_kind) {
-        psq_feature => psqRequiresRefresh(bytes, index, perspective),
-        threat_feature => threatRequiresRefresh(bytes, index, perspective),
-        else => unreachable,
-    };
-}
-
 pub fn stateOffset(feature_kind: u8, index: usize) usize {
     return switch (feature_kind) {
         psq_feature => index * psq_state_stride,
@@ -282,9 +288,22 @@ pub fn kingSquare(pos: *const Position, color: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[color] & pos.by_type_bb[king_piece_type]));
 }
 
-/// Compute upstream's `bool(pos.pieces(~perspective, QUEEN))` -- K32Q2's second bucket axis.
-pub fn opponentHasQueen(pos: *const Position, perspective: u8) bool {
-    return pos.by_color_bb[perspective ^ 1] & pos.by_type_bb[queen_piece_type] != 0;
+/// Compute upstream's `K32H3::block(pos, perspective)` off the live position.
+pub fn psqBlock(pos: *const Position, perspective: u8) u8 {
+    return nnue_feature.halfBlock(&pos.by_type_bb, &pos.by_color_bb, perspective);
+}
+
+/// Record both perspectives' blocks for the board a ply is about to leave -- upstream's
+/// `blockBefore = K32H3::block_state(pos)` in AccumulatorStack::push.
+pub fn setBlockBefore(bytes: [*]u8, index: usize, pos: *const Position) void {
+    const at = stateOffset(psq_feature, index) + psq_block_offset;
+    bytes[at + white] = psqBlock(pos, white);
+    bytes[at + black] = psqBlock(pos, black);
+}
+
+/// Read the block `perspective` stood in before this slot's ply.
+pub fn blockBefore(bytes: [*]const u8, index: usize, perspective: u8) u8 {
+    return bytes[stateOffset(psq_feature, index) + psq_block_offset + perspective];
 }
 
 pub fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i16 {
@@ -318,10 +337,11 @@ pub fn zeroDiff(bytes: [*]u8, feature_kind: u8, index: usize, len: usize) void {
     @memset(bytes[stateOffset(feature_kind, index) + diffOffset(feature_kind) ..][0..len], 0);
 }
 
-/// Ask the feature set whether this slot's piece diff forces a refresh -- the own king
-/// moved, or an opponent queen was captured or promoted to (K32Q2::requires_refresh). The
-/// predicate has one owner, nnue_feature; this only reads the diff out of the slot.
-pub fn psqRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool {
+/// Ask the feature set whether this slot forces a refresh -- the own king moved, or the
+/// perspective's block before the ply is not `block` (K32H3::requires_refresh). The
+/// predicate has one owner, nnue_feature; this only reads the diff and the recorded block
+/// out of the slot.
+pub fn psqRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8, block: u8) bool {
     const d = psqDiff(bytes + stateOffset(psq_feature, index));
     return nnue_feature.halfRequiresRefresh(.{
         .from = d.from,
@@ -331,7 +351,7 @@ pub fn psqRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) boo
         .add_sq = d.add_sq,
         .remove_pc = d.remove_pc,
         .add_pc = d.add_pc,
-    }, perspective);
+    }, perspective, blockBefore(bytes, index, perspective), block);
 }
 
 pub fn threatRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool {
@@ -342,10 +362,6 @@ pub fn threatRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) 
 
 pub fn kingPiece(perspective: u8) u8 {
     return king_piece + 8 * perspective;
-}
-
-pub fn queenPiece(color: u8) u8 {
-    return queen_piece_type + 8 * color;
 }
 
 test {
