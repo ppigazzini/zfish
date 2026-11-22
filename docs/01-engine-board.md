@@ -430,9 +430,12 @@ for legality or scores a quiet never pays for them.
 
 `zobrist.zig` holds the process-global tables, built by `init()` from a
 fixed-seed xorshift64\* PRNG: `zob_psq` (piece × square), `zob_enpassant` (by
-file), `zob_castling` (by rights mask), `zob_side_val`, `zob_no_pawns`, and the
-cuckoo tables. Pawn entries on the promotion ranks are zeroed — a pawn cannot
-stand there.
+file), `zob_castling` (by rights mask), and the cuckoo tables. Every drawn key is shifted
+up one bit, and `zob_side_val` is the constant 1, so bit 0 of `st.key` IS the side to move
+(upstream 20584a026) — `setState` starts the key at `side_to_move` and an empty pawn
+structure keys to 0. The pawn, minor-piece and non-pawn keys are stored without the side;
+their readers fold it in (`shared_history`). Pawn entries on the promotion ranks are
+zeroed — a pawn cannot stand there.
 
 `doMove` maintains `key` and the auxiliary keys incrementally; `state_setup.setState`
 recomputes all of them from the board after a FEN parse. The two must agree — the

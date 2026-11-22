@@ -116,7 +116,8 @@ pub const Position = extern struct {
 pub inline fn adjustKey50(key: u64, rule50: i32) u64 {
     if (rule50 < 14) return key;
     const seed: u64 = @intCast(@divTrunc(rule50 - 14, 8));
-    return key ^ (seed *% 6364136223846793005 +% 1442695040888963407);
+    // Shift the mix clear of bit 0, the side to move (upstream 20584a026).
+    return key ^ ((seed *% 6364136223846793005 +% 1442695040888963407) << 1);
 }
 
 comptime {
@@ -149,8 +150,10 @@ test "adjustKey50 is identity below 14 and mixes in steps of 8 above it" {
     try testing.expect(adjustKey50(key, 14) != key);
     try testing.expectEqual(adjustKey50(key, 14), adjustKey50(key, 21));
     try testing.expect(adjustKey50(key, 14) != adjustKey50(key, 22));
-    // The exact value upstream prints for the rule50=999 position this was found on.
-    try testing.expectEqual(@as(u64, 0x0CEACC969514C215), adjustKey50(key, 999));
+    // The rule50=999 position this was found on, mixed as upstream mixes it since 20584a026:
+    // the mix shifted up one bit, so bit 0 -- the side to move -- survives it.
+    try testing.expectEqual(@as(u64, 0x89449B51D0586E27), adjustKey50(key, 999));
+    try testing.expectEqual(key & 1, adjustKey50(key, 999) & 1);
 }
 
 test "StateInfo chains through previous" {

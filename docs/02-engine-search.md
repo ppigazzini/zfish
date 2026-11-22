@@ -382,12 +382,16 @@ allocated from large pages and pointed to by `WorkerHistories.shared_history`:
 
 | Table | Element | Indexed by |
 | --- | --- | --- |
-| `correctionHistory` | `[2]CorrectionBundle` (pawn / minor / non-pawn white / non-pawn black) | Zobrist key & mask, then colour |
-| `pawnHistory` | a `[16][64]` `i16` page | pawn key & mask |
+| `correctionHistory` | `[2]CorrectionBundle` (pawn / minor / non-pawn white / non-pawn black) | Zobrist key `>> 1` & mask, then colour |
+| `pawnHistory` | a `[16][64]` `i16` page | pawn key `>> 1` & mask |
 | `continuationHistory` | `[2][2]` of `[16][64] → [16][64]`, relaxed-atomic entries | in-check, capture, then (piece, to) → (piece, to). A fixed-size block, not key-masked — and **shared**, so an edit to it needs `tsan-race`, not just `parity` |
 
 Both are power-of-two sized — `shared_histories.sharedHistoriesSizes` scales each base
-size by `nextPowerOfTwo(threads on the node)` — so indexing is `key & mask`.
+size by `nextPowerOfTwo(threads on the node)` — so indexing is `key >> 1 & mask`. The shift
+is upstream's, since 20584a026 put the side to move in bit 0 of every key: upstream reads
+the pawn, minor-piece and non-pawn keys with the side folded into bit 0 and indexes ONE
+bundle in a table twice the rows; the stored keys here keep bit 0 clear, so that bit picks
+between the two bundles of row `key >> 1` — the `[row][colour]` pair this table holds.
 `shared_histories_map.zig` maps NUMA index → block with construct/free hooks, and
 `clearSharedHistory` clears only this thread's partition of the arrays.
 

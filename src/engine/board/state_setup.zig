@@ -98,15 +98,15 @@ pub fn setState(pos_ptr: *Position) void {
     const psq: [*]const u64 = &zobrist.zob_psq;
     const enpassant: [*]const u64 = &zobrist.zob_enpassant;
     const castling: [*]const u64 = &zobrist.zob_castling;
-    const zob_side = zobrist.zob_side_val;
-    const no_pawns = zobrist.zob_no_pawns;
     const pos = pos_ptr;
     const st = pos.st;
-    st.key = 0;
+    // Bit 0 of the key is the side to move; an empty pawn structure keys to 0 (upstream
+    // 20584a026 dropped the no-pawns seed).
+    st.key = pos.side_to_move;
     st.minor_piece_key = 0;
     st.non_pawn_key[0] = 0;
     st.non_pawn_key[1] = 0;
-    st.pawn_key = no_pawns;
+    st.pawn_key = 0;
     st.non_pawn_material[0] = 0;
     st.non_pawn_material[1] = 0;
 
@@ -136,7 +136,6 @@ pub fn setState(pos_ptr: *Position) void {
     }
 
     if (st.ep_square != sq_none_u8) st.key ^= enpassant[fileOf(st.ep_square)];
-    if (stm == color_black) st.key ^= zob_side;
     st.key ^= castling[@intCast(st.castling_rights)];
     st.material_key = computeMaterialKey(&pos.piece_count, 16);
 }

@@ -152,17 +152,17 @@ pub const PrefetchBank = struct {
 inline fn issuePrefetches(pos: *const Position, pc: u8, to: u8, bank: PrefetchBank) void {
     const hint: std.lang.PrefetchOptions = .{ .rw = .read, .locality = 3, .cache = .data };
     const mask = bank.shared.size_minus1;
-    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.pawn_key & mask))], hint);
-    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.minor_piece_key & mask))], hint);
-    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.non_pawn_key[0] & mask))], hint);
-    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.non_pawn_key[1] & mask))], hint);
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast((pos.st.pawn_key >> 1) & mask))], hint);
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast((pos.st.minor_piece_key >> 1) & mask))], hint);
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast((pos.st.non_pawn_key[0] >> 1) & mask))], hint);
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast((pos.st.non_pawn_key[1] >> 1) & mask))], hint);
     // The specific [pc][to] slot the next node's quiet-history update reads
     // (history.zig:56: `pawnEntryRow(...)[pc * hist_square_nb + to]`), not the row
     // base -- upstream prefetches the same slot (position.cpp:1014:
     // `&history->pawn_entry(*this)[pc][to]`). The row is 1024 entries (2 KiB, 32
     // lines); prefetching offset 0 instead of this slot lands on the wrong line for
     // any (pc, to) whose slot index isn't within the first line.
-    const pawn_idx: usize = @intCast(pos.st.pawn_key & @as(u64, bank.shared.pawn_hist_size_minus1));
+    const pawn_idx: usize = @intCast((pos.st.pawn_key >> 1) & @as(u64, bank.shared.pawn_hist_size_minus1));
     const pawn_slot = pawn_idx * worker_histories.hist_pieceto + @as(usize, pc) * 64 + to;
     @prefetch(bank.shared.pawn_data + pawn_slot, hint);
 }

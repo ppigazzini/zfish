@@ -21,8 +21,10 @@ const sqBb = board_core.sqBb;
 pub var zob_psq: [16 * 64]u64 = undefined;
 pub var zob_enpassant: [8]u64 = undefined;
 pub var zob_castling: [16]u64 = undefined;
-pub var zob_side_val: u64 = undefined;
-pub var zob_no_pawns: u64 = undefined;
+/// Flip bit 0 of the position key with the side to move: every drawn key is shifted clear of
+/// it, so bit 0 of `st.key` IS the side to move (upstream 20584a026). The pawn, minor-piece
+/// and non-pawn keys are stored without it; their readers fold it in (shared_history).
+pub const zob_side_val: u64 = 1;
 pub var cuckoo_tbl: [8192]u64 = undefined;
 pub var cuckoo_move_tbl: [8192]u16 = undefined;
 
@@ -48,20 +50,19 @@ pub inline fn h2(key: u64) usize {
     return @intCast((key >> 16) & 0x1fff);
 }
 
-/// Build the Zobrist + cuckoo tables (upstream Position::init, xorshift64* seeded
-/// with 1070372). Idempotent: overwrites the tables from scratch each call.
+/// Build the Zobrist + cuckoo tables (upstream's generate_keys, xorshift64* seeded with
+/// 1070372, each draw shifted up one bit to leave bit 0 to the side to move). Idempotent:
+/// overwrites the tables from scratch each call.
 pub fn init() void {
     var rng = Prng{ .s = 1070372 };
     @memset(&zob_psq, 0);
     for (init_pieces) |pc| {
-        for (0..64) |s| zob_psq[@as(usize, pc) * 64 + s] = rng.rand64();
+        for (0..64) |s| zob_psq[@as(usize, pc) * 64 + s] = rng.rand64() << 1;
     }
     for (56..64) |s| zob_psq[1 * 64 + s] = 0; // W_PAWN promotion rank
     for (0..8) |s| zob_psq[9 * 64 + s] = 0; // B_PAWN promotion rank
-    for (0..8) |f| zob_enpassant[f] = rng.rand64();
-    for (0..16) |cr| zob_castling[cr] = rng.rand64();
-    zob_side_val = rng.rand64();
-    zob_no_pawns = rng.rand64();
+    for (0..8) |f| zob_enpassant[f] = rng.rand64() << 1;
+    for (0..16) |cr| zob_castling[cr] = rng.rand64() << 1;
 
     @memset(&cuckoo_tbl, 0);
     @memset(&cuckoo_move_tbl, 0);
@@ -94,6 +95,17 @@ pub fn init() void {
     }
     // Every reversible non-pawn move contributes one entry (upstream position.cpp:162).
     std.debug.assert(cuckoo_count == 3668);
+}
+
+test "every drawn key leaves bit 0 to the side to move" {
+    // init() counts the cuckoo moves through bitboard.attacks, which reads the slider tables.
+    board_core.initPawnAttacks();
+    bitboard.initSliderMagics();
+    init();
+    for (zob_psq) |k| try std.testing.expectEqual(@as(u64, 0), k & 1);
+    for (zob_enpassant) |k| try std.testing.expectEqual(@as(u64, 0), k & 1);
+    for (zob_castling) |k| try std.testing.expectEqual(@as(u64, 0), k & 1);
+    try std.testing.expectEqual(@as(u64, 1), zob_side_val);
 }
 
 test {

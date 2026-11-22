@@ -34,14 +34,14 @@ pub inline fn contHistSlice(arr: anytype) []const ContHistSlot {
 }
 
 /// Resolve the pawn-history block for one position: the PIECE_NB consecutive rows at
-/// [(pawn_key & mask) * PIECE_NB]. Resolve it ONCE per move list — the key is fixed for
+/// [(pawn_key >> 1 & mask) * PIECE_NB]. Resolve it ONCE per move list — the key is fixed for
 /// the whole list — and index the block per move with pawnHistoryRead.
 pub fn pawnHistoryBlock(shared_history: ?*const SharedHistories, pawn_key: u64) ?[*]const PawnHistoryRow {
     const sh = shared_history orelse return null;
     if (sh.pawn_size == 0) return null;
     // View the shared pawn table as rows; the shared side stores it flat.
     const table: [*]const PawnHistoryRow = @ptrCast(sh.pawn_data);
-    const index: usize = @intCast(pawn_key & sh.pawn_hist_size_minus1);
+    const index: usize = @intCast((pawn_key >> 1) & sh.pawn_hist_size_minus1);
     return table + index * piece_nb;
 }
 

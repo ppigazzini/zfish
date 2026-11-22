@@ -160,16 +160,20 @@ pub fn verifySharedHistories(shared: *const SharedHistories, thread_count: usize
     );
 }
 
-/// Return the pawn_entry(pos) row base: pawnHistory[pawn_key & mask] is a [16][64] page.
+/// Return the pawn_entry(pos) row base: pawnHistory[pawn_key >> 1 & mask] is a [16][64] page.
+/// Upstream reads (stored key ^ stm) >> 1; a stored key has bit 0 clear, so that is the
+/// stored key >> 1, and the side to move does not select the page (20584a026).
 pub inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i16 {
-    const idx: usize = @intCast(pos.st.pawn_key & @as(u64, shared.pawn_hist_size_minus1));
+    const idx: usize = @intCast((pos.st.pawn_key >> 1) & @as(u64, shared.pawn_hist_size_minus1));
     return shared.pawn_data + idx * hist_pieceto;
 }
 
-/// Return the correctionHistory[key & sizeMinus1][us] bundle. Private on purpose -- see the
-/// four accessors below, which are the only callers.
+/// Return the correctionHistory row a stored key selects. Upstream indexes one bundle by
+/// (key ^ stm) in a table of twice the rows (20584a026); a stored key has bit 0 clear, so
+/// that bit picks between the two bundles of row key >> 1, which is the [row][us] pair this
+/// table already holds. Private on purpose -- see the four accessors below, the only callers.
 inline fn corrRow(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
-    const idx: usize = @intCast(key & @as(u64, shared.size_minus1));
+    const idx: usize = @intCast((key >> 1) & @as(u64, shared.size_minus1));
     return &shared.corr_data[idx];
 }
 
