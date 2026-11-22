@@ -155,12 +155,13 @@ pub const MovePickerContext = struct {
 fn scoreValue(comptime kind: u8, input: ScoreInput) i32 {
     return switch (kind) {
         captures => input.capture_history + 7 * input.captured_piece_value,
+        // Add the check bonus last, in upstream's term order (c1bca2896).
         quiets => 2 * input.main_history +
             2 * input.pawn_history +
             input.continuation_sum +
-            @as(i32, input.check_bonus) * 16384 +
             input.piece_value * 20 * (@as(i32, input.from_threatened) - @as(i32, input.to_threatened)) +
-            input.low_ply_bonus,
+            input.low_ply_bonus +
+            @as(i32, input.check_bonus) * 16384,
         evasions => if (input.capture_stage != 0)
             input.captured_piece_value + (1 << 28)
         else

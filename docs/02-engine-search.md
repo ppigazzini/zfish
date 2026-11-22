@@ -348,14 +348,16 @@ comptime on the kind (`captures` / `quiets` / `evasions`):
 | Kind | Score |
 | --- | --- |
 | captures | capture history + 7 × captured piece value |
-| quiets | 2 × main history + 2 × pawn history + the continuation sum + a check bonus + a threat term + the low-ply bonus |
+| quiets | 2 × main history + 2 × pawn history + the continuation sum + a threat term + the low-ply bonus + a check bonus |
 | evasions | capturing evasions by captured value above a large offset; others by main history + continuation history |
 
 The quiet score reads the continuation history at slots 0, 1, 2, 3 and 5; the threat
 term uses per-piece-type "attacked by a lesser piece" bitboards built once per list
-from the `threats` in `StateInfo` (`movegen.threatsBy`, filled on first read); the check bonus requires both a check square and `seeGe`; the
+from the `threats` in `StateInfo` (`movegen.threatsBy`, filled on first read); the
 low-ply bonus applies only below `low_ply_history_size` (the constant the scorer reads is
-`movepick_score.zig`'s; `movepick.zig` carries a second copy).
+`movepick_score.zig`'s; `movepick.zig` carries a second copy); the check bonus requires
+both a check square and `seeGe`. Every table base is hoisted out of the per-move loop,
+which is the shape upstream c1bca2896 converged on.
 
 The tables come from the `MovePickerContext` the caller fills in — main, low-ply,
 capture, up to six continuation pages, and the shared pawn history
