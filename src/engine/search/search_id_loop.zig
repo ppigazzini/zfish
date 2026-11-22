@@ -400,10 +400,11 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     if (!main_thread) return 0;
 
     id.previous_time_reduction.?.* = time_reduction;
-    // Swap the best PV line with the sub-optimal one if the skill level is enabled.
+    // Swap the best PV line with the sub-optimal one if the skill level is enabled. A swap
+    // changes the line the final PV reports, so it has to be sent again (upstream 92c6666cc).
     if (id.skill_enabled != 0) {
         const sel = if (skill_best != 0) skill_best else skillPickBest(&id, multi_pv);
-        skillSwapBest(&id, sel);
+        if (skillSwapBest(&id, sel)) uci_pv_sent = false;
     }
     return if (uci_pv_sent) 1 else 0;
 }

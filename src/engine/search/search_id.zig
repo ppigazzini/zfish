@@ -363,12 +363,14 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     }
     return best;
 }
-/// Swap rootMoves[0] with the RootMove whose pv[0]==move.
-pub fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
+/// Swap rootMoves[0] with the RootMove whose pv[0]==move, and report whether anything moved:
+/// a move already first, or one not in the list, leaves the order as it was.
+pub fn skillSwapBest(id: *const ZfishIdState, move: u16) bool {
     var i: usize = 0;
     while (i < id.root_moves_count and id.root_moves[i].pv.at(0) != move) : (i += 1) {}
-    if (i >= id.root_moves_count or i == 0) return;
+    if (i >= id.root_moves_count or i == 0) return false;
     const tmp = id.root_moves[0];
     id.root_moves[0] = id.root_moves[i];
     id.root_moves[i] = tmp;
+    return true;
 }
