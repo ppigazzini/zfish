@@ -95,7 +95,6 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     // is this iteration's saved score -- not the score that belongs to last_best_move_pv.
     var last_best_move_score: i32 = -q_value_inf;
     var last_best_move_depth: i32 = 0;
-    var best_value: i32 = -q_value_inf;
     var time_reduction: f64 = 1;
     var tot_best_move_changes: f64 = 0;
     var iter_idx: usize = 0;
@@ -202,7 +201,9 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             if (id.pv_idx.* == 0) fail_high_recovery = @max(0, fail_high_recovery - 2);
             while (true) {
                 const adjusted_depth = @max(@as(i32, 1), id.root_depth.* - failed_high_cnt - fail_high_recovery - @divTrunc(3 * (search_again_counter + 1), 4));
-                best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, .root);
+                // Declare the root's value where it is searched (upstream e345d9655): every
+                // read is in this pass, so it needs no initial value and no wider scope.
+                const best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, .root);
 
                 stableSortRoot(id.root_moves, id.pv_idx.*, id.pv_last.*);
 
