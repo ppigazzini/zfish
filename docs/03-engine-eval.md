@@ -442,7 +442,12 @@ the one-row widen already IS an unpack and a shift, and pairing halves it; from 
 one-row widen is a `pmovsxbw` straight from memory, which a pair can at best match. Measured
 at every width, with upstream's load-time block permutation for the 256- and 512-bit pairs:
 instructions per node +4.1% native, +1.4% avx2, +8.4% sse41 and −6.4% ssse3. Every other
-tier's instruction stream is the one-row kernels' byte for byte. On an Apple CPU model `tileRows`
+tier's instruction stream is the one-row kernels' byte for byte. When the removed and the
+added list each leave an odd row over, the two go in as ONE difference
+(`WeightRows.applyBoth`, upstream's `apply_feature_diff`): both rows biased to `u8` by a
+sign-bit flip, interleaved, and `pmaddubsw`ed against `(+1, −1)` pairs, so the bias cancels
+and `|add − sub| ≤ 255` cannot saturate — one op chain where two single rows each paid an
+unpack and a shift. On an Apple CPU model `tileRows`
 sums the i8 rows it removes and subtracts the sum once (`apple_tuned`): the same wrapping
 value, dodging an LLVM 22 miscompile of the per-row subtract
 ([08-idiomatic-zig.md](08-idiomatic-zig.md)).

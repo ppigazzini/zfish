@@ -181,6 +181,20 @@ inline fn pairWiden(a: PairVi8, b: PairVi8) PairVi16 {
     return @shuffle(i16, lo, hi, concat_mask);
 }
 
+/// Take `sub` from `add` across two 16-byte int8 chunks into sixteen int16 lanes -- the body of
+/// upstream's `apply_feature_diff` (81a0294c3). `pmaddubsw`'s first operand is unsigned, so both
+/// rows are biased to u8 by flipping the sign bit; the bias cancels in the (+1, -1) pair, and
+/// |add - sub| <= 255 cannot saturate.
+inline fn pairDiff(add: PairVi8, sub: PairVi8) PairVi16 {
+    const bias: PairVi8 = @splat(-128);
+    const signs: PairVi8 = .{ 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1 };
+    const ua = add ^ bias;
+    const us = sub ^ bias;
+    const lo = pmaddubsw128(@shuffle(i8, ua, us, unpack_lo_mask), signs);
+    const hi = pmaddubsw128(@shuffle(i8, ua, us, unpack_hi_mask), signs);
+    return @shuffle(i16, lo, hi, concat_mask);
+}
+
 const Row = [*]align(64) const i8;
 
 /// Hold the int8 rows one apply adds or removes, as row pointers -- upstream's WeightRows. Rows
@@ -216,6 +230,12 @@ const WeightRows = struct {
 
     /// Apply every row to one tile, two at a time -- upstream's WeightRows::apply.
     inline fn apply(self: *const WeightRows, comptime add: bool, acc: *@Vector(row_tile_width, i16), tile_off: usize) void {
+        self.applyPairs(add, acc, tile_off);
+        if (self.len % 2 != 0) self.applyOdd(add, acc, tile_off);
+    }
+
+    /// Apply every full pair of rows to one tile, leaving the odd row out, if any.
+    inline fn applyPairs(self: *const WeightRows, comptime add: bool, acc: *@Vector(row_tile_width, i16), tile_off: usize) void {
         const chunks = row_tile_width / 16;
         var i: usize = 0;
         while (i + 1 < self.len) : (i += 2) {
@@ -228,10 +248,38 @@ const WeightRows = struct {
             const inc: @Vector(row_tile_width, i16) = @bitCast(parts);
             acc.* = if (add) acc.* +% inc else acc.* -% inc;
         }
-        if (i < self.len) {
-            // The odd row out widens on its own, which is upstream's unpack-and-shift: without
-            // SSE4.1 that is how the sign extension lowers.
-            tileRow(usize, add, acc, 0, self.rows[i], tile_off);
+    }
+
+    /// Widen the odd row out on its own, which is upstream's unpack-and-shift: without SSE4.1
+    /// that is how the sign extension lowers.
+    inline fn applyOdd(self: *const WeightRows, comptime add: bool, acc: *@Vector(row_tile_width, i16), tile_off: usize) void {
+        tileRow(usize, add, acc, 0, self.rows[self.len - 1], tile_off);
+    }
+
+    /// Apply a removed and an added list to one tile, and when EACH leaves an odd row out,
+    /// take the two as one diff -- upstream's `apply_odd_features` (81a0294c3). The pair is one
+    /// bias, one interleave and one `pmaddubsw` per half where the two single rows cost an
+    /// unpack and a shift each.
+    inline fn applyBoth(removed: *const WeightRows, added: *const WeightRows, acc: *@Vector(row_tile_width, i16), tile_off: usize) void {
+        removed.applyPairs(false, acc, tile_off);
+        added.applyPairs(true, acc, tile_off);
+        const odd_removed = removed.len % 2 != 0;
+        const odd_added = added.len % 2 != 0;
+        if (odd_removed and odd_added) {
+            const chunks = row_tile_width / 16;
+            const plus = added.rows[added.len - 1];
+            const minus = removed.rows[removed.len - 1];
+            var parts: [chunks]PairVi16 = undefined;
+            inline for (0..chunks) |c| {
+                const a = loadVec(i8, 16, 16, plus, tile_off + c * 16);
+                const s = loadVec(i8, 16, 16, minus, tile_off + c * 16);
+                parts[c] = pairDiff(a, s);
+            }
+            acc.* +%= @as(@Vector(row_tile_width, i16), @bitCast(parts));
+        } else if (odd_removed) {
+            removed.applyOdd(false, acc, tile_off);
+        } else if (odd_added) {
+            added.applyOdd(true, acc, tile_off);
         }
     }
 };
@@ -265,8 +313,7 @@ pub fn applyRefreshFused(
         var d: usize = 0;
         while (d < half_dimensions) : (d += V) {
             var acc: Vi16 = cache.ptr[d..][0..V].*;
-            entry_removed.apply(false, &acc, d);
-            entry_added.apply(true, &acc, d);
+            WeightRows.applyBoth(&entry_removed, &entry_added, &acc, d);
             cache.ptr[d..][0..V].* = acc;
             active_rows.apply(true, &acc, d);
             state.ptr[d..][0..V].* = acc;
@@ -331,13 +378,11 @@ pub fn applyHybridDelta(
         var d: usize = 0;
         while (d < half_dimensions) : (d += V) {
             var acc: Vi16 = new_entry.ptr[d..][0..V].*;
-            entry_removed.apply(false, &acc, d);
-            entry_added.apply(true, &acc, d);
+            WeightRows.applyBoth(&entry_removed, &entry_added, &acc, d);
             new_entry.ptr[d..][0..V].* = acc;
             acc +%= @as(Vi16, computed.ptr[d..][0..V].*);
             acc -%= @as(Vi16, old_entry.ptr[d..][0..V].*);
-            rows_removed.apply(false, &acc, d);
-            rows_added.apply(true, &acc, d);
+            WeightRows.applyBoth(&rows_removed, &rows_added, &acc, d);
             target.ptr[d..][0..V].* = acc;
         }
         return;
@@ -398,8 +443,7 @@ pub fn applyCombinedDelta(
         var d: usize = 0;
         while (d < half_dimensions) : (d += V) {
             var acc: Vi16 = source.ptr[d..][0..V].*;
-            rows_removed.apply(false, &acc, d);
-            rows_added.apply(true, &acc, d);
+            WeightRows.applyBoth(&rows_removed, &rows_added, &acc, d);
             target.ptr[d..][0..V].* = acc;
         }
         return;
