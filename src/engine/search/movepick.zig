@@ -108,7 +108,9 @@ pub fn initProbcutStage(has_tt_move: bool) i32 {
 /// `partialInsertionSort` survives for its one remaining caller, the quiet stage, which is
 /// the only site that passes a real limit.
 pub fn sortAll(entries: [*]SortEntry, count: usize) void {
-    if (count == 0)
+    // A list of one is sorted already (upstream 054b0daf0): the vector path would load and
+    // store it back for nothing.
+    if (count <= 1)
         return;
 
     var scan: usize = 1;
@@ -132,7 +134,7 @@ pub fn sortAll(entries: [*]SortEntry, count: usize) void {
 }
 
 pub fn partialInsertionSort(entries: [*]SortEntry, count: usize, limit: i32) void {
-    if (count == 0)
+    if (count <= 1)
         return;
 
     var sorted_end: usize = 0;
