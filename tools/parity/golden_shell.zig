@@ -66,6 +66,9 @@ const driver_battery =
     "go depth 12\n" ++
     "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1\n" ++
     "go depth 11\n" ++
+    // `setoption` stops a running search (upstream a14e8ec4d), and `go` is asynchronous, so
+    // let the kiwipete search finish first: `ucinewgame` waits without stopping.
+    "ucinewgame\n" ++
     "setoption name MultiPV value 1\n" ++
     "setoption name UCI_ShowWDL value false\n" ++
     "position fen 8/8/8/8/8/6k1/6p1/6K1 w - - 0 1\n" ++

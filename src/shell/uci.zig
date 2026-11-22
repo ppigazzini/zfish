@@ -212,6 +212,9 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
         },
         .export_net => {
             const filename = trimAsciiWhitespace(args);
+            // Export only when idle, as setoption applies (upstream a14e8ec4d).
+            engine_mod.stopEngine(engine);
+            engine_mod.waitForSearchFinishedEngine(engine);
             engine_mod.saveNetworkEngine(
                 if (filename.len != 0) filename else null,
             );

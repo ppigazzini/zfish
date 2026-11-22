@@ -175,8 +175,8 @@ Options are declared from `session.initBody` through the `engine/options.zig` he
 Registration does not carry the callback kind: `option.addOption` derives it from the
 canonical name, so an option registered at runtime still fires its engine callback.
 
-On `setoption`, `applySetOptionEngine` **ends an unbounded search, then** waits for the
-search to finish, sets the value into the model, and — if the value was accepted and the
+On `setoption`, `applySetOptionEngine` **stops any running search, then** waits for it,
+sets the value into the model, and — if the value was accepted and the
 option has a callback — relays the normalized value to `session.optionOnChange`, which
 dispatches:
 
@@ -190,24 +190,17 @@ dispatches:
 | `SyzygyPath` | re-init the tablebases and report what was found ([05-tablebases.md](05-tablebases.md)) |
 | `EvalFile` | load the network |
 
-**Stop first, and only when the search would never stop itself.** Waiting for a search
-from the UCI reader thread is a deadlock whenever that search is unbounded: the main
-worker spins on `!stop and (ponder or infinite)` (`search_id.ssShouldBusywait`) and the
-only thread that can set `stop` is the one already blocked in the wait, so neither `stop`
-nor `quit` is read again. `control.searchIsUnbounded` reads that same predicate, and
-`applySetOptionEngine` stops only when it holds. Upstream carries the unconditional wait
-and the wedge with it.
-
-The narrowness is the point rather than caution. `go` is asynchronous here, so a piped
-session reaches the next `setoption` while the previous **bounded** search is still
-running — and a depth-, node- or time-limited search ends on its own, so waiting for it
-is a real wait. Stopping unconditionally truncates it: that shape was written first and
-`driver-golden` caught it at once, the kiwipete search collapsing to `nodes 0` with an
-empty pv because a later `setoption name MultiPV value 1` had killed it. A script means
-"after this search" and a GUI mid-ponder means "instead of this search"; the busy-wait
-flag is what tells them apart. The cost, stated rather than discovered: an option arriving
-during a ponder ends that ponder. Gated by `parity-async`'s third invariant, which is the
-only thing in the tree that sends the sequence.
+**Apply a mutating command only when idle.** Waiting for a search from the UCI reader
+thread is a deadlock whenever that search is unbounded: the main worker spins on `!stop and
+(ponder or infinite)` (`search_id.ssShouldBusywait`) and the only thread that can set `stop`
+is the one already blocked in the wait, so neither `stop` nor `quit` is read again. Upstream
+closed that wedge in a14e8ec4d by stopping first, for `setoption` and `export_net` alike, and
+zfish does the same. It stops a **bounded** search too: `go` is asynchronous, so a piped
+`setoption` behind a `go depth N` ends that search wherever it has reached. A script that
+means "after this search" waits for its `bestmove` or sends `ucinewgame`, which waits without
+stopping — `driver-golden`'s battery does exactly that before it drops to one PV line. An
+option arriving during a ponder ends that ponder. Gated by `parity-async`'s third
+invariant, which sends `setoption` inside `go infinite`.
 
 The engine never imports `option.zig`. `main` injects the readers onto the
 `option_source` seam at startup, so the search reads `MultiPV`, the Syzygy settings,
@@ -331,5 +324,5 @@ pinned model.
 
 **One search at a time.** The live `SharedState` is a single static rebuilt per search
 and never aliased; workers only read it while a search runs. `setoption` and the
-reconfigure chain wait for the search to finish first — and `setoption` ends an unbounded
-one before waiting, or the wait is a deadlock rather than a wait (above).
+reconfigure chain wait for the search to finish first — and `setoption` stops it before
+waiting, or the wait on an unbounded one is a deadlock rather than a wait (above).
