@@ -133,6 +133,10 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     // next depth shortened, and that shortening is paid back two plies at a time rather
     // than dropped all at once.
     var fail_high_recovery: i32 = 0;
+    // Hold the nodes searched when the FIRST PV line finished, the denominator of the best
+    // move's effort share: with MultiPV, the later lines' nodes are not the best move's
+    // competition (upstream afc3e378c).
+    var total_effort: u64 = 0;
     var uci_pv_sent = false;
 
     // Run the iterative deepening loop.
@@ -287,6 +291,8 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 uci_pv_sent = (id.pv_idx.* + 1 == multi_pv);
             }
 
+            if (main_thread and id.pv_idx.* == 0) total_effort = id.nodes.*;
+
             if (@atomicLoad(u8, id.stop, .monotonic) != 0) break;
         }
 
@@ -350,10 +356,13 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
         // Manage time: decide whether we have time for the next iteration or can stop.
         if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.?.* == 0) {
-            const nodes_effort: u64 = @divTrunc(id.root_moves[0].effort * 100000, @max(@as(u64, 1), id.nodes.*));
+            const nodes_effort: u64 = @divTrunc(id.root_moves[0].effort * 100000, @max(@as(u64, 1), total_effort));
 
-            var falling_eval = (11.48 + 2.30 * @as(f64, @floatFromInt(id.best_previous_average_score - best_value)) +
-                1.1 * @as(f64, @floatFromInt(id.iter_value.?[iter_idx] - best_value))) / 100.0;
+            // Read the best line's score, not the last line's search result: with MultiPV
+            // `best_value` is whatever the LAST line returned (upstream afc3e378c).
+            const best_score = id.root_moves[0].score;
+            var falling_eval = (11.48 + 2.30 * @as(f64, @floatFromInt(id.best_previous_average_score - best_score)) +
+                1.1 * @as(f64, @floatFromInt(id.iter_value.?[iter_idx] - best_score))) / 100.0;
             falling_eval = fclamp(falling_eval, 0.576, 1.728);
 
             const tr_x: f64 = @floatFromInt(id.root_depth.* - last_best_move_depth);
@@ -393,7 +402,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             }
         }
 
-        id.iter_value.?[iter_idx] = best_value;
+        id.iter_value.?[iter_idx] = id.root_moves[0].score;
         iter_idx = (iter_idx + 1) & 3;
     }
 

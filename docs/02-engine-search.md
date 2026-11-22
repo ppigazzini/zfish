@@ -582,7 +582,10 @@ elapsed time is re-read promptly after each one.
 **The per-iteration decision.** At the end of each depth the main thread computes
 whether to start another iteration, from the falling-eval trend, the depth since the
 best move last changed, the summed cross-thread `best_move_changes`, and the best
-move's node effort share; over budget it either sets `stop` or, when pondering, arms
+move's node effort share. Under MultiPV both the trend and the share read the FIRST line:
+the falling eval compares `root_moves[0].score`, not the last line's search result, and the
+effort share divides by the nodes searched when that line finished (upstream afc3e378c);
+over budget it either sets `stop` or, when pondering, arms
 `stop_on_ponderhit`. Otherwise it sets `threads.increase_depth`, which the next
 iteration reads to soften the aspiration depth reduction. The mate limit stops the
 search once a mate within `limits.mate` is proven.
