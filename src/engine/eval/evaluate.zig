@@ -1,11 +1,10 @@
 const std = @import("std");
 
-/// scaleEvaluation's inputs: the net's value, the side to move's optimism, and the
-/// position's material ingredients, from which the two material readings the blend takes
-/// are derived here rather than at each caller.
+/// scaleEvaluation's inputs: the net's value and the position's material ingredients, from
+/// which the two material readings the blend takes are derived here rather than at each
+/// caller.
 pub const EvalInput = struct {
     nnue: i32,
-    optimism: i32,
     pawn_count: [2]i32, // by colour
     non_pawn_material: [2]i32, // by colour
     side_to_move: u1,
@@ -35,7 +34,7 @@ pub const EvalTraceInput = struct {
 pub const stub_piece_values = [5]i32{ 100, 300, 300, 500, 900 };
 
 /// Score a position by material alone, from the side to move's perspective. Counts are indexed
-/// pawn..queen. No optimism, no alignment blend, no 50-move damping and no TB clamp -- the
+/// pawn..queen. No alignment blend, no 50-move damping and no TB clamp -- the
 /// clamp would be a no-op here anyway (max material is far inside the TB bounds), and leaving
 /// all four out of BOTH engines keeps the two stubs a line-for-line match.
 pub fn stubMaterialValue(white: [5]i32, black: [5]i32, side_to_move_is_white: bool) i32 {
@@ -56,7 +55,7 @@ pub fn simpleEval(input: EvalInput) i32 {
         input.non_pawn_material[us] - input.non_pawn_material[them];
 }
 
-/// Apply the search-dependent scaling (optimism, material, rule50) to the raw NNUE value --
+/// Apply the material and rule50 scaling to the raw NNUE value --
 /// upstream's scale_evaluation, since f740707f replaced the net's psqt/positional
 /// complexity with how far the net and simple_eval AGREE. Arithmetic is C++ `int` with
 /// truncating division throughout, i64 only where upstream casts to it.
@@ -72,7 +71,7 @@ pub fn scaleEvaluation(input: EvalInput) i32 {
     const correl = @divTrunc(se_norm * nnue_norm, 512);
 
     // When winning, boost easy positions, and vice versa.
-    var v = nnue + @divTrunc((nnue + input.optimism) * correl, 65536);
+    var v = nnue + @divTrunc(nnue * correl, 65536);
 
     // Scale the combined evaluation by total material. `v * (90649 + material) / 90649` is the
     // same integer: material is never negative, so `v * material` shares v's sign and the
@@ -175,11 +174,10 @@ fn absInt(value: i32) i32 {
 }
 
 // --- tests --------------------------------------------------------------
-fn testInput(nnue: i32, optimism: i32, rule50_count: i32) EvalInput {
+fn testInput(nnue: i32, rule50_count: i32) EvalInput {
     // Start position material: 8 pawns and 6989 non-pawn material a side, white to move.
     return .{
         .nnue = nnue,
-        .optimism = optimism,
         .pawn_count = .{ 8, 8 },
         .non_pawn_material = .{ 6989, 6989 },
         .side_to_move = 0,
@@ -190,19 +188,19 @@ fn testInput(nnue: i32, optimism: i32, rule50_count: i32) EvalInput {
 }
 
 test "scaleEvaluation: zero stays zero; balanced material only scales by material" {
-    try std.testing.expectEqual(@as(i32, 0), scaleEvaluation(testInput(0, 0, 0)));
+    try std.testing.expectEqual(@as(i32, 0), scaleEvaluation(testInput(0, 0)));
     // simple_eval 0 -> alignment 0, so v = 100 * (90649 + 22314) / 90649 = 124.
-    try std.testing.expectEqual(@as(i32, 124), scaleEvaluation(testInput(100, 50, 0)));
+    try std.testing.expectEqual(@as(i32, 124), scaleEvaluation(testInput(100, 0)));
     // rule50 damping: 124 - 124 * 50 / 189 = 124 - 32 = 92.
-    try std.testing.expectEqual(@as(i32, 92), scaleEvaluation(testInput(100, 50, 50)));
+    try std.testing.expectEqual(@as(i32, 92), scaleEvaluation(testInput(100, 50)));
 }
 
 test "scaleEvaluation: alignment truncates toward zero like C++ int division" {
-    var input = testInput(-300, -40, 0);
+    var input = testInput(-300, 0);
     input.pawn_count = .{ 8, 7 }; // white a pawn up, white to move: simple_eval = 208
     // se_norm = 208*1024/1232 = 172, nnue_norm = -300*1024/1324 = -232,
     // alignment = 172 * -232 / 512 = -77 (trunc, not -78),
-    // base = -300 + (-300 + -40) * -77 / 65536 = -300 + 26180 / 65536 = -300 + 0 = -300,
+    // base = -300 + -300 * -77 / 65536 = -300 + 23100 / 65536 = -300 + 0 = -300,
     // v = -300 * (90649 + 521*15 + 13978) / 90649 = -300 * 112442 / 90649 = -372.
     try std.testing.expectEqual(@as(i32, -372), scaleEvaluation(input));
     input.side_to_move = 1; // the same board from black's view: simple_eval = -208
@@ -210,6 +208,6 @@ test "scaleEvaluation: alignment truncates toward zero like C++ int division" {
 }
 
 test "scaleEvaluation: clamps to the tb bounds" {
-    try std.testing.expectEqual(@as(i32, 30000 - 1), scaleEvaluation(testInput(100000, 0, 0)));
-    try std.testing.expectEqual(@as(i32, -30000 + 1), scaleEvaluation(testInput(-100000, 0, 0)));
+    try std.testing.expectEqual(@as(i32, 30000 - 1), scaleEvaluation(testInput(100000, 0)));
+    try std.testing.expectEqual(@as(i32, -30000 + 1), scaleEvaluation(testInput(-100000, 0)));
 }

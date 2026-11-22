@@ -84,7 +84,6 @@ pub const ZfishIdState = struct {
     pv_last: *usize,
     sel_depth: *i32,
     root_depth: *i32,
-    optimism: *[2]i32,
     nodes: *const u64,
     // The pool, for the nodestime elapsed() total (poolNodesSearched), matching checkTime and
     // upstream Worker::elapsed() -> threads.nodes_searched(). Null only in the headless case.
@@ -129,7 +128,6 @@ pub const QCtx = struct {
     acc_stack: *nnue_acc.AccumulatorStack,
     nodes: *u64,
     cache: *nnue_acc.RefreshCache,
-    optimism: *const [2]i32,
     nmp_min_ply: *i32,
     sel_depth: *i32,
     root_depth: *i32,

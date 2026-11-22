@@ -877,7 +877,7 @@ available in CI, so it never runs there.
   the mechanism — relocating the block was.
 - **A plain struct's field order is not yours to reason about, and a big embedded array
   can split a scalar cluster you never touched.** `WorkerLayout` interleaved `nodes` /
-  `tb_hits` / `best_move_changes` (written every node) with `sel_depth` / `optimism` /
+  `tb_hits` / `best_move_changes` (written every node) with `sel_depth` /
   `root_depth` (read every node) — not because either group moved, but because Zig's
   descending-alignment sort placed `root_pos` (1064 B) and `root_state`
   (192 B) between them, ~1.8 KB of nothing either scalar cluster needs. Giving `root_pos`,

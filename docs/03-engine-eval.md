@@ -41,7 +41,7 @@ for the same position.
 | `nnue_affine.zig` | `affineDpbusd` and the non-VNNI affine kernels: the AVX2/SSSE3 maddubs dots, the `OUT == 1` contiguous dot, the portable reduction, and `GroupIter` |
 | `nnue_affine_vnni.zig` | the AVX-512 VNNI kernel `affineVnni` — `vpdpbusd` plus the two sparse walks (index-list cursor under VBMI2, hoisted bitset otherwise) |
 | `nnue_affine_load.zig` | `loadW`, the alignment-asserting weight-chunk load both affine files share |
-| `evaluate.zig` | `scaleEvaluation` — scaling the network output by its agreement with `simpleEval`, optimism, material, and the 50-move counter into the final score — and `formatTrace`, the `eval` command's trace renderer (built by the file-local `formatTraceAlloc`) |
+| `evaluate.zig` | `scaleEvaluation` — scaling the network output by its agreement with `simpleEval`, material, and the 50-move counter into the final score — and `formatTrace`, the `eval` command's trace renderer (built by the file-local `formatTraceAlloc`) |
 | `nnue_misc.zig` | the `eval` command's per-bucket contribution table |
 
 ## The network
@@ -578,15 +578,15 @@ net by the stored stacks.
 `scale_evaluation`. It normalises the net value and `simpleEval` (the side to move's material
 balance, `208 * pawn difference + non-pawn difference`) each into [-1024, 1024] with
 `x * 1024 / (|x| + 1024)`, takes their product over 512 as the CORRELATION, and adds
-`(nnue + optimism) * correl / 65536` to the net value — agreement
+`nnue * correl / 65536` to the net value — agreement
 between the net and material favours the side that is winning, disagreement the one
 that is not. That sum `v` grows by `material * v / 90649`, with material
 `521 * pawns + non-pawn material` over both colours — the same integer as scaling by
 `(90649 + material) / 90649`, since material is never negative — then is damped by
 `rule50 / 189` and clamped inside the TB bounds. Every step is C++ `int` arithmetic with truncating
 division, `i64` only for the material product where upstream casts to it. The search
-calls it through `search_acc.evaluateAcc`, and the `eval` trace with zero optimism;
-both hand it the position's pawn counts and non-pawn material rather than a
+calls it through `search_acc.evaluateAcc` and the `eval` trace the same way — there is no
+search-dependent term since upstream aa49a249a removed optimism — and both hand it the position's pawn counts and non-pawn material rather than a
 pre-weighted material, so the two weights have one owner.
 
 ## SIMD

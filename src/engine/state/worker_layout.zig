@@ -81,7 +81,6 @@ pub const WorkerLayout = struct {
     best_move_changes: u64,
     sel_depth: i32,
     nmp_min_ply: i32,
-    optimism: [2]i32,
     root_depth: i32,
     thread_idx: usize,
     numa_thread_idx: usize,
@@ -94,9 +93,9 @@ pub const WorkerLayout = struct {
     // Force these four into the SAME (very high) alignment class as the arenas above, out of
     // the plain align(8)/align(4) classes the per-node scalars above sort into. Upstream's
     // Worker keeps big/cold members (the root Position, its history tables) at one end and
-    // its per-node scalars (nodes, sel_depth, optimism, ...) adjacent; a plain Zig struct
+    // its per-node scalars (nodes, sel_depth, ...) adjacent; a plain Zig struct
     // sorted these four in among the scalars by their own natural alignment, splitting
-    // nodes/tb_hits/best_move_changes (needed every node) from sel_depth/optimism/root_depth
+    // nodes/tb_hits/best_move_changes (needed every node) from sel_depth/root_depth
     // (also needed every node) by ~1.8 KB -- root_pos (1064B) and root_state (192B) alone
     // sat between them. align(64) opts each field out of its natural
     // class instead, so the scalar fields above and below this block close the gap. Costs
@@ -141,7 +140,6 @@ pub const worker_off = struct {
     pub const best_move_changes = @offsetOf(WorkerLayout, "best_move_changes");
     pub const sel_depth = @offsetOf(WorkerLayout, "sel_depth");
     pub const nmp_min_ply = @offsetOf(WorkerLayout, "nmp_min_ply");
-    pub const optimism = @offsetOf(WorkerLayout, "optimism");
     pub const root_pos = @offsetOf(WorkerLayout, "root_pos");
     pub const root_state = @offsetOf(WorkerLayout, "root_state");
     pub const root_moves = @offsetOf(WorkerLayout, "root_moves");

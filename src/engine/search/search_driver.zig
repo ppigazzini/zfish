@@ -198,7 +198,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 
 // Fetch in one shot the Worker state the inlined search needs, all stable for the
 // whole search: the NNUE accumulator stack, the node counter, the (numa-resolved)
-// Network, the accumulator-refresh cache, the optimism[2] array, and the three
+// Network, the accumulator-refresh cache, and the three
 // scalar Worker fields the search reads/writes directly — nmpMinPly, selDepth, and
 // rootDepth. Cached in QCtx at entry; do_move/undo_move/evaluate and these scalar
 // accesses cover the accumulator push/pop, pos.do_move, and the network forward

@@ -96,7 +96,6 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     var last_best_move_score: i32 = -q_value_inf;
     var last_best_move_depth: i32 = 0;
     var best_value: i32 = -q_value_inf;
-    const us: usize = @intCast(sideToMove(id.root_pos));
     var time_reduction: f64 = 1;
     var tot_best_move_changes: f64 = 0;
     var iter_idx: usize = 0;
@@ -198,9 +197,6 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             // Ask once per root line, not per node, whether this line is hunting a mate
             // (upstream 513ce0752): the answer holds through every aspiration re-search.
             ctx.seek_mate = search.seekMate(seek_mate_threshold, id.root_moves[id.pv_idx.*].previous_score);
-
-            id.optimism[us] = search.optimism(avg);
-            id.optimism[us ^ 1] = -id.optimism[us];
 
             var failed_high_cnt: i32 = 0;
             if (id.pv_idx.* == 0) fail_high_recovery = @max(0, fail_high_recovery - 2);

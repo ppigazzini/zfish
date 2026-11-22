@@ -149,7 +149,6 @@ pub fn evalTrace(pos: *const position_port.Position) ?[]u8 {
 
     const final_value = evaluate_mod.scaleEvaluation(.{
         .nnue = nnue_value,
-        .optimism = 0,
         .pawn_count = .{ pos.piece_count[1], pos.piece_count[9] },
         .non_pawn_material = pos.st.non_pawn_material,
         .side_to_move = @intCast(pos.side_to_move),

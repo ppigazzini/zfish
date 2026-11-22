@@ -347,14 +347,6 @@ pub fn aspirationDeltaGrow(delta: i32) i32 {
     return delta + @divTrunc(47 * delta, 128);
 }
 
-/// Compute eval optimism from the root move's average score (iterative_deepening()):
-/// a saturating 456*avg/(|avg|+85). The caller mirrors it for the opponent. 456 is 114 * 4:
-/// upstream 7347cc2f4 folded the blend's `/ 16384` into the eval's `/ 65536`.
-pub fn optimism(avg: i32) i32 {
-    const abs_avg = absInt(avg);
-    return @divTrunc(456 * avg, abs_avg + 85);
-}
-
 /// Index the LMR reductions table by depth or move number: reductions[i] = int(2872/128.0 * ln i),
 /// and reductions[0] = 0. One table serves every worker -- nothing in it depends on the
 /// thread -- so it is built at comptime rather than refilled on each worker clear (upstream

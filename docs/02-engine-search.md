@@ -144,7 +144,7 @@ relative to the current ply through `ssAdd`/`ssSub` (`search_qsearch.zig`):
 `search_ctx.QCtx` is the hot context threaded by pointer through the whole recursion.
 It is built once per search by `search_setup.buildCtx`, which snapshots the worker's
 live member pointers — the accumulator stack, the node counter, the refresh cache,
-`optimism`, `nmp_min_ply`, `sel_depth`, `root_depth`, the last-iteration PV, the shared
+`nmp_min_ply`, `sel_depth`, `root_depth`, the last-iteration PV, the shared
 stop flag, the root-move array — plus a `SearchTimeState`, whose main-thread-only fields
 are null on helper threads. Nothing in the recursion re-walks the worker graph.
 

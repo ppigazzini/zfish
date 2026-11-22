@@ -44,8 +44,8 @@ pub inline fn updateSelDepth(ctx: *const QCtx, ply: i32) void {
 }
 
 /// Run the evaluate step: the NNUE forward pass on the current position, then
-/// evaluate.scaleEvaluation over it with the side to move's optimism, the position's
-/// pawn counts and non-pawn material, and +/-VALUE_TB_WIN_IN_MAX_PLY as the clamp.
+/// evaluate.scaleEvaluation over it with the position's pawn counts and non-pawn material,
+/// and +/-VALUE_TB_WIN_IN_MAX_PLY as the clamp.
 pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     const pos = pos_ptr;
     // SPINE ISOLATION (-Dstub-eval): replace the whole NNUE forward pass and the eval blend
@@ -68,7 +68,6 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     }
     return evaluate_mod.scaleEvaluation(.{
         .nnue = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache),
-        .optimism = ctx.optimism[pos.side_to_move],
         .pawn_count = .{ pos.piece_count[1], pos.piece_count[9] },
         .non_pawn_material = pos.st.non_pawn_material,
         .side_to_move = @intCast(pos.side_to_move),
