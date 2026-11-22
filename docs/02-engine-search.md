@@ -228,7 +228,8 @@ excluded move, with non-pawn material for the side to move, at or above
 `ctx.nmp_min_ply`, and with `nullMoveBetaOk(beta)` — a flat `beta >= -2000` floor rather
 than the `!isLoss(beta)` test the other steps use. The stricter floor is load-bearing:
 `nullMoveReduction` scales `R` with how far the static eval clears beta, and without it
-that deeper reduction costs mate finds when beta is already in decisive territory. While
+that deeper reduction costs mate finds when beta is already in decisive territory. An
+odd-numbered worker reduces one ply less, so Lazy SMP's helpers search different trees. While
 `seekMate` holds, `R` is halved after it is computed.
 `doNullMove` touches **no accumulator** — passing is not a move, so
 there is no feature delta to apply — and the stack records the move as `65` with the
