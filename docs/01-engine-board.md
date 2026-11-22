@@ -459,9 +459,10 @@ candidate ply rather than a move-by-move search.
 `fen_parse.setPosition` zeroes the `Position` and its root `StateInfo`, then walks
 the six FEN fields: placement (rejecting >32 pieces, pawns on the first or eighth
 rank, and any king count other than one per side), active color, castling
-availability (both `KQkq` and Chess960 file letters, resolved by scanning for the
-actual rook and king), the en-passant square (kept only if a pawn can *legally*
-capture there), and the two counters. It finishes with `setState` and rejects a
+availability (both `KQkq` and Chess960 file letters: `K`/`Q` scan from the corner for the
+actual rook and king, a file letter names the rook and takes the king's square, which must
+sit on the first rank between files B and G), the en-passant square (kept only if a pawn
+can *legally* capture there), and the two counters. It finishes with `setState` and rejects a
 position where the side not to move can be captured. It returns `null` on success
 or an owned error string.
 

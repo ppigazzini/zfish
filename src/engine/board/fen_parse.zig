@@ -219,18 +219,18 @@ pub fn setPosition(
             const rel_rank1 = relativeSquare(c, 0) >> 3; // rank of relative SQ_A1
             const rsq_cand = makeSquare(token - 'A', rel_rank1);
             if (pos.board[rsq_cand] == rook) rsq = rsq_cand;
-            var sq: i32 = relativeSquare(c, 1); // SQ_B1
-            for (0..6) |_| {
-                if (pos.board[@intCast(sq)] == king) ksq = sq;
-                sq += 1;
-            }
+            // The king must stand on its first rank, files B to G, for the right to apply.
+            // Read its square rather than scanning for it (upstream 054b0daf0): the placement
+            // above already refused any count but one king a side.
+            const king_sq = kingSquare(pos, c);
+            if ((king_sq >> 3) == rel_rank1 and (king_sq & 7) >= 1 and (king_sq & 7) <= 6)
+                ksq = king_sq;
         } else return setErrFmt("Invalid FEN. Expected castling rights. Got: {c}", .{token});
 
         if (ksq != -1 and rsq != -1) setCastlingRight(pos_ptr, c, @intCast(rsq));
     }
 
     // 4. En passant square
-    var enpassant_ok = false;
     var legal_ep = false;
     const col = cur.next() orelse '-';
     if (col != '-') {
@@ -245,18 +245,19 @@ pub fn setPosition(
             const target_sq: u8 = @intCast(@as(i16, ep) + pawnPush(them));
             const target = their_pawns & sqBb(target_sq);
             const behind_sq: u8 = @intCast(@as(i16, ep) + pawnPush(stm));
-            enpassant_ok = pawns != 0 and target != 0 and (all & (sqBb(ep) | sqBb(behind_sq))) == 0;
+            const enpassant = pawns != 0 and target != 0 and (all & (sqBb(ep) | sqBb(behind_sq))) == 0;
             const occ = all ^ target ^ sqBb(ep);
             const ksq = kingSquare(pos, stm);
-            while (pawns != 0) {
+            // Test only a capture the shape allows, and stop at the first legal capturer
+            // (upstream 054b0daf0).
+            while (enpassant and pawns != 0 and !legal_ep) {
                 const pawn_sq: u8 = @intCast(@ctz(pawns));
                 pawns &= pawns - 1;
-                if ((attackersTo(pos_ptr, ksq, occ ^ sqBb(pawn_sq)) & pos.by_color_bb[them] & ~target) == 0)
-                    legal_ep = true;
+                legal_ep = (attackersTo(pos_ptr, ksq, occ ^ sqBb(pawn_sq)) & pos.by_color_bb[them] & ~target) == 0;
             }
         } else return setErr("Invalid FEN. Invalid en-passant square.");
     }
-    if (!enpassant_ok or !legal_ep) pos.st.ep_square = sq_none_u8;
+    if (!legal_ep) pos.st.ep_square = sq_none_u8;
 
     // 5-6. Halfmove clock and fullmove number
     // Read both counters through one failure state, as `ss >> st->rule50 >> gamePly` does: a

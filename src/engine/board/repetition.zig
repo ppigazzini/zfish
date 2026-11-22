@@ -50,10 +50,11 @@ pub fn upcomingRepetition(pos: *const Position, ply: i32) bool {
         const mv = cuckoo_move[j];
         const s1 = moveFrom(mv);
         const s2 = moveTo(mv);
-        if (((bitboard.between(s1, s2) ^ sqBb(s2)) & pos.by_type_bb[0]) == 0) {
-            if (ply > i) return true;
-            if (stp.repetition != 0) return true;
-        }
+        // At or before the root, require a repetition rather than a move to the current
+        // position (upstream 054b0daf0 folds the two tests into one condition).
+        if (((bitboard.between(s1, s2) ^ sqBb(s2)) & pos.by_type_bb[0]) == 0 and
+            (ply > i or stp.repetition != 0))
+            return true;
     }
     return false;
 }
