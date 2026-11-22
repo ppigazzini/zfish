@@ -168,21 +168,21 @@ pub fn entrySave(
 ) void {
     const cluster = clusterOf(entry);
     const shift = tagShift(entry);
-    var keys = rlx(u64, &cluster.keys);
-    const stored_tag = (keys >> shift) & key_mask;
-    const tag = key & key_mask;
+    const keys = rlx(u64, &cluster.keys);
+    // Xor the stored tag with the new one once (upstream 3bed74c62): zero is a match, and
+    // xoring the difference back in at the slot's shift IS the rewrite, so the store needs
+    // neither a mask-out nor an or-in.
+    const key_diff = ((keys >> shift) ^ key) & key_mask;
 
-    if (move16 != 0 or tag != stored_tag) {
+    if (move16 != 0 or key_diff != 0) {
         setRlx(u16, &entry.move16, move16);
     }
 
-    if (bound == 3 or tag != stored_tag or
+    if (bound == 3 or key_diff != 0 or
         depth - depth_none + 2 * @as(i32, pv) > @as(i32, rlx(u8, &entry.depth8)) - 4 or
         entryRelativeAge(entry, curr_generation) != 0)
     {
-        keys &= ~(key_mask << shift);
-        keys |= tag << shift;
-        setRlx(u64, &cluster.keys, keys);
+        setRlx(u64, &cluster.keys, keys ^ (key_diff << shift));
         setRlx(u8, &entry.depth8, @intCast(depth - depth_none));
         setRlx(u8, &entry.gen_bound8, curr_generation | (bound << bound_shift) | (pv << pv_shift));
         setRlx(i16, &entry.value16, @intCast(value));
@@ -295,6 +295,12 @@ pub inline fn prefetch(clusters: [*]TtCluster, cluster_count: usize, key: u64) v
     @prefetch(&clusters[firstEntryIndex(key, cluster_count)], .{ .rw = .read, .locality = 3, .cache = .data });
 }
 
+/// Score an entry for replacement: depth is worth keeping, and each generation of staleness
+/// costs eight plies of it.
+inline fn replacementScore(entry: *const TtEntry, generation: u8) i32 {
+    return @as(i32, rlx(u8, &entry.depth8)) - 8 * @as(i32, entryRelativeAge(entry, generation));
+}
+
 pub fn probe(
     cluster: *TtCluster,
     key: u64,
@@ -310,7 +316,10 @@ pub fn probe(
     const matches = (key_xors -% key_lsb) & ~key_xors & key_msb;
 
     if (matches != 0) {
-        const entry = &cluster.entry[@ctz(matches) / key_bits];
+        // The match bit is bit 20 of its block -- 20, 41 or 62 -- so a shift by 4 minus one
+        // names the slot without a divide by 21 (upstream 3bed74c62).
+        comptime std.debug.assert(key_bits == 21);
+        const entry = &cluster.entry[(@ctz(matches) >> 4) - 1];
         const depth8 = rlx(u8, &entry.depth8);
         return .{
             .found = if (depth8 != 0) 1 else 0,
@@ -319,14 +328,17 @@ pub fn probe(
         };
     }
 
+    // Carry the running minimum's score rather than re-reading the incumbent's two fields at
+    // every comparison (upstream 3bed74c62).
     var replace: *TtEntry = &cluster.entry[0];
+    var replace_score = replacementScore(replace, generation);
     var candidate_index: usize = 1;
     while (candidate_index < cluster_size) : (candidate_index += 1) {
         const candidate_entry = &cluster.entry[candidate_index];
-        const replace_score = @as(i32, rlx(u8, &replace.depth8)) - 8 * @as(i32, entryRelativeAge(replace, generation));
-        const candidate_score = @as(i32, rlx(u8, &candidate_entry.depth8)) - 8 * @as(i32, entryRelativeAge(candidate_entry, generation));
+        const candidate_score = replacementScore(candidate_entry, generation);
         if (replace_score > candidate_score) {
             replace = candidate_entry;
+            replace_score = candidate_score;
         }
     }
 
