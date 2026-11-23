@@ -12,7 +12,6 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
-uv.lock
 
 # Files from build
 **/*.o
@@ -54,3 +53,7 @@ __pycache__/
 callgrind.out
 callgrind.out.nodes
 callgrind.out.*
+
+# The site: tools/site.py writes site-src/ from docs/, and zensical builds it into site/.
+/site-src/
+/site/

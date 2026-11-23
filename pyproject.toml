@@ -13,6 +13,13 @@ dev = [
     "ruff>=0.17.2",
     "ty>=0.0.91",
 ]
+# The site `mkdocs.yml` builds and the workflow `zfish site` publishes, as ../valgebra's:
+# the pages, and `/llms.txt` with `/llms-full.txt` for a reader that is not a browser.
+# Zensical, Material for MkDocs' maintained successor, builds it from `mkdocs.yml` as written,
+# with its own search and llms.txt export.
+docs = [
+    "zensical>=0.1.3",
+]
 
 [tool.ruff]
 target-version = "py315"

@@ -1,0 +1,67 @@
+name: zfish site
+
+# Build the documentation site and publish it to GitHub Pages with the Actions-based
+# deployment (an uploaded artifact deployed over OIDC, no gh-pages branch), as ../valgebra's
+# site is. A push to `github_ci` builds it, so a change is seen to build before it reaches
+# `main`; a push to `main` deploys it too, and a manual run republishes on demand. The
+# repository's Pages source is "GitHub Actions".
+on:
+  push:
+    branches: [main, github_ci]
+  workflow_dispatch:
+
+# Least privilege by default; the Pages permissions are granted only to the jobs that need them.
+permissions:
+  contents: read
+
+# One Pages deployment at a time; never cancel a publish already in flight.
+concurrency:
+  group: pages-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    # configure-pages and upload-pages-artifact write the Pages artifact.
+    permissions:
+      contents: read
+      pages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          version: "0.13.9"
+          python-version: "3.15"
+          enable-cache: false
+      - uses: actions/configure-pages@v6.0.0
+      - run: uv sync --locked --group docs
+      # Refuses a manifest apart from the nav and the index table, then writes site-src/,
+      # the pages with each link out of docs/ pointed at GitHub.
+      - run: uv run --no-sync python tools/site.py
+      # --strict fails the build on a broken link, a missing anchor or a page off the nav.
+      - run: uv run --no-sync zensical build --strict
+      # zensical builds into ./site (upload-pages-artifact reads ./_site by default).
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: Deploy the site
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    # deploy-pages publishes the artifact and mints the OIDC token Pages verifies.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5.0.1

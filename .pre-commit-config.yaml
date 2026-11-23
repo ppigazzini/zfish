@@ -10,6 +10,10 @@ repos:
       - id: check-added-large-files
       - id: check-toml
       - id: check-yaml
+        # mkdocs.yml names the Mermaid fence's formatter and the heading slugger by Python
+        # tags, which a safe load refuses; the hook checks the syntax, and the site build
+        # loads the file.
+        args: [--unsafe]
       - id: end-of-file-fixer
         # Never touch byte-exact comparison inputs: goldens are matched against
         # engine output verbatim (misc.golden carries a trailing space today),

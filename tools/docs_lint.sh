@@ -115,10 +115,11 @@ fi
 
 # A CI lane is named by its FILE, and tooling-ci.md names each one bare rather than by path, so
 # the check above cannot see it. A renamed workflow leaves the lane table pointing at nothing.
+# A bare name the repository root carries -- `mkdocs.yml`, the site's config -- is that file.
 badflow=0
 while IFS= read -r wf; do
     [ -n "$wf" ] || continue
-    in_tree ".github/workflows/$wf" || {
+    in_tree ".github/workflows/$wf" || in_tree "$wf" || {
         echo "docs-lint: DEAD WORKFLOW $wf (named in a shipped doc, not in .github/workflows/)"
         badflow=$((badflow + 1))
     }

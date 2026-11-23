@@ -6,7 +6,11 @@ shipped engine is **pure Zig** — the default `zig build` compiles zero C++ —
 Stockfish, it is a UCI engine, not a GUI.
 
 The port covers the whole runtime, including the Syzygy endgame tablebase prober —
-no bindings to an external library. See [docs/](docs/index.md).
+no bindings to an external library. See [docs/](docs/index.md), published at
+<https://ppigazzini.github.io/zfish/> with
+[`llms.txt`](https://ppigazzini.github.io/zfish/llms.txt) (a manifest of the pages) and
+[`llms-full.txt`](https://ppigazzini.github.io/zfish/llms-full.txt) (their full text) per the
+[llmstxt.org](https://llmstxt.org) convention.
 
 ## Build
 

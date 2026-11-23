@@ -1,0 +1,131 @@
+site_name: zfish
+site_description: "A pure-Zig port of the Stockfish chess engine, bit-exact to upstream: the same nodes and the same move on every target."
+site_url: https://ppigazzini.github.io/zfish/
+repo_url: https://github.com/ppigazzini/zfish
+repo_name: ppigazzini/zfish
+copyright: "zfish is free software under the GNU General Public License v3, as Stockfish is."
+
+# The pages are built from site-src/, which `tools/site.py` writes from docs/: the same
+# pages, with each link that leaves docs/ pointed at its file on GitHub. Run it first.
+docs_dir: site-src
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+# The order a reader meets the pages in. A page added is a line here and a line of the
+# llmstxt sections below, whose text is the page's Description cell in the docs/index.md table;
+# `tools/site.py` refuses the three apart.
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Engine:
+      - Board: engine-board.md
+      - Search: engine-search.md
+      - Evaluation: engine-eval.md
+      - Multithreading: multithreading.md
+      - Tablebases: tablebases.md
+  - Runtime:
+      - Platform: platform.md
+      - Shell: shell.md
+  - Practice:
+      - Idiomatic Zig: idiomatic-zig.md
+      - Type design: type-design.md
+  - Tooling and CI: tooling-ci.md
+  - Reference:
+      - References: references.md
+      - Writing these docs: writing.md
+      - Glossary: glossary.md
+
+# Every check the builder makes on a link and on the nav, raised to a warning so that --strict
+# fails the build on it: a page or an anchor a link names that does not exist, a page under
+# docs/ that no nav entry lists, and a link the builder cannot read as one to a page.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  # A diagram is a `mermaid` block, text the page carries: the theme loads Mermaid on a page
+  # holding one and draws it in the site's palette, light or dark, and GitHub draws the same
+  # block.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  # A heading's anchor is the one GitHub gives it, so a `page.md#anchor` link resolves on the
+  # site and on GitHub alike: an em dash between two words leaves both spaces as hyphens.
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+
+plugins:
+  - search
+  # Machine-readable view of the site: /llms.txt (a manifest mirroring the nav) and
+  # /llms-full.txt (the full content of every page it lists).
+  - llmstxt:
+      markdown_description: >-
+        zfish is a pure-Zig port of the Stockfish chess engine. The default `zig build` compiles
+        no C++, and the binary is bit-exact to upstream Stockfish: it reproduces upstream's
+        bench node signature on every target. These pages are its developer documentation: the
+        architecture, each subsystem, the Zig idioms the port rests on, and the tooling and CI
+        that hold it to upstream.
+      full_output: llms-full.txt
+      sections:
+        Home:
+          - index.md: "What zfish is, where it diverges from Stockfish in engineering rather than behaviour, the page set, and a quick start."
+        Architecture:
+          - architecture.md: "The three zones, the module graph, the composition root and cycle-break hooks, how a search flows"
+        Engine:
+          - engine-board.md: "Position and state, bitboards and magics, move generation, legality, Zobrist, repetition, FEN"
+          - engine-search.md: "Iterative deepening, alpha-beta and qsearch, move ordering, the transposition table and history, time management"
+          - engine-eval.md: "NNUE: the network and its load path, the feature transformer, the incremental accumulator, inference"
+          - multithreading.md: "Lazy-SMP: the pool and worker lifecycle, shared vs per-worker state, thread voting, NUMA replication, determinism"
+          - tablebases.md: "Syzygy: WDL and DTZ, the registry and probe path, root and in-search probing, the UCI options"
+        Runtime:
+          - platform.md: "Memory and NUMA, the thread runtime primitives, the clock, the lifecycle hooks"
+          - shell.md: "`main` as the composition root, the UCI surface, the option model, the engine object and session, bench"
+        Practice:
+          - idiomatic-zig.md: "Portable `@Vector` SIMD and the C++-intrinsic-to-Zig translation, comptime ISA dispatch, register-resident unrolled accumulators, vector-width choice, static allocation, dependency injection, cross-version shims, the measurement discipline"
+          - type-design.md: "What each quantity denotes, the six maps of the value domain, why there is no `Depth`, the cost rule, and — stated as plainly — what a compile error here does NOT stop"
+        Tooling and CI:
+          - tooling-ci.md: "The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes — and the gates on the gates: what runs each check, and whether each check can fail"
+        Reference:
+          - references.md: "Stockfish, Zig, chess-domain, and design references"
+          - writing.md: "How the set is organised, the writing rules, what `docs-lint` does and does not check"
+          - glossary.md: "The words this set uses without defining them, in four tiers: upstream's vocabulary and the symbol carrying it, this repository's, the ones that mean two things here, and the testing field's"

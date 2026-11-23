@@ -5,9 +5,22 @@ does not check. Read it before adding or editing a page.
 
 ## The set
 
-`index.md` is the index, the page a reader lands on. Every other page is named for what it
-holds, and the order a reader meets them in is the index table's alone: a contributor works
-down from the architecture into a zone.
+`index.md` is the index, and the home page of the site. Every other page is named for what it
+holds, and the order a reader meets them in is the site's nav alone: a contributor works down
+from the architecture into a zone.
+
+**The set is published** at <https://ppigazzini.github.io/zfish/>, with `llms.txt` and
+`llms-full.txt` for a reader that is not a browser. Zensical builds it from `mkdocs.yml`, and
+the `zfish site` workflow deploys it on each push to `main`. A page added is a line of the
+`nav` and a line of the `llmstxt` sections, the second the page's Description in the index
+table; `tools/site.py` refuses the three apart, then copies the pages to `site-src/` with each
+link that leaves `docs/` pointed at its file on GitHub, since the site holds only the pages.
+Locally:
+
+```sh
+uv sync --group docs
+uv run --no-sync python tools/site.py && uv run --no-sync zensical serve
+```
 
 Each page owns one subsystem and names its **audience** in the index table. A page describes
 **what the codebase does** — not what upstream does, not what a chess engine does in general.
