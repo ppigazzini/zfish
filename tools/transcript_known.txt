@@ -42,7 +42,7 @@ EXPIRING	^> info string Network replica [0-9]+: Local memory\.$
 
 # zfish compiles no C++, so it reports the Zig toolchain where upstream reports clang/gcc, and
 # the two are built at different -Darch/ARCH tiers. Reporting the toolchain that ACTUALLY
-# built the binary is correct, not a gap; docs/07-shell.md states it, and matching upstream's
+# built the binary is correct, not a gap; docs/shell.md states it, and matching upstream's
 # text would be a lie. PERMANENT: there is no future in which this retires, because the
 # divergence is the port being honest about itself.
 PERMANENT	^[<>] (Compiled by|Compilation architecture|Compilation settings|Compiler __VERSION__ macro) +:

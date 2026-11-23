@@ -69,7 +69,7 @@ done
 
 # --- 2. APIs a supported compiler removed or deprecates ------------------------------
 #
-# <pattern>|<what to use instead>. Each was paid for: see docs/08-idiomatic-zig.md.
+# <pattern>|<what to use instead>. Each was paid for: see docs/idiomatic-zig.md.
 RETIRED=(
     'b\.args|run.addPassthruArgs(), or a -D string option build() reads -- std.Build has no `b.args` since 0.17'
     'b\.pathFromRoot|config.repoPath(b, ...)'

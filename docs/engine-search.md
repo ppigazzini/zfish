@@ -5,9 +5,9 @@ limits, it returns a best move. It lives entirely in `src/engine/search/` — an
 engine-zone subtree that imports no platform or shell module and reaches the clock,
 the UCI options, the output stream, the tablebases, and the thread pool only through
 function-pointer seams. For the zones and the module graph, see
-[00-architecture.md](00-architecture.md); for the leaf evaluation, see
-[03-engine-eval.md](03-engine-eval.md); for move generation and legality, see
-[01-engine-board.md](01-engine-board.md).
+[architecture.md](architecture.md); for the leaf evaluation, see
+[engine-eval.md](engine-eval.md); for move generation and legality, see
+[engine-board.md](engine-board.md).
 
 ## Modules
 
@@ -20,13 +20,13 @@ function-pointer seams. For the zones and the module graph, see
 | `search_setup.zig` | `buildCtx` — fetches the stable per-search worker state once and assembles the `QCtx` threaded through the recursion |
 | `search_emit.zig` | The UCI reporting side: `info` line building, the MultiPV walk (`searchPv`), `currmove`, `bestmove`, the no-moves line |
 | `search_manager.zig` | `UpdateContext` (the four output callbacks) and the `Info*` payload records they carry; the manager object itself is `worker_layout.SearchManager` |
-| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; produces the `TbConfig` the worker carries, and owns the scratch position and `rankMovesAt` — see [05-tablebases.md](05-tablebases.md) |
-| `tb_extend.zig` | `syzygyExtendPv` — truncates a tablebase-scored PV to the part that holds the outcome, then walks it toward mate on minimal DTZ — see [05-tablebases.md](05-tablebases.md) |
+| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; produces the `TbConfig` the worker carries, and owns the scratch position and `rankMovesAt` — see [tablebases.md](tablebases.md) |
+| `tb_extend.zig` | `syzygyExtendPv` — truncates a tablebase-scored PV to the part that holds the outcome, then walks it toward mate on minimal DTZ — see [tablebases.md](tablebases.md) |
 | `tb_extend_source.zig` | The seam the reporter calls to reach `tb_extend`; defaults to returning the PV unchanged |
 | `headless_search.zig` | An engine-zone-only "search this FEN at depth N" root: builds one worker, a one-thread pool, a small TT, and drives `iterativeDeepening` with no platform attached |
 | **Alpha-beta** | |
 | `search_main.zig` | `searchImpl` — a node's Steps 1–13: TT probe, TT cutoff, static eval, razoring, futility, null move, IIR, ProbCut |
-| `search_tb_probe.zig` | Step 7's in-search WDL probe: the `tb_config` gate, the `VALUE_TB` scoring, the TT store on a cutoff, and the `Outcome` the node body applies — see [05-tablebases.md](05-tablebases.md). Path-imported by `search_main.zig` |
+| `search_tb_probe.zig` | Step 7's in-search WDL probe: the `tb_config` gate, the `VALUE_TB` scoring, the TT store on a cutoff, and the `Outcome` the node body applies — see [tablebases.md](tablebases.md). Path-imported by `search_main.zig` |
 | `search_back.zig` | `runBack` — the move loop and node finalization, Steps 14–24: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
@@ -118,7 +118,7 @@ of re-loading the node-state struct across a real call. `runBack`'s move loop
 recurses back into `searchImpl` for every child. The two files form a declared SCC — the cycle *is* the
 alpha-beta recursion — and `zig build arch-report` lists it as known, so a *new* file
 cycle shows up as undeclared instead of hiding behind this one. See
-[00-architecture.md](00-architecture.md#the-module-graph).
+[architecture.md](architecture.md#the-module-graph).
 
 `qsearchImpl` is a call-graph leaf: it self-recurses and never calls `searchImpl`.
 `searchImpl` dives into it at `depth <= 0`, on razoring, and from Step 12's ProbCut
@@ -171,7 +171,7 @@ and null means "the PV is just this move".
 
 A **root** move's PV is a different carrier. `RootPVMoves` grows and owns its buffer,
 because `syzygyExtendPv` walks a tablebase line toward mate and that walk ends at mate, a
-draw or the clock — never at a ply count ([05-tablebases.md](05-tablebases.md)). Each
+draw or the clock — never at a ply count ([tablebases.md](tablebases.md)). Each
 `RootMove` holds its own, so the three permutations of the root-move list in
 `search_id.zig` (`stableSortRoot`, `moveToFront`, `skillSwapBest`) carry ownership with
 the element and need no special case; a copy is `copyFrom`, never a struct assignment. The
@@ -190,7 +190,7 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 | 4 | Probe the TT |
 | 5 | Compute the static eval, correct it (below), and derive `improving` / `opponent_worsening` |
 | 6 | Cut off early at a non-PV node on a stored value whose bound covers the window and whose depth suffices; a window-bound mismatch that was the cutoff's only obstacle penalizes the now-useless entry instead |
-| 7 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
+| 7 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [tablebases.md](tablebases.md) |
 | 8 | **Razoring**: an allNode whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch — a fail-low cutoff, so it is taken at the node type opposite to null-move pruning's cutNode — stood down while `seekMate` holds, so a mate hunt is not razored away |
 | 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(seek_mate)` — 19 normally, 6 while `seekMate` holds, so mating lines stay searched |
 | 10 | **Null move** (below); its reduction halves while `seekMate` holds |
@@ -400,7 +400,7 @@ between the two bundles of row `key >> 1` — the `[row][colour]` pair this tabl
 
 Every one of these tables but the scalar `tt_move_history` resets to a **non-zero** `i16`
 default — `-5`, `102`, `-742`, `5`, `-1338`, `-586` — so none of the clears is a byte-pattern `@memset` and a scalar
-store loop would stay scalar (see [the hand-vectorization rule](08-idiomatic-zig.md#vectorize-integer-hot-loops-by-hand--the-toolchain-will-not)).
+store loop would stay scalar (see [the hand-vectorization rule](idiomatic-zig.md#vectorize-integer-hot-loops-by-hand--the-toolchain-will-not)).
 `shared_history.fillI16` broadcast-stores them instead, and both the shared clear and the
 per-worker clears in `history.zig` go through it, so there is one width to tune. The
 per-iteration `ageMainHistory` decay is hand-widened the same way: sign-extend a block of
@@ -629,7 +629,7 @@ and the per-NUMA-node histories; the engine drives the pool only through the
 `thread_ops` seam, and the reported move is chosen by thread voting. The pool, the
 worker lifecycle, the shared-vs-per-worker split, NUMA replication, and what is
 deterministic under threads are covered in
-[04-multithreading.md](04-multithreading.md).
+[multithreading.md](multithreading.md).
 
 ## The engine seams
 
@@ -641,13 +641,13 @@ the zone stack and create a cycle.
 
 Each is instead a **hook**: a `pub var` function pointer in an engine leaf, defaulted
 to a headless-correct implementation, that the composition root overwrites at startup.
-See [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+See [architecture.md](architecture.md#the-composition-root-and-the-cycle-break-hooks).
 
 | Seam | Reached for | Default when unregistered |
 | --- | --- | --- |
 | `option_source.zig` | `MultiPV`, `Skill Level`, `UCI_Elo`, `UCI_LimitStrength`, `nodestime`, `Move Overhead`, `Ponder`, `UCI_ShowWDL`, the Syzygy settings | 0 / false — **search-affecting** |
 | `output_sink.zig` | every `info` and `bestmove` line | drop the line — **degraded**: right move, no answer |
-| `tb_source.zig` | Step 7's WDL probe, root ranking — see [05-tablebases.md](05-tablebases.md) | "no tablebases" — genuinely safe |
+| `tb_source.zig` | Step 7's WDL probe, root ranking — see [tablebases.md](tablebases.md) | "no tablebases" — genuinely safe |
 | `time_source.zig` | time management, elapsed, the skill RNG seed | a monotonic counter — safe, but in ticks |
 | `thread_ops.zig` | start/wait siblings, best-thread vote | single-threaded — **search-affecting** |
 

@@ -3,9 +3,9 @@
 `src/shell/` is the process surface: the UCI protocol, the option model, `main`, and
 the engine object that owns the run. It is the top zone — it may import `engine/` and
 `platform/`, and nothing imports it. For the zones and the module graph see
-[00-architecture.md](00-architecture.md); for what the shell drives, see
-[02-engine-search.md](02-engine-search.md), [03-engine-eval.md](03-engine-eval.md), and
-[06-platform.md](06-platform.md).
+[architecture.md](architecture.md); for what the shell drives, see
+[engine-search.md](engine-search.md), [engine-eval.md](engine-eval.md), and
+[platform.md](platform.md).
 
 ## Modules
 
@@ -66,7 +66,7 @@ flowchart TD
 `main.zig` may import everything and is imported by nothing. That asymmetry is what
 lets it hand implementations *backwards* to leaf modules that could not import them —
 the pattern, and the lint that bounds it, are described in
-[00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[architecture.md](architecture.md#the-composition-root-and-the-cycle-break-hooks).
 The hook bodies live here because they need `position`/`engine`/`network`/`search`
 modules that already import their callers: worker build/destroy/clear, the setup-state
 adopt/handoff, the shared-history ops, and the thread-graph verify.
@@ -187,7 +187,7 @@ dispatches:
 | `Threads` | resize the threads, report the allocation |
 | `Hash` | resize the transposition table |
 | `Clear Hash` | clear the search state |
-| `SyzygyPath` | re-init the tablebases and report what was found ([05-tablebases.md](05-tablebases.md)) |
+| `SyzygyPath` | re-init the tablebases and report what was found ([tablebases.md](tablebases.md)) |
 | `EvalFile` | load the network |
 
 **Apply a mutating command only when idle.** Waiting for a search from the UCI reader
@@ -249,7 +249,7 @@ each leaf. The reconfigure chain — `resizeThreadsEngine` → `resizeThreads` �
 the search, rebuilds the live `SharedState` from the threads/TT/shared-histories
 handles, reconfigures the pool, sizes the TT from the `Hash` option, and replicates the
 network. It is the one place a thread-pool OOM or spawn failure is handled; the pool it
-drives is described in [04-multithreading.md](04-multithreading.md).
+drives is described in [multithreading.md](multithreading.md).
 
 `engine/graph.zig` states the same object graph as a fully typed `EngineGraph` — every
 slot a concrete member owning its type, vtable-free and callback-free, with its own

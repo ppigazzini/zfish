@@ -193,7 +193,7 @@ inline fn corrRow(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
 /// parameter any more, so the pairing IS the signature and there is nothing left to
 /// transpose. A key newtype -- the sibling's route -- is the wrong instrument in Zig: a
 /// Zobrist key is XORed on every `do_move`, so it is COMPUTED WITH, which is the shape
-/// docs/08-idiomatic-zig.md's cost rule says not to wrap, and with no operator overloading
+/// docs/idiomatic-zig.md's cost rule says not to wrap, and with no operator overloading
 /// every XOR would become a method call.
 pub inline fn pawnCorrEntry(shared: *SharedHistories, pos: *const Position, c: usize) *i16 {
     return &corrRow(shared, pos.st.pawn_key)[c].pawn;

@@ -3,7 +3,7 @@
 #
 # `AUTHORS` is upstream Stockfish's own file, carried verbatim. That is a licence
 # obligation, not housekeeping: zfish reproduces upstream's search and evaluation, so it
-# is a derived work and the attribution travels with it (docs/11-references.md).
+# is a derived work and the attribution travels with it (docs/references.md).
 #
 # "Verbatim" is a CLAIM, and a claim nothing checks is one that rots. It did: by the
 # 2edd935b resync the file was fifteen names short, accumulated across several syncs --

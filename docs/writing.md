@@ -5,14 +5,13 @@ does not check. Read it before adding or editing a page.
 
 ## The set
 
-`README.md` is the index — GitHub renders it for the folder, so it is what a reader lands on.
-The rest are `00-`…`13-`, numbered by **reading order**, not importance: a contributor works
-down from the architecture into a zone. The prefix is the only ordinal; nothing else numbers
-them.
+`index.md` is the index, the page a reader lands on. Every other page is named for what it
+holds, and the order a reader meets them in is the index table's alone: a contributor works
+down from the architecture into a zone.
 
 Each page owns one subsystem and names its **audience** in the index table. A page describes
 **what the codebase does** — not what upstream does, not what a chess engine does in general.
-Anything a reader could learn from Stockfish's wiki belongs in [11-references](11-references.md)
+Anything a reader could learn from Stockfish's wiki belongs in [references](references.md)
 as a link.
 
 **Two surfaces, and only one of them ships.** `docs/`, [README](../README.md),
@@ -84,9 +83,9 @@ commit message — that, plus the code, is the durable record.
 
 **One exemption, and only for the part that is a ledger.** A refutation is a fact about this
 tree, not a story about the week it was measured: the "measured dead here" sections of
-[08-idiomatic-zig](08-idiomatic-zig.md) and the falsified list in [AGENTS.md](../AGENTS.md)
+[idiomatic-zig](idiomatic-zig.md) and the falsified list in [AGENTS.md](../AGENTS.md)
 exist so nobody re-derives them, and the accumulator's cost sections in
-[03-engine-eval](03-engine-eval.md) exist so nobody deletes a component that pays. Write each
+[engine-eval](engine-eval.md) exist so nobody deletes a component that pays. Write each
 as the rule a reader applies now, with the number as its evidence — never as a narrative of
 what was tried. Everything above the measurement in those pages describes the code as it is
 and is bound by this rule like any other page; a ledger that grows upward through a
@@ -100,7 +99,7 @@ trusting you.
 "Don't call X" leaves a reader stuck; "Don't call X — use Y, which holds the mutex" does not.
 
 **Cut anything that does not help implement or verify.** Background a reader could get from
-Stockfish's wiki belongs in [11-references](11-references.md) as a link. Length is not
+Stockfish's wiki belongs in [references](references.md) as a link. Length is not
 thoroughness; it is where rot hides. This binds a generated page exactly as it binds a
 hand-written one — match the length to what the change needs, and add no section that exists
 to look complete: a summary restating the section above it, a recap of what a gate prints, a
@@ -119,19 +118,19 @@ moment the code lands, and nobody knows which claim broke better than the person
 
 | page | owns | temperature |
 |---|---|---|
-| [00-architecture](00-architecture.md) | `build.zig`'s module graph, the zone rule | hot |
-| [01-engine-board](01-engine-board.md) | `src/engine/board/` | hot |
-| [02-engine-search](02-engine-search.md) | `src/engine/search/` | hot |
-| [03-engine-eval](03-engine-eval.md) | `src/engine/eval/` | hot |
-| [04-multithreading](04-multithreading.md) | `src/engine/state/`, the thread/NUMA path | hot |
-| [05-tablebases](05-tablebases.md) | `src/platform/syzygy/`, `src/engine/search/tb_*.zig` | hot |
-| [06-platform](06-platform.md) | `src/platform/` | hot |
-| [07-shell](07-shell.md) | `src/shell/` | hot |
-| [10-tooling-ci](10-tooling-ci.md) | `build.zig` steps, `build/`, `tools/`, `.github/workflows/` | hot |
-| [09-type-design](09-type-design.md) | the value domain: what the quantities mean and which are distinguishable | warm — the rules are cold, but `type-refusal` compiles what this page says is illegal, so a claim here that stops holding reddens a gate rather than merely rotting |
-| [13-glossary](13-glossary.md) | the vocabulary, in tiers | warm — a definition outlives the file it points at, but every entry names an owning symbol and a rename dates it |
-| [08-idiomatic-zig](08-idiomatic-zig.md) | patterns and the measurement discipline | cold |
-| [11-references](11-references.md) | external links | cold |
+| [architecture](architecture.md) | `build.zig`'s module graph, the zone rule | hot |
+| [engine-board](engine-board.md) | `src/engine/board/` | hot |
+| [engine-search](engine-search.md) | `src/engine/search/` | hot |
+| [engine-eval](engine-eval.md) | `src/engine/eval/` | hot |
+| [multithreading](multithreading.md) | `src/engine/state/`, the thread/NUMA path | hot |
+| [tablebases](tablebases.md) | `src/platform/syzygy/`, `src/engine/search/tb_*.zig` | hot |
+| [platform](platform.md) | `src/platform/` | hot |
+| [shell](shell.md) | `src/shell/` | hot |
+| [tooling-ci](tooling-ci.md) | `build.zig` steps, `build/`, `tools/`, `.github/workflows/` | hot |
+| [type-design](type-design.md) | the value domain: what the quantities mean and which are distinguishable | warm — the rules are cold, but `type-refusal` compiles what this page says is illegal, so a claim here that stops holding reddens a gate rather than merely rotting |
+| [glossary](glossary.md) | the vocabulary, in tiers | warm — a definition outlives the file it points at, but every entry names an owning symbol and a rename dates it |
+| [idiomatic-zig](idiomatic-zig.md) | patterns and the measurement discipline | cold |
+| [references](references.md) | external links | cold |
 | this page | the rules | cold |
 
 The hot rows are where every false claim in this set has been found: a handler's output stream,
@@ -217,7 +216,7 @@ for a missing tool is not a pass**, and a body reporting it as one is worse than
 no gates line at all.
 
 **Record what was falsified.** The falsified lists in
-[08-idiomatic-zig](08-idiomatic-zig.md) and AGENTS.md are assembled from commit bodies, and a
+[idiomatic-zig](idiomatic-zig.md) and AGENTS.md are assembled from commit bodies, and a
 reverted experiment whose measurement is deleted is a session the next contributor spends
 again. A commit that changes no code and writes down why is a legitimate commit here.
 
@@ -257,7 +256,7 @@ a gate on one machine, and it belongs in the gates block where a reader can re-r
   reverse is the deliberate hole — once no page may write the live number, a dead one can
   only arrive by hand.
 - **a backticked identifier defined nowhere in the tree.** A deleted shell function's name
-  outlived it by a whole session in 07-shell, and the three checks above all passed over it —
+  outlived it by a whole session in shell.md, and the three checks above all passed over it —
   which is also why this bullet does not quote the name: the gate reads its own page.
 - **a build step no shipped page mentions**, since a gate a contributor cannot find is a gate
   this repo does not have.

@@ -6,7 +6,7 @@
 # and still run measurably slower. That is a time-domain divergence, it costs Elo, and
 # until now nothing in this tree could fail on it: the perf_counters A/B ratio needs a
 # second binary to compare against and cancels the absolute out, and nps cannot resolve
-# below ~5% (docs/08-idiomatic-zig.md).
+# below ~5% (docs/idiomatic-zig.md).
 #
 # Retired instructions are near-deterministic, which is what makes an ABSOLUTE budget
 # gateable where a cycle count is not: measured spread on this box is 0.00063% across six
@@ -21,7 +21,7 @@
 #
 # Being local-only carries a known failure mode this repo has already paid for: tb-cursed
 # sat red for seven days on an UNMODIFIED binary because nothing ran it. Run this by hand
-# after a toolchain bump or a perf commit, the same discipline docs/10-tooling-ci.md asks
+# after a toolchain bump or a perf commit, the same discipline docs/tooling-ci.md asks
 # for the other local-only gates.
 #
 # A SKIP IS NOT A PASS. If perf_event_open is unavailable this exits 127, not 0, so a

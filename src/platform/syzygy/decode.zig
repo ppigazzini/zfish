@@ -13,7 +13,7 @@
 //! the payload decodes to). The LOAD-time half, `setSizes`, lives in decode_header.zig, which
 //! carves each file-backed region with a bound and refuses a table that cannot keep its own size
 //! promises. The dependency runs decode_header -> decode; never the reverse.
-//! See docs/05-tablebases.md.
+//! See docs/tablebases.md.
 
 const std = @import("std");
 const probe = @import("probe.zig");

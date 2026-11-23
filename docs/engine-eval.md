@@ -4,7 +4,7 @@ How zfish turns a position into a score: an NNUE network whose input transformer
 updated incrementally as the search makes and unmakes moves, and a small stack of
 integer affine layers over the transformed features. Everything here lives in
 `src/engine/eval/` — inside the **engine** zone, importable by no zone above it
-(see [00-architecture.md](00-architecture.md)). The eval is pure integer arithmetic,
+(see [architecture.md](architecture.md)). The eval is pure integer arithmetic,
 so it is bit-exact and arch-invariant: every ISA tier must produce the same score
 for the same position.
 
@@ -127,7 +127,7 @@ The parse is the *sole* source of weights: it writes straight into the arenas ow
 by `nnue_weight_storage.zig`, and inference reads from that same memory. Those
 arenas come from `page_alloc.alloc` (`src/engine/state/page_alloc.zig`) — the
 injected large-block seam the platform backs with huge pages, and which falls back
-to a page-backed allocator in a headless build; see [06-platform.md](06-platform.md). `nnue_weight_storage.zig` sits below
+to a page-backed allocator in a headless build; see [platform.md](platform.md). `nnue_weight_storage.zig` sits below
 both `network.zig` and `nnue_inference.zig` so the I/O half and the compute half
 share an owner without importing each other. There are exactly two arenas: the
 feature-transformer blob, and ONE contiguous block with room for every stack a net may
@@ -250,8 +250,8 @@ diff (upstream's `push(pos)` and `blockBefore`) — and hands its `DirtyPiece` /
 (`DirtyThreats` also carries the before/after pawn bitboards the pawn-pair set diffs);
 `undoMoveAcc` calls `stackPop`. Nothing is computed on the way down — states are
 pushed uncomputed, and `evaluateAcc` triggers the work only when a node actually
-needs a score. See [02-engine-search.md](02-engine-search.md) for the search side and
-[01-engine-board.md](01-engine-board.md) for how the board fills the dirty records.
+needs a score. See [engine-search.md](engine-search.md) for the search side and
+[engine-board.md](engine-board.md) for how the board fills the dirty records.
 
 `evaluate` (`nnue_acc_update.zig`) brings both perspectives up to date, and how it does
 that depends on whether either needs a refresh.
@@ -450,7 +450,7 @@ and `|add − sub| ≤ 255` cannot saturate — one op chain where two single ro
 unpack and a shift. On an Apple CPU model `tileRows`
 sums the i8 rows it removes and subtracts the sum once (`apple_tuned`): the same wrapping
 value, dodging an LLVM 22 miscompile of the per-row subtract
-([08-idiomatic-zig.md](08-idiomatic-zig.md)).
+([idiomatic-zig.md](idiomatic-zig.md)).
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (K32H3 block, king square,
@@ -600,7 +600,7 @@ The hot path — the row ops, the transform, the affine layers — is portable
 `@Vector`: one kernel per operation, lowered by LLVM per target, with arch-specific
 choices as `comptime` branches rather than forked source. Because the eval is
 integer-exact it is also arch-invariant, so every ISA tier must agree on the
-signature. See [08-idiomatic-zig.md](08-idiomatic-zig.md) for the pattern and the
+signature. See [idiomatic-zig.md](idiomatic-zig.md) for the pattern and the
 gates that hold it.
 
 Two vector widths are independent knobs and must not be folded into one:

@@ -303,7 +303,7 @@ jobs:
   #
   # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand,
   # after the port builds under it locally and `zig build signature` passes; the
-  # cross-version spellings it relies on are tabled in docs/08-idiomatic-zig.md.
+  # cross-version spellings it relies on are tabled in docs/idiomatic-zig.md.
   zig-master-compat:
     name: Zig master compatibility (non-blocking)
     runs-on: ubuntu-26.04

@@ -5,7 +5,7 @@ confused:
 
 - **Section 1 is Stockfish's vocabulary.** Upstream owns the word; the entry says which symbol
   carries it here. It does not teach the concept — a page in this set describes what this
-  codebase does, and the domain reference is a link in [11-references](11-references.md).
+  codebase does, and the domain reference is a link in [references](references.md).
 - **Section 2 is this repository's vocabulary.** None of it appears in the Stockfish source,
   and upstream is not obliged to agree with any of it.
 - **Section 3 is the words that mean two things here.** Each entry disambiguates rather than
@@ -21,8 +21,8 @@ Every entry names the file, symbol or step that owns it, and none quotes a numbe
 computes.
 
 **The limit.** This page defines terms; it does not explain subsystems. For how a search flows,
-see [00-architecture](00-architecture.md); for what a step proves, [10-tooling-ci](10-tooling-ci.md);
-for what a quantity denotes and why so few of them are types, [09-type-design](09-type-design.md).
+see [architecture](architecture.md); for what a step proves, [tooling-ci](tooling-ci.md);
+for what a quantity denotes and why so few of them are types, [type-design](type-design.md).
 
 ## 1. Upstream's word, and what carries it here
 
@@ -33,11 +33,11 @@ Grep the symbol if a citation misses — the owners move faster than the definit
 | **bench** | the fixed position script the anchor is a fact about: `src/shell/bench_positions.zig`, upstream's `Defaults` list entry for entry, driven by `src/shell/benchmark.zig`. Changing an entry is a behaviour change that cannot be compared against upstream afterwards |
 | **the bench signature** | the node total that run prints, asserted by `zig build signature`. The *number* lives in `build.zig`'s `signature_reference` and in no page — `docs-lint` fails a page that quotes the live one **at all**; a stale one is the hole it deliberately leaves |
 | **node** | one execution of a node body: `searchImpl` in `src/engine/search/search_main.zig` for alpha-beta and `qsearchImpl` in `src/engine/search/search_qsearch.zig` for quiescence, each specialized at `comptime` on `NodeKind`. **Not** a NUMA node; see Section 3 |
-| **`Value`, `Key`** | a score and a Zobrist word, each a plain integer rather than a distinct type. That is a decision with measurements behind it, not an omission: [09-type-design](09-type-design.md) says why a wrapper costs more here than it catches, and Zig has no operator overloading to soften it |
+| **`Value`, `Key`** | a score and a Zobrist word, each a plain integer rather than a distinct type. That is a decision with measurements behind it, not an omission: [type-design](type-design.md) says why a wrapper costs more here than it catches, and Zig has no operator overloading to soften it |
 | **depth** | a plain `i32`, for the same reason — a depth-scaled product feeds several codomains, so a type carrying its unit through one breaks the rest |
 | **the root, PV, MultiPV** | the root move list is `RootMove` records (`src/engine/state/root_move.zig`); `src/engine/search/search_emit.zig` prints one `info` line per PV line, and `MultiPV` is how many there are |
 | **currmove** | `info depth D currmove M currmovenumber N`, the root move now being searched. `searchCbRootOnIter` emits it, from the main thread only and only past `id_nodes_limit_output` (`src/engine/search/search_values.zig`) — which is why no bench and no golden reaches it, and why the transcript case that does declares a hold |
-| **the accumulator** | the incremental half of the NNUE evaluation, `src/engine/eval/nnue_accumulator.zig`. Slot `i` of its stack holds the position at ply `i`, and every make/unmake owes it a bracket; [03-engine-eval](03-engine-eval.md) owns the invariant. It is worth measuring rather than assuming — the incremental design is ablatable with `-Dacc-refresh-only` |
+| **the accumulator** | the incremental half of the NNUE evaluation, `src/engine/eval/nnue_accumulator.zig`. Slot `i` of its stack holds the position at ply `i`, and every make/unmake owes it a bracket; [engine-eval](engine-eval.md) owns the invariant. It is worth measuring rather than assuming — the incremental design is ablatable with `-Dacc-refresh-only` |
 | **the feature transformer** | the first NNUE layer, `src/engine/eval/nnue_ft.zig`, stored as one byte blob. Its region offsets are derived **once** and read by both the parse and the accessors, because two spellings of one layout is a layout that can disagree with itself |
 | **WDL, DTZ** | the two Syzygy probe results — win/draw/loss, and distance to zeroing. The prober is `src/platform/syzygy/`, and `d` prints both once a `SyzygyPath` covers the position |
 | **cursed win, blessed loss** | a win or loss whose DTZ exceeds the 50-move counter, so the result is a draw in play. Only a 5-man table reaches them, which is why `tb-cursed` is a separate local-only gate — CI never fetches those tables, so its golden ages with no alarm |
@@ -78,7 +78,7 @@ None of these appear in the Stockfish source. Where a tool owns the definition, 
 | **ratchet** | a recorded count a gate holds to one direction of travel. `hook-lint` holds the hook count to an exact baseline, so it fails on a hook **added** and on one removed alike — hooks buy the DAG and are its running bill, so either way somebody decided something. `upstream-map` ratchets the uncovered upstream surface and the drift from `tools/upstream/upstream_map.baseline`: lower it as citations land, never raise it. The direction is stated rather than assumed, because a baseline that only ever grows stops describing anything |
 | **the ledger** | the commit log, read as the record of what has already been measured. Every `perf(...)` commit carries its evidence in its body, including the refutations, so `git log --grep` finds an idea that has already been tried and measured negative here |
 | **fleet** | several agents working in parallel, chartered onto **disjoint files** rather than disjoint metrics, delivering candidate commits an integrator re-gates on clean `main` |
-| **quiet box, the A/A floor** | an idle machine, and the noise floor obtained by A/B-ing a binary against a byte-identical copy of itself. Each axis has its own floor — [08-idiomatic-zig](08-idiomatic-zig.md) records them — and a change smaller than the floor of the axis you measured is not a result |
+| **quiet box, the A/A floor** | an idle machine, and the noise floor obtained by A/B-ing a binary against a byte-identical copy of itself. Each axis has its own floor — [idiomatic-zig](idiomatic-zig.md) records them — and a change smaller than the floor of the axis you measured is not a result |
 
 ## 3. Words that mean two things
 
@@ -91,7 +91,7 @@ None of these appear in the Stockfish source. Where a tool owns the definition, 
 | **source** | a `*_source.zig` hook seam, so a value the engine zone reads through an indirection | "the source" a port was made **from** — which no sibling is |
 | **sweep** | a class swept across the tree, or a sibling's log across a window | a gate's own pass over its inputs: the transcript loop over its cases, the arch gate over its tiers |
 | **budget** | the per-tier instruction budget `tools/perf_budget.sh` holds (a script, not a build step) | the search's own time budget, which `src/engine/search/timeman.zig` resolves once per `go` |
-| **key** | a Zobrist word off the position | the material key a Syzygy probe hashes its table by, and the pawn and correction keys that select a history plane. [09-type-design](09-type-design.md) maps the family: one `u64`, several spaces, no shared arithmetic |
+| **key** | a Zobrist word off the position | the material key a Syzygy probe hashes its table by, and the pawn and correction keys that select a history plane. [type-design](type-design.md) maps the family: one `u64`, several spaces, no shared arithmetic |
 | **stack** | the search's per-ply `SearchStack`, the `ss` every node body indexes | the NNUE accumulator stack, one slot per ply, pushed and popped by the make/unmake bracket |
 | **worker** | one `WorkerLayout` block: the per-thread search state | the OS thread the pool spawns and NUMA binds. One block per thread, and neither word implies the other |
 | **bench** | the UCI command | the position list it runs, and the node total that run produces. "The bench moved" is ambiguous between all three; say which |

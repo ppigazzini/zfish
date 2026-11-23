@@ -35,7 +35,7 @@ This is the single biggest way zfish diverges from Stockfish. Upstream leaves th
 loops scalar in the source and the C++ compiler widens them at `-O3`; zfish must widen
 them by hand. So the performance grind is not "add another intrinsic" — it is closing
 exactly the auto-vectorization gap the toolchain withholds. See
-[the philosophy note](README.md#where-zfish-diverges-from-stockfish).
+[the philosophy note](index.md#where-zfish-diverges-from-stockfish).
 
 ```zig
 // Not this — stays scalar, one lane per iteration:
@@ -451,7 +451,7 @@ missing, which is what `mapped`/`mappedDtz` now do.
 memcheck can see it already tracks, so annotating the headless `page_alloc` fallback would
 gate nothing the `parity-valgrind` lane does not. The one thing memcheck stopped seeing is
 the Linux large-page arena, which now comes from `mmap` rather than `posix_memalign`
-([06-platform.md](06-platform.md)); `memory.liveLargePageBlocks()` and its unit test carry
+([platform.md](platform.md)); `memory.liveLargePageBlocks()` and its unit test carry
 that coverage instead, because a client request would only re-describe a mapping the
 allocator already has the length of. Search
 threads take `std.Thread`'s default stack; recursion is bounded by `search_values.max_ply` (246), and a guard
@@ -471,7 +471,7 @@ ways. Removing two such returns cut the bench's `memcpy` from 3.4% of instructio
 0.8%. The gate is the signature — the returned bytes are unchanged — plus a
 `perf_fingerprint.py costs` sweep over a `perf_callgrind.sh` profile to confirm `memcpy`
 actually fell; see
-[10-tooling-ci](10-tooling-ci.md). The mirror caveat is real: a by-value return that
+[tooling-ci](tooling-ci.md). The mirror caveat is real: a by-value return that
 the optimizer inlines costs nothing, so verify the returner is a live symbol in the
 profile before rewriting it.
 
@@ -480,14 +480,14 @@ profile before rewriting it.
 Zig permits import cycles, so a strict DAG is a choice. Make it with a composition
 root and dependency injection through function pointers rather than a shared
 mega-module — the structure is described in
-[ARCHITECTURE](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[ARCHITECTURE](architecture.md#the-composition-root-and-the-cycle-break-hooks).
 The price is real but bounded: a function pointer is an optimizer barrier and its
 erased `*anyopaque` context costs type safety, so `zig build hook-lint` bounds the
 hooks. The barrier only costs *where the pointer is called*, so the discipline is to
 keep every hook off the per-node path — measured, none sit there, and the DAG is free
 on the hot path (Zig is whole-module, so `@import` is not an inlining boundary; this
 does not even need LTO). See
-[Does the DAG cost performance?](00-architecture.md#does-the-dag-cost-performance).
+[Does the DAG cost performance?](architecture.md#does-the-dag-cost-performance).
 Reach for this to invert a *specific* upward dependency, not as a default.
 
 ## Reach for a sized enum, not a wrapper struct, when a space needs a type
@@ -500,8 +500,8 @@ plane selectors `history.InCheck` and `history.WasCapture` are the same move app
 accessor's arguments.
 
 **Which spaces deserve one, what it costs, and what it does not stop are the neighbouring
-page's subject — [09-type-design.md](09-type-design.md), including
-[the cost rule](09-type-design.md#the-cost-rule).** Read it before adding a type. What
+page's subject — [type-design.md](type-design.md), including
+[the cost rule](type-design.md#the-cost-rule).** Read it before adding a type. What
 belongs here is the four mechanical facts about doing it in *this* language:
 
 - **There is no operator overloading.** A newtype over a quantity that is computed with —
@@ -542,7 +542,7 @@ const mask: Mask = @reduce(.Or, @select(Mask, nonzero, lane_bits, no_bits));
 `lastTrue`, `countTrues` — and never bitcasts one. The engine's feature transformer did, and
 paid for it: the mask was correct under LLVM and wrong under any other lowering, which is a
 wrong evaluation rather than a crash. `tools/c_backend_check.sh`
-([10-tooling-ci.md](10-tooling-ci.md)) exists to catch that class. The defined form cost about
+([tooling-ci.md](tooling-ci.md)) exists to catch that class. The defined form cost about
 1% of instructions on the hottest path in the engine, measured — cheap for not depending on a
 representation nobody promised.
 
@@ -756,7 +756,7 @@ It is LOCAL-ONLY and not in `zig build parity`: `perf_event_open` is refused in 
 containers, and the count is toolchain-specific, so a Zig upgrade legitimately moves it.
 Re-derive with `tools/perf_budget.sh update` and carry the measurement in the commit body.
 A skip exits **127**, never 0, so "could not measure" cannot be read as "did not regress" —
-and being local-only it carries the staleness failure mode `docs/10-tooling-ci.md` records
+and being local-only it carries the staleness failure mode `docs/tooling-ci.md` records
 for `tb-cursed` (local-only too, until CI began fetching its tables), so run it by hand after a
 toolchain bump, a perf commit, **or an upstream resync** — a resync moves the node count the row is keyed against, and `perf_budget.sh`
 refuses on a node mismatch rather than comparing across two different workloads.
@@ -768,7 +768,7 @@ appears as many lines and its true cost is the sum across all of them. C++ is hi
 than Zig because upstream's work lives in headers. Reading one line per side once turned a
 real 0.99x parity into a reported "1.87x, the worst component". The tool sums each group
 and reconciles against callgrind's own `PROGRAM TOTALS`, so it fails loudly instead of
-printing a plausible lie. `docs/10-tooling-ci.md` has the runnable sequence.
+printing a plausible lie. `docs/tooling-ci.md` has the runnable sequence.
 
 Follow the same discipline by hand: to claim a component is the bottleneck, ablate it
 — stub it out, hold everything else fixed, measure the delta. Control the confounds
@@ -962,7 +962,7 @@ per round, and a hosted runner would measure the hypervisor and then time out.
 list is fixed input, every search is `go depth D`, and `Threads` is 1, so the node count is
 a function of the position and the table alone. Two binaries that search the same tree must
 report the same total. The anchor visits only its own thirteen positions from a cold table,
-which is the blind spot `docs/10-tooling-ci.md` records; this walks one game to depth 20 and
+which is the blind spot `docs/tooling-ci.md` records; this walks one game to depth 20 and
 sees a divergence there. A run whose totals differ is **void, not slow** — `ltc_ab.sh` exits
 1 and prints no ratio. Verified by mutation: perturbing `razorMargin`'s margin by one (`482` to `481`, before
 upstream 9c11e231 rescaled it) moved the 20-ply depth-13 total from 390,947 to 398,988 and
@@ -1019,7 +1019,7 @@ under clang, and there is nothing here to collect.
 correction exists only where the value is signed. `nnue_inference.pieceCount` returns `usize`,
 so the eval bucket's `(count - 1) / 4` is already a shift — the same reason a typed accessor
 makes a sign-extension in `nnue_hash.hashBytes` unrepresentable. Type the accessor and the
-fix has nothing to fix ([09-type-design.md](09-type-design.md)).
+fix has nothing to fix ([type-design.md](type-design.md)).
 
 **Measure it here even when both trees made the same edit.** Taking the three list-walk stages
 out of `movepick.nextMove`'s dispatch is this tree's shape already, and this tree measured it
@@ -1131,7 +1131,7 @@ per move, and at that frequency LLVM's lowering costs nothing measurable -- so t
 cannot adjudicate it.** Replacing a depth-indexed divide with a magic multiply retires *more*
 instructions (+0.06%) while removing half the engine's integer divides. A divide is slow
 rather than numerous — on this box's Zen 4, `idiv r32` is 10–13 cycles of latency at one
-issue per 6 cycles ([Agner Fog's instruction tables](11-references.md#the-x86-hardware)) —
+issue per 6 cycles ([Agner Fog's instruction tables](references.md#the-x86-hardware)) —
 so the claim is cycles, and cycles do not resolve below this box's floor. That
 makes it a change this tree cannot currently decide, whatever length of instruction run is
 put behind it.

@@ -4,7 +4,7 @@
 // states: this is the LOAD-time half, which runs once per table and can therefore
 // afford `@setRuntimeSafety(true)` and graceful `error.CorruptTable` rejection, while
 // decode.zig keeps the PROBE-time half that runs inside the search. The split is the
-// same one docs/05-tablebases.md draws between what the header can be made to prove
+// same one docs/tablebases.md draws between what the header can be made to prove
 // and what only the payload decides.
 //
 // Import decode.zig for the byte readers and the TBFlag bits; the dependency runs one

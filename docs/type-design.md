@@ -3,17 +3,17 @@
 What zfish's quantities *mean*, which of them the compiler can tell apart, and — stated
 as plainly as the rest — which of them it cannot.
 
-[08-idiomatic-zig.md](08-idiomatic-zig.md) is the neighbouring page: it records how a C++
+[idiomatic-zig.md](idiomatic-zig.md) is the neighbouring page: it records how a C++
 construct becomes a Zig one and what each translation measured. This one records what the
 resulting values denote. The theory each family rests on is collected in
-[11-references.md](11-references.md) under "Type theory and type design", with what each
+[references.md](references.md) under "Type theory and type design", with what each
 citation is for.
 
 ## The premise, and why it reads differently here than elsewhere
 
 The usual argument for a domain type is that it removes a runtime check. **That argument
 does not apply to zfish at all.** The shipped binary is ReleaseFast: no bound, no cast, no
-overflow and no alignment is checked anywhere ([08-idiomatic-zig.md](08-idiomatic-zig.md)).
+overflow and no alignment is checked anywhere ([idiomatic-zig.md](idiomatic-zig.md)).
 There is no check for a type to fold away, and no `unsafe` boundary for it to guard.
 
 So a type here buys exactly one thing, and it is worth more than the check would have been:
@@ -274,7 +274,7 @@ Two rules govern them here:
 - **Never mask.** A mask under a name that reads lossless turns a corrupt byte from a
   Syzygy file or a transposition entry into a plausible piece — a wrong answer where a
   detected fault was available. Where the input is untrusted, the parse is bounded and
-  refuses instead ([05-tablebases.md](05-tablebases.md)).
+  refuses instead ([tablebases.md](tablebases.md)).
 
 ## Why there is no `Depth`
 
@@ -290,7 +290,7 @@ exactly the property the type was for. **A type that needs six output types need
 Upstream spells it `using Depth = int` for the same reason.
 
 Units-of-measure systems solve this with unit polymorphism, where a function is generic in
-the unit it returns ([11-references.md](11-references.md)). Zig cannot express that either,
+the unit it returns ([references.md](references.md)). Zig cannot express that either,
 and with no operator overloading the wrapper would additionally turn every one of those
 expressions into a method call. The honest answer is to leave depth a scalar and say why.
 
@@ -327,7 +327,7 @@ function names the mechanism.
 into an NNUE transform was predicted free by it and cost nearly a percent. So a type on a
 hot path is an experiment, measured at both tiers whatever the prediction says, and a
 sibling's measurement is a hypothesis about *this* compiler rather than a result
-([08-idiomatic-zig.md](08-idiomatic-zig.md)).
+([idiomatic-zig.md](idiomatic-zig.md)).
 
 ## What a compile error stops
 
@@ -432,6 +432,6 @@ different *order*, a key identity that omits the halfmove clock, and a state upd
    watching it fail.
 5. Gate it: `zig build parity` for anything, plus `zig build tsan-race -Dtsan -Dlto=false`
    if it touches shared state, plus the zone's local-only gates
-   ([10-tooling-ci.md](10-tooling-ci.md)). Check the exit code, never a piped fragment.
+   ([tooling-ci.md](tooling-ci.md)). Check the exit code, never a piped fragment.
 6. Add a row here — to a map, to the boundary, or to both. A type added without one makes
    this page quietly wrong.

@@ -60,27 +60,27 @@ the compiler cannot deliver the instruction.
 The consequences run through the whole tree — bit-exactness is a hard invariant one
 gate enforces on every arch, performance work reads as "hand-write the `@Vector` Zig
 would not auto-generate" rather than "add another `#if` block", and the measurement
-discipline in [08-idiomatic-zig.md](08-idiomatic-zig.md) exists because the gap to
+discipline in [idiomatic-zig.md](idiomatic-zig.md) exists because the gap to
 close is precisely the auto-vectorization Zig withholds.
 
 ## Documents
 
 | Document | Audience | Description |
 |---|---|---|
-| [00-architecture.md](00-architecture.md) | All contributors | The three zones, the module graph, the composition root and cycle-break hooks, how a search flows |
-| [01-engine-board.md](01-engine-board.md) | Engine contributors | Position and state, bitboards and magics, move generation, legality, Zobrist, repetition, FEN |
-| [02-engine-search.md](02-engine-search.md) | Engine contributors | Iterative deepening, alpha-beta and qsearch, move ordering, the transposition table and history, time management |
-| [03-engine-eval.md](03-engine-eval.md) | Engine contributors | NNUE: the network and its load path, the feature transformer, the incremental accumulator, inference |
-| [04-multithreading.md](04-multithreading.md) | Engine and platform contributors | Lazy-SMP: the pool and worker lifecycle, shared vs per-worker state, thread voting, NUMA replication, determinism |
-| [05-tablebases.md](05-tablebases.md) | Engine and platform contributors | Syzygy: WDL and DTZ, the registry and probe path, root and in-search probing, the UCI options |
-| [06-platform.md](06-platform.md) | Platform contributors | Memory and NUMA, the thread runtime primitives, the clock, the lifecycle hooks |
-| [07-shell.md](07-shell.md) | Shell contributors | `main` as the composition root, the UCI surface, the option model, the engine object and session, bench |
-| [08-idiomatic-zig.md](08-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD and the C++-intrinsic-to-Zig translation, comptime ISA dispatch, register-resident unrolled accumulators, vector-width choice, static allocation, dependency injection, cross-version shims, the measurement discipline |
-| [09-type-design.md](09-type-design.md) | Anyone adding a type or an index space | What each quantity denotes, the six maps of the value domain, why there is no `Depth`, the cost rule, and — stated as plainly — what a compile error here does NOT stop |
-| [10-tooling-ci.md](10-tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes — and the gates on the gates: what runs each check, and whether each check can fail |
-| [11-references.md](11-references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
-| [12-writing.md](12-writing.md) | Anyone editing these docs | How the set is organised, the writing rules, what `docs-lint` does and does not check |
-| [13-glossary.md](13-glossary.md) | All developers | The words this set uses without defining them, in four tiers: upstream's vocabulary and the symbol carrying it, this repository's, the ones that mean two things here, and the testing field's |
+| [architecture.md](architecture.md) | All contributors | The three zones, the module graph, the composition root and cycle-break hooks, how a search flows |
+| [engine-board.md](engine-board.md) | Engine contributors | Position and state, bitboards and magics, move generation, legality, Zobrist, repetition, FEN |
+| [engine-search.md](engine-search.md) | Engine contributors | Iterative deepening, alpha-beta and qsearch, move ordering, the transposition table and history, time management |
+| [engine-eval.md](engine-eval.md) | Engine contributors | NNUE: the network and its load path, the feature transformer, the incremental accumulator, inference |
+| [multithreading.md](multithreading.md) | Engine and platform contributors | Lazy-SMP: the pool and worker lifecycle, shared vs per-worker state, thread voting, NUMA replication, determinism |
+| [tablebases.md](tablebases.md) | Engine and platform contributors | Syzygy: WDL and DTZ, the registry and probe path, root and in-search probing, the UCI options |
+| [platform.md](platform.md) | Platform contributors | Memory and NUMA, the thread runtime primitives, the clock, the lifecycle hooks |
+| [shell.md](shell.md) | Shell contributors | `main` as the composition root, the UCI surface, the option model, the engine object and session, bench |
+| [idiomatic-zig.md](idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD and the C++-intrinsic-to-Zig translation, comptime ISA dispatch, register-resident unrolled accumulators, vector-width choice, static allocation, dependency injection, cross-version shims, the measurement discipline |
+| [type-design.md](type-design.md) | Anyone adding a type or an index space | What each quantity denotes, the six maps of the value domain, why there is no `Depth`, the cost rule, and — stated as plainly — what a compile error here does NOT stop |
+| [tooling-ci.md](tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes — and the gates on the gates: what runs each check, and whether each check can fail |
+| [references.md](references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
+| [writing.md](writing.md) | Anyone editing these docs | How the set is organised, the writing rules, what `docs-lint` does and does not check |
+| [glossary.md](glossary.md) | All developers | The words this set uses without defining them, in four tiers: upstream's vocabulary and the symbol carrying it, this repository's, the ones that mean two things here, and the testing field's |
 
 Every page above is a live claim about code someone is about to touch, and it describes the
 tree **as it is** — where something is unimplemented, its page says so and says what the hole
@@ -90,7 +90,7 @@ costs.
 
 Change a zone, re-read its page and fix it **in the same commit**: a doc is wrong from the
 moment the code lands, and every false claim ever found in this set got there that way.
-[12-writing.md](12-writing.md) has the rules, says which pages run hot, and states what
+[writing.md](writing.md) has the rules, says which pages run hot, and states what
 `zig build docs-lint` does and does not settle — it catches a dead link, a path or a symbol
 the tree no longer carries; it **cannot** tell you a sentence has become false.
 

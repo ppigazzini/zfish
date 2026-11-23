@@ -20,7 +20,7 @@ every search is `go depth D`, and one thread makes the node count a function of 
 and the table alone. Two revisions that search the same tree MUST report the same node total
 at every ply. That equality is a WIDER net than the bench anchor, which only ever visits its
 own thirteen positions from a cold table -- so a divergence off those positions, the class
-docs/10-tooling-ci.md records the anchor cannot see, reddens this. A run whose totals differ
+docs/tooling-ci.md records the anchor cannot see, reddens this. A run whose totals differ
 is VOID, not slow.
 
 Run from resources/, which is the cwd holding the net (AGENTS.md).
@@ -268,7 +268,7 @@ def cmd_clock(args):
 
     THE POINT. Every question of the form "does a faster engine convert its speed into Elo
     at this time control" runs into one wall: a real clock is wall time, wall time is not
-    reproducible here (docs/08-idiomatic-zig.md prices the floor), and the answer is then an
+    reproducible here (docs/idiomatic-zig.md prices the floor), and the answer is then an
     SPRT and 40,000 games. `nodestime` removes the wall clock entirely -- with it set the
     engine's own elapsed() returns NODES and the budget is a node bank it keeps itself, so a
     whole game becomes a deterministic function of the move list.

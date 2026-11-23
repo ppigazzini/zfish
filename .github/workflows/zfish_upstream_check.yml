@@ -246,7 +246,7 @@ jobs:
       # re-blessed the golden keeps signature green by construction; only this gate can tell
       # you the new number is upstream's.
       #
-      # Here rather than in `parity` for the reason docs/09 gives: it needs a full pristine
+      # Here rather than in `parity` for the reason docs/tooling-ci.md gives: it needs a full pristine
       # upstream build, which the per-push lane deliberately does not do. By this point in the
       # job the oracle is already built and the net already fetched, so it costs a bench.
       - name: Assert the bench equals the pristine oracle

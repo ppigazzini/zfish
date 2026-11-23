@@ -7,8 +7,8 @@ generation, Zobrist hashing, draw detection, and FEN. It lives in
 `engine/`, and nothing in it reaches for the NNUE or the OS. The one edge upward
 is `position.zig`'s `@import("search")`, declared at the top of the file and
 unused in its body. See
-[00-architecture.md](00-architecture.md) for the zones and the module graph; the Zig
-patterns behind the hot path are in [08-idiomatic-zig.md](08-idiomatic-zig.md);
+[architecture.md](architecture.md) for the zones and the module graph; the Zig
+patterns behind the hot path are in [idiomatic-zig.md](idiomatic-zig.md);
 build and gate commands are in [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## Modules
@@ -153,7 +153,7 @@ pawn-history line is the specific `[pc][to]` **slot** the next node's quiet-hist
 update reads, not the row base: a row is 1024 entries (2 KiB, 32 lines), so prefetching
 offset 0 lands on the wrong line for any `(pc, to)` whose slot is past the first one.
 `null` for every caller that is not the real search move-maker (see
-[02-engine-search.md](02-engine-search.md)).
+[engine-search.md](engine-search.md)).
 
 `undoMove(pos, m)` reverses the board mutation and then simply pops
 `pos.st = pos.st.previous`. The popped record is still owned by the state list, so
@@ -198,7 +198,7 @@ became one, and the tell was the profile rather than the source. All six call si
 `processSliders`' loop where both records take it, again in each of the two trailing
 loops, and stored into the template of every `DirtyThreat`, so it occupied a register
 across a function already holding the occupancy, both attack sets and the ray masks. A
-`comptime` parameter occupies none ([09-type-design.md](09-type-design.md): the cost rule
+`comptime` parameter occupies none ([type-design.md](type-design.md): the cost rule
 is about what a function *holds*, not what it is *parameterised by*). Measured on
 `x86-64-sse41-popcnt` with both arms md5-pinned and the node counts identical: callgrind
 8,811,385,603 → 8,795,907,833 instructions (−0.176%), and nine interleaved core-pinned
@@ -488,7 +488,7 @@ pub var fill_fn: *const fn (pos: *const Position, out: *PositionSnapshot) void =
 (`position_query.fillSnapshot`) before anything else runs. It is the **only hook in the
 tree not registered by the composition root** — every other one is installed by
 `main.zig`; see
-[the composition root and the cycle-break hooks](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[the composition root and the cycle-break hooks](architecture.md#the-composition-root-and-the-cycle-break-hooks).
 Until `400c23f97` a second hook sat beside it, so movegen could filter its lists through
 `legal()`; the generators emit legal moves now, and it went.
 
@@ -504,7 +504,7 @@ just the board path (`initRuntime` → `setPosition` → `generateLegal` →
 
 | Invariant | Check |
 | --- | --- |
-| **Perft** | node counts to published Stockfish/CPW references, from the start position, Kiwipete, and CPW positions 3–5 — an end-to-end property over movegen *and* make/unmake together. Shallow, like the `perft` golden gate: the depths that catch a rare pin/en-passant/under-promotion interaction cost minutes, so they live in the nightly lane ([10-tooling-ci](10-tooling-ci.md)) |
+| **Perft** | node counts to published Stockfish/CPW references, from the start position, Kiwipete, and CPW positions 3–5 — an end-to-end property over movegen *and* make/unmake together. Shallow, like the `perft` golden gate: the depths that catch a rare pin/en-passant/under-promotion interaction cost minutes, so they live in the nightly lane ([tooling-ci](tooling-ci.md)) |
 | **Make/unmake round-trip** | do then immediately undo every legal move; `key`, both bitboard arrays, `board`, and `piece_count` must be identical |
 | **Null-move round-trip** | side and key change, then both restore exactly |
 | **FEN round-trip** | `setPosition` then `formatFen` returns the input string |

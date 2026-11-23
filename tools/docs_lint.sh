@@ -90,7 +90,7 @@ done
 # rename silently invalidates the reference; the prose still reads plausibly.
 #
 # The subject is every directory this repository OWNS and every extension it writes -- a claim
-# about `docs/`, `build/` or `.github/` rots exactly like one about `src/`, and 10-tooling-ci
+# about `docs/`, `build/` or `.github/` rots exactly like one about `src/`, and tooling-ci.md
 # names a workflow file per CI lane. `.cpp`/`.h` are excluded ON PURPOSE: `src/syzygy/
 # tbprobe.cpp` is UPSTREAM's path, a namespace these pages reference without owning, the same
 # exclusion check 4 makes for `_mm*` intrinsics. Scanning the two root pages check 4 already
@@ -113,8 +113,8 @@ if [ "$path_total" -lt 60 ]; then
     fail=1
 fi
 
-# A CI lane is named by its FILE, and docs/10 names each one bare rather than by path, so the
-# check above cannot see it. A renamed workflow leaves the lane table pointing at nothing.
+# A CI lane is named by its FILE, and tooling-ci.md names each one bare rather than by path, so
+# the check above cannot see it. A renamed workflow leaves the lane table pointing at nothing.
 badflow=0
 while IFS= read -r wf; do
     [ -n "$wf" ] || continue
@@ -127,7 +127,7 @@ done < <(grep -ohE '`[A-Za-z0-9_-]+\.(yml|yaml)`' docs/*.md AGENTS.md README.md 
 [ "$badflow" -eq 0 ] || fail=1
 
 # --- 3. no doc pins the bench anchor at all -------------------------------------------------
-# 12-writing states the rule and names this number as its example: never pin a number a gate
+# writing.md states the rule and names this number as its example: never pin a number a gate
 # computes. build.zig's `signature_reference` is the single source and `zig build signature`
 # is what asserts it, so a doc's job is to name the gate.
 #
@@ -216,7 +216,7 @@ fi
 
 # --- 4. every backticked identifier names something in the tree -----------------------------
 # Prose names Zig symbols constantly. A rename or a deletion leaves the sentence reading
-# plausibly while pointing at nothing -- 07-shell named `makeManager` for a whole session
+# plausibly while pointing at nothing -- shell.md named `makeManager` for a whole session
 # after the function was deleted, and checks 1-3 all passed over it.
 #
 # Read the code spans DIRECTLY. Do not filter the pages through any "strip noise" helper
@@ -248,7 +248,7 @@ done < <(grep -ohE '`[A-Za-z_][A-Za-z0-9_]*`' docs/*.md AGENTS.md README.md CONT
 [ "$unknown" -eq 0 ] || fail=1
 
 # --- 5. every build step is documented somewhere -------------------------------------------
-# 10-tooling-ci's job is to say what each step proves. A step nothing mentions is a gate a
+# tooling-ci.md's job is to say what each step proves. A step nothing mentions is a gate a
 # contributor cannot find, which is the same as not having it.
 # READ THE WHOLE FILE, NOT LINE BY LINE. build.zig writes most steps across three lines
 #
@@ -263,7 +263,7 @@ done < <(grep -ohE '`[A-Za-z_][A-Za-z0-9_]*`' docs/*.md AGENTS.md README.md CONT
 # 6% of its subject. Collapse newlines first so the extraction sees every step.
 #
 # `<gate>-update` is covered by its BASE gate: the pairing is a documented convention
-# ("Every golden gate is a pair", 10-tooling-ci.md), so 21 near-identical names do not each
+# ("Every golden gate is a pair", tooling-ci.md), so 21 near-identical names do not each
 # need their own prose. Requiring the base keeps that honest -- an update step whose gate
 # nobody documented still fails.
 undoc=0

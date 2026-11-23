@@ -313,7 +313,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // --- `<gate>-update` is accounted for by `<gate>` ---------------------------------
-    // "Every golden gate is a pair" is a documented convention here (docs/09), and the
+    // "Every golden gate is a pair" is a documented convention here (docs/tooling-ci.md), and the
     // update half is a REGENERATION TOOL, not a check: it must never run in CI, and since
     // the refusal landed it exits 2 by default anyway. Excusing 21 near-identical steps by
     // hand would bury the two lines in that file that carry a real argument.

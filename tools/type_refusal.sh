@@ -8,7 +8,7 @@
 # or whether some OTHER transposition is still expressible. It checks the claims that are
 # written down, one snippet each.
 #
-# WHY IT EXISTS. docs/09-type-design.md states, in prose, that certain mistakes are now
+# WHY IT EXISTS. docs/type-design.md states, in prose, that certain mistakes are now
 # refused -- and that page has ALREADY BEEN WRONG about exactly that. It recorded the
 # `statsUpdate` clamp as safe because the parameter is `comptime` ("the transposition is
 # not even expressible"), and it was expressible: with a literal bonus both arguments are

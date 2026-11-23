@@ -7,15 +7,15 @@ answers the game-theoretic result outright and the search returns it as a score.
 The vertical spans three zones:
 
 - **shell** — the `SyzygyPath` option and the load callback that (re)initialises the
-  prober ([07-shell.md](07-shell.md)).
+  prober ([shell.md](shell.md)).
 - **platform** — file discovery, the table registry, the file format decoder, and the
-  probe algorithm ([06-platform.md](06-platform.md)).
+  probe algorithm ([platform.md](platform.md)).
 - **engine** — the `tb_source` seam plus the two consumers: the in-search WDL probe and
-  the root-move ranking ([02-engine-search.md](02-engine-search.md)).
+  the root-move ranking ([engine-search.md](engine-search.md)).
 
 The engine never imports the platform prober. It declares function pointers, the
 composition root binds them, and a build with no prober attached simply never probes —
-see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+see [architecture.md](architecture.md#the-composition-root-and-the-cycle-break-hooks).
 
 ## Modules
 
@@ -197,7 +197,7 @@ been defeated by it — and no hang, which is the class a crash-oriented fuzzer 
 timeout instead of a bug. The bar is **survival rather than a diagnostic**, and that is a
 different bar rather than a weaker one: the format records nothing that says which value
 was meant, so a reader cannot tell a mutated `lowestSym` from an intended one and must not
-pretend to. See [10-tooling-ci.md](10-tooling-ci.md) for the gate and its negative control.
+pretend to. See [tooling-ci.md](tooling-ci.md) for the gate and its negative control.
 
 **Which sub-table a position uses is a type, not an integer.** A pawnful table folds
 the mirrored file pairs — a/h, b/g, c/f, d/e — onto four per-file sub-tables, so
@@ -215,7 +215,7 @@ the failure mode rather than the frequency. Nothing here faults: the prober read
 **real** sub-table of the wrong file and returns a confident wrong verdict. Every
 `tb-*` golden compares verdicts this binary produced, so all of them agree while it
 is wrong. See the cost rule in
-[09-type-design.md](09-type-design.md#the-cost-rule) for when a type like this is
+[type-design.md](type-design.md#the-cost-rule) for when a type like this is
 free — a cold path carrying a value, as here — and when it is not.
 
 `decode_header.setSizes` additionally refuses `min_sym_len == 0` on the CODED branch (it would
@@ -460,7 +460,7 @@ one. A headless engine build therefore needs no registration for correctness, un
 `option_source` / `thread_ops` hooks whose defaults are correct only because every root is
 accounted for.
 
-See [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks)
+See [architecture.md](architecture.md#the-composition-root-and-the-cycle-break-hooks)
 for the pattern. `zig build hook-lint` bounds the seams: it ratchets the hook count and
 requires every hook to declare a failure mode and a class, and to be registered.
 
@@ -541,5 +541,5 @@ the a1-d1-d4 and MapPawns coverage), `probe.zig` checks `LR` unpacking, `setGrou
 `setSymLen` on a synthetic btree, `decode.zig` checks the `flag_single_value` path, and
 `tables.zig` checks the stem builder and the empty-path init.
 
-See [10-tooling-ci.md](10-tooling-ci.md) for the gate battery and
+See [tooling-ci.md](tooling-ci.md) for the gate battery and
 [CONTRIBUTING](../CONTRIBUTING.md) for what to run before a commit.

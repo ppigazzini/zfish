@@ -75,7 +75,7 @@ pub const script_gates = [_]ScriptGate{
     // nothing checked. This does NOT check whether a sentence is true -- "numa_context is a
     // never-dereferenced stub handle" parsed, linked, and was false for weeks; only reading the
     // code finds that. It buys the cheap half so review can spend attention on the expensive half.
-    // Watch the compiler refuse the mistakes docs/09-type-design.md says are unrepresentable.
+    // Watch the compiler refuse the mistakes docs/type-design.md says are unrepresentable.
     // That page has already been WRONG about exactly this once: it recorded the statsUpdate
     // clamp as safe because the parameter is comptime, and the transposition turned out to be
     // expressible whenever the bonus was a literal too -- it type-checked, and the gravity

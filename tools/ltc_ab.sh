@@ -13,7 +13,7 @@
 # and Threads is 1, so the node count is a function of the position and the table alone. Two
 # binaries that search the same tree MUST report the same node total. That is a WIDER net than
 # the bench anchor, which visits only its own thirteen positions from a cold table -- the class
-# docs/10-tooling-ci.md records the anchor cannot see. A run whose totals differ is VOID, not
+# docs/tooling-ci.md records the anchor cannot see. A run whose totals differ is VOID, not
 # slow, and this script exits 1 rather than printing a ratio.
 #
 # WHICH COLUMN CARRIES A CLAIM. Retired instructions and retired branches are near-deterministic

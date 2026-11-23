@@ -63,7 +63,7 @@
 //!   MAX_INSTR_RATIO=1.36 perf_counters ./zf_sse41 $ORACLE/sf_sse41 8 bench 16 1 13
 //!
 //! The protocol it encodes -- interleaved pairs, core pinning, median of per-round paired
-//! ratios -- is the one docs/08-idiomatic-zig.md requires for any speed claim.
+//! ratios -- is the one docs/idiomatic-zig.md requires for any speed claim.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -123,7 +123,7 @@ pub fn main(init: std.process.Init) !void {
     // process contributes is the counter pair around it.
     if (std.mem.eql(u8, std.mem.span(av[1]), "--wrap")) {
         // -o is required rather than defaulted: the caller runs several of these per round
-        // and a shared default path is the collision docs/08-idiomatic-zig.md's fleet rules
+        // and a shared default path is the collision docs/idiomatic-zig.md's fleet rules
         // already charge for once.
         if (av.len < 5 or !std.mem.eql(u8, std.mem.span(av[2]), "-o")) {
             std.debug.print("usage: perf_counters --wrap -o <file> [--core N] -- <argv...>\n", .{});

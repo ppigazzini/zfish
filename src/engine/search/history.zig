@@ -85,7 +85,7 @@ pub fn updateQuietHistoriesWorker(
 ///
 /// Backed by `u8` and used only to index, so `@backingInt` is the value that was already
 /// being passed -- this is the accessor-typing case, not the "type a quantity that is computed
-/// with" case the cost rule refutes (see docs/09-type-design.md).
+/// with" case the cost rule refutes (see docs/type-design.md).
 /// Construct through `of`, never through a bare `.yes` / `.no`. An enum LITERAL infers its
 /// type from the parameter it lands in, so two `if (c) .yes else .no` arguments still compile
 /// after a transposition -- the literal simply adapts. Checked, not assumed: that swap built

@@ -7,7 +7,7 @@ its structure.
 
 | Reference | Use |
 |---|---|
-| [Stockfish](https://github.com/official-stockfish/Stockfish) | The engine zfish ports. The source of all chess strength, the search and evaluation behaviour zfish reproduces bit-exactly, and the NNUE networks. No Stockfish C++ is vendored here; the differential check builds pristine upstream in a throwaway git worktree — see [10-tooling-ci.md](10-tooling-ci.md). |
+| [Stockfish](https://github.com/official-stockfish/Stockfish) | The engine zfish ports. The source of all chess strength, the search and evaluation behaviour zfish reproduces bit-exactly, and the NNUE networks. No Stockfish C++ is vendored here; the differential check builds pristine upstream in a throwaway git worktree — see [tooling-ci.md](tooling-ci.md). |
 | [Stockfish docs](https://official-stockfish.github.io/docs/stockfish-wiki/Home.html) | Engine behaviour, UCI options, and terminology. |
 | [Stockfish commit history](https://github.com/official-stockfish/Stockfish/commits/master) | The authority for a bench-moving change. A sync ports a real upstream commit and lands bit-exact at that commit's `Bench:`. |
 
@@ -39,7 +39,7 @@ came back was the half zfish was missing rather than the idea it already had.
 picker's three stage setups and measured a win on both tiers. The identical change here, its
 mechanism reproduced exactly, retired **more** instructions on both — the prologue cost it
 removed does not exist in this tree
-([08-idiomatic-zig.md](08-idiomatic-zig.md#do-not-outline-a-cold-body-to-shrink-a-hot-frame)
+([idiomatic-zig.md](idiomatic-zig.md#do-not-outline-a-cold-body-to-shrink-a-hot-frame)
 carries the numbers and the rule). Take the idea; price it here.
 
 **A sibling's GATE is a hypothesis about what this tree does not INSTRUMENT** — which is a
@@ -67,19 +67,19 @@ first had reported clean.
 | Reference | Use |
 |---|---|
 | [Zig language reference](https://ziglang.org/documentation/0.17.0/) | `comptime`, `@Vector`, `@splat`, builtins, and the semantics the hot path relies on. |
-| [Zig build system](https://ziglang.org/learn/build-system/) | Modules, `addImport`, per-module tests — the artefact `build.zig` is. See [00-architecture.md](00-architecture.md). |
+| [Zig build system](https://ziglang.org/learn/build-system/) | Modules, `addImport`, per-module tests — the artefact `build.zig` is. See [architecture.md](architecture.md). |
 | [Zig standard library source](https://github.com/ziglang/zig/tree/master/lib/std) | The authority when an API differs across supported versions. Read the std source, not a changelog. |
 | [Ghostty — useful Zig patterns](https://mitchellh.com/writing/ghostty-and-useful-zig-patterns) | Comptime interfaces for platform/arch dispatch, and the caveat that CI must build every option or a configuration rots. |
-| [TigerBeetle `TIGER_STYLE.md`](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) | Static allocation and near-zero dependencies — the hot-path discipline in [08-idiomatic-zig.md](08-idiomatic-zig.md). |
+| [TigerBeetle `TIGER_STYLE.md`](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) | Static allocation and near-zero dependencies — the hot-path discipline in [idiomatic-zig.md](idiomatic-zig.md). |
 | [matklad — Newtype Index Pattern in Zig](https://matklad.github.io/2025/12/23/zig-newtype-index-pattern.html) | The sized-enum newtype (`enum(u32) { _ }`, `@intFromEnum`/`@enumFromInt` in the article, `@backingInt`/`@fromBackingInt` in Zig 0.17) that `encode.TbFile` is an instance of, and its stated limit: the conversion is open, so the pattern stops a confusion rather than an intent. |
 | [Zig issue 12524 — niche packing for optional enums](https://github.com/ziglang/zig/issues/12524) | Why `?E` is wider than `E` here even when the tag leaves values unused, and therefore why the board keeps in-band sentinels. |
-| [Zig issue 1595 — request: distinct types](https://github.com/ziglang/zig/issues/1595) | The standing discussion of a first-class distinct-type feature. Zig has none, so the sized enum above is the whole instrument, and the absence is why [09-type-design.md](09-type-design.md) can guarantee so little. |
+| [Zig issue 1595 — request: distinct types](https://github.com/ziglang/zig/issues/1595) | The standing discussion of a first-class distinct-type feature. Zig has none, so the sized enum above is the whole instrument, and the absence is why [type-design.md](type-design.md) can guarantee so little. |
 | [Zig issue 21946 — `@enumFromInt` and non-exhaustive enums](https://github.com/ziglang/zig/issues/21946) | The conversion into an open sized enum is not range-checked, which is the mechanical statement of "the pattern stops a confusion, not an intent". |
 
 ## The x86 hardware
 
 What an instruction costs on the core it runs on — the half of a performance claim the
-deterministic instruction axis cannot see ([08-idiomatic-zig.md](08-idiomatic-zig.md)). An
+deterministic instruction axis cannot see ([idiomatic-zig.md](idiomatic-zig.md)). An
 op-for-op rewrite, a divide traded for a multiply, a 512-bit kernel against a 256-bit one:
 each can retire the same instructions or more and still differ in cycles. Agner Fog's
 manuals are the standard public source for that, **measured** on real parts rather than
@@ -95,12 +95,12 @@ Zen 4 tables were measured on a Ryzen 9 7900X, the same core.
 **A table row is a hypothesis about a kernel, never a verdict on the engine.** It cannot
 see register allocation around an inlined site, the other work in the loop, or the tree
 the search actually walks — `205f0052` was the same kernel length and still measured more
-instructions whole-engine. The gates in [08-idiomatic-zig.md](08-idiomatic-zig.md) decide;
+instructions whole-engine. The gates in [idiomatic-zig.md](idiomatic-zig.md) decide;
 a table explains a result they measured, or says which measurement to take next.
 
 ## Type theory and type design
 
-The theory behind [09-type-design.md](09-type-design.md). Each entry says what it is *for*
+The theory behind [type-design.md](type-design.md). Each entry says what it is *for*
 here — several shape a decision without any of their machinery being run, and one group is
 named only so the frontier is on the record. **Do not read a citation as a claim that zfish
 implements what the paper describes.**
@@ -118,7 +118,7 @@ implements what the paper describes.**
 | Reference | Use |
 |---|---|
 | [Wlaschin — Designing with types: making illegal states unrepresentable](https://fsharpforfunandprofit.com/posts/designing-with-types-making-illegal-states-unrepresentable/) | The canonical write-up of the maxim behind `ScoreKind`'s three variants: a decisive score is a fact, not an estimate, and three variants make blending one unwriteable rather than discouraged. |
-| [King — Parse, Don't Validate (2019)](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/) | Push the check to the boundary and let the *result type* carry that it happened. zfish is a parser at its edges — FEN, UCI, the `.nnue`, a Syzygy table — and the bounded parse in [05-tablebases.md](05-tablebases.md) is this maxim with the safety rules attached. |
+| [King — Parse, Don't Validate (2019)](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/) | Push the check to the boundary and let the *result type* carry that it happened. zfish is a parser at its edges — FEN, UCI, the `.nnue`, a Syzygy table — and the bounded parse in [tablebases.md](tablebases.md) is this maxim with the safety rules attached. |
 | [Kiselyov & Shan — Lightweight Static Capabilities (ENTCS 2007)](https://okmij.org/ftp/Computation/lightweight-static-guarantees.html) | A capability type witnesses a checked property so downstream code need not re-check it. The lens for "this handle grants access to that table", which is what `AccumulatorStack` being an `opaque` handle rather than a bare pointer is doing. |
 | [Noonan — Ghosts of Departed Proofs (Haskell 2018)](https://kataskeue.com/gdp.pdf) | Preconditions carried as proofs in phantom type parameters, at no runtime cost. The diagnosis, not the machinery: the four correction accessors exist because the proof "this key selects this counter" was real, was written in a comment, and was carried by nothing. |
 
@@ -135,8 +135,8 @@ implements what the paper describes.**
 | Reference | Use |
 |---|---|
 | [Kennedy — Types for Units-of-Measure: Theory and Practice (CEFP 2009)](https://link.springer.com/chapter/10.1007/978-3-642-17685-2_8) | The system that makes a dimensioned quantity checkable, shipped in F#. Named because it is precisely what a `Depth` type would need and what Zig cannot express. |
-| [Kennedy — Types for Units-of-Measure, the F# implementation notes](https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/units-of-measure) | The shipped realisation, useful as the concrete picture of what a unit-carrying quantity looks like in a working language. zfish's clock is the case it would catch: `elapsed` is milliseconds or node counts depending on `nodestime`, and both are `i64`. Named as the reference, **not** as a candidate — see the sixth map in [09-type-design.md](09-type-design.md) for why that one is documented rather than typed. |
-| [Kennedy — Relational Parametricity and Units of Measure (POPL 1997)](https://people.mpi-sws.org/~dreyer/tor/papers/kennedy.pdf) | The theorem behind it — a function polymorphic in units cannot inspect the unit, so the discipline is free. **Unit polymorphism is the feature whose absence refutes `Depth`**: a depth-scaled product lands in six codomains and an operator has one result type. See [09-type-design.md](09-type-design.md#why-there-is-no-depth). |
+| [Kennedy — Types for Units-of-Measure, the F# implementation notes](https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/units-of-measure) | The shipped realisation, useful as the concrete picture of what a unit-carrying quantity looks like in a working language. zfish's clock is the case it would catch: `elapsed` is milliseconds or node counts depending on `nodestime`, and both are `i64`. Named as the reference, **not** as a candidate — see the sixth map in [type-design.md](type-design.md) for why that one is documented rather than typed. |
+| [Kennedy — Relational Parametricity and Units of Measure (POPL 1997)](https://people.mpi-sws.org/~dreyer/tor/papers/kennedy.pdf) | The theorem behind it — a function polymorphic in units cannot inspect the unit, so the discipline is free. **Unit polymorphism is the feature whose absence refutes `Depth`**: a depth-scaled product lands in six codomains and an operator has one result type. See [type-design.md](type-design.md#why-there-is-no-depth). |
 
 ### The typed index, as production compilers run it
 
@@ -149,7 +149,7 @@ implements what the paper describes.**
 
 | Reference | Use |
 |---|---|
-| [When Zero Cost Abstractions Aren't Zero Cost (2021)](https://blog.polybdenum.com/2021/08/09/when-zero-cost-abstractions-aren-t-zero-cost.html) | The closest published statement of what [09-type-design.md](09-type-design.md#the-cost-rule) measured: the ideal is difficult to reach in practice, and a wrapper can change what the optimiser does with the enclosing function even when the layout is identical. |
+| [When Zero Cost Abstractions Aren't Zero Cost (2021)](https://blog.polybdenum.com/2021/08/09/when-zero-cost-abstractions-aren-t-zero-cost.html) | The closest published statement of what [type-design.md](type-design.md#the-cost-rule) measured: the ideal is difficult to reach in practice, and a wrapper can change what the optimiser does with the enclosing function even when the layout is identical. |
 
 ### The frontier — named so it is on the record, not because it applies
 
@@ -162,13 +162,13 @@ implements what the paper describes.**
 
 | Reference | Use |
 |---|---|
-| [UCI protocol](https://backscattering.de/chess/uci/) | The command and option surface the shell implements — see [07-shell.md](07-shell.md). |
-| [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) | Alpha-beta, transposition tables, move ordering, magic bitboards, SEE — the algorithms in [01-engine-board.md](01-engine-board.md) and [02-engine-search.md](02-engine-search.md). |
-| [NNUE (Chess Programming Wiki)](https://www.chessprogramming.org/NNUE) | The efficiently-updatable network architecture in [03-engine-eval.md](03-engine-eval.md). |
+| [UCI protocol](https://backscattering.de/chess/uci/) | The command and option surface the shell implements — see [shell.md](shell.md). |
+| [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) | Alpha-beta, transposition tables, move ordering, magic bitboards, SEE — the algorithms in [engine-board.md](engine-board.md) and [engine-search.md](engine-search.md). |
+| [NNUE (Chess Programming Wiki)](https://www.chessprogramming.org/NNUE) | The efficiently-updatable network architecture in [engine-eval.md](engine-eval.md). |
 | [Leela Chess Zero training data](https://storage.lczero.org/files/training_data) | The data the NNUE networks are trained on, under the [ODbL](https://opendatacommons.org/licenses/odbl/odbl-10.txt). |
-| [Syzygy tablebases](https://github.com/syzygy1/tb) | The WDL/DTZ format and the probing rules — the reference behind [05-tablebases.md](05-tablebases.md). The file layout is not self-describing, so the format notes are the authority when a probe disagrees with the oracle. |
+| [Syzygy tablebases](https://github.com/syzygy1/tb) | The WDL/DTZ format and the probing rules — the reference behind [tablebases.md](tablebases.md). The file layout is not self-describing, so the format notes are the authority when a probe disagrees with the oracle. |
 | [Stockfish's Syzygy prober](https://github.com/official-stockfish/Stockfish/blob/master/src/syzygy/tbprobe.cpp) | The golden for the port. The `tb-*` gates diff against a real upstream build, so this is what a divergence is read against. |
-| [Chess960](https://www.chessprogramming.org/Chess960) | Why castling is encoded king-to-own-rook rather than by direction — see [01-engine-board.md](01-engine-board.md#the-move-word). |
+| [Chess960](https://www.chessprogramming.org/Chess960) | Why castling is encoded king-to-own-rook rather than by direction — see [engine-board.md](engine-board.md#the-move-word). |
 
 ## Licensing
 
@@ -181,5 +181,5 @@ implements what the paper describes.**
 | Reference | Use |
 |---|---|
 | John Lakos, *Large-Scale C++ Software Design* (1996) / *Volume I* (2019) | Physical design: components, levelization, escalation for breaking cycles, and the CCD/ACD/NCCD coupling `zig build arch-report` prints. |
-| [Mark Seemann — Composition Root](https://blog.ploeh.dk/2011/07/28/CompositionRoot/) | The pattern `main.zig` implements: one place that may reference everything, referenced by nothing, wiring implementations into the leaves at startup. See [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks). |
+| [Mark Seemann — Composition Root](https://blog.ploeh.dk/2011/07/28/CompositionRoot/) | The pattern `main.zig` implements: one place that may reference everything, referenced by nothing, wiring implementations into the leaves at startup. See [architecture.md](architecture.md#the-composition-root-and-the-cycle-break-hooks). |
 | David L. Parnas, *On the Criteria To Be Used in Decomposing Systems into Modules* (CACM 15(12), 1972) | Information hiding — the criterion the zone split meets. |
