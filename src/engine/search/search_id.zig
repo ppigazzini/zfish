@@ -366,7 +366,11 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
 /// a move already first, or one not in the list, leaves the order as it was. A losing pick
 /// scored below the line it displaced is reported as a lower bound: its mated-in distance
 /// was only searched far enough to lose to the best line, so it is shorter than the truth
-/// (upstream c5452e1f8).
+/// (upstream c5452e1f8). The bound replaces any upper bound the line carried: upstream sets
+/// only inexactLower, so a pick that failed low -- or was not searched in the last
+/// iteration, whose -VALUE_INFINITE is_loss also reads as a loss -- keeps a stale
+/// inexactUpper and trips output_pv's two-bounds assert once 92c6666cc re-sends its PV. The
+/// output is the same either way: output_pv tests lower first.
 pub fn skillSwapBest(id: *const ZfishIdState, move: u16) bool {
     var i: usize = 0;
     while (i < id.root_moves_count and id.root_moves[i].pv.at(0) != move) : (i += 1) {}
@@ -375,7 +379,9 @@ pub fn skillSwapBest(id: *const ZfishIdState, move: u16) bool {
     const tmp = id.root_moves[0];
     id.root_moves[0] = id.root_moves[i];
     id.root_moves[i] = tmp;
-    if (idIsLoss(id.root_moves[0].score) and id.root_moves[0].score < best_score)
+    if (idIsLoss(id.root_moves[0].score) and id.root_moves[0].score < best_score) {
         id.root_moves[0].inexact_lower = true;
+        id.root_moves[0].inexact_upper = false;
+    }
     return true;
 }
