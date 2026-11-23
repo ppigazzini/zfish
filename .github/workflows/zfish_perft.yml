@@ -44,7 +44,7 @@ permissions:
 jobs:
   deep-perft:
     name: Deep perft (reference counts)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The sweep below is ~4.7 billion leaves, measured at 22 s on a dev box (~150 M nodes/s
     # from the ReleaseFast binary). The ceiling is generous against a slow or cold runner --
     # the compile dominates the job, not the counting -- while still being low enough that a

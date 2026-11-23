@@ -30,7 +30,7 @@ permissions:
 jobs:
   fuzz:
     name: Continuous fuzz (bounded)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,7 +65,7 @@ jobs:
       # worker per artifact through `Io.Group.async`, and the build runner's `Io.Threaded`
       # defaults `async_limit` to `cpu_count - 1` -- one slot already held by the coverage
       # task. A fuzz worker never returns, so an N-core box only ever starts N-2 of them.
-      # ubuntu-latest is 4 cores and this tree has 3 roots, so one artifact would never
+      # ubuntu-26.04 is 4 cores and this tree has 3 roots, so one artifact would never
       # begin and would leave no coverage file at all -- reproducible on any box with
       # `taskset -c 0-3`. Per-target steps make each a single-worker session, so the slot
       # arithmetic cannot starve any of them.
@@ -129,7 +129,7 @@ jobs:
   # reproducer at the top of the log.
   uci-fuzz:
     name: UCI command-loop fuzz (bounded)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

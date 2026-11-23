@@ -30,7 +30,7 @@ permissions:
 jobs:
   upstream-check:
     name: Detect upstream drift
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Detection and the map audit are seconds. The walk step dominates: on a cold cache it
     # builds the oracle from source and downloads two nets (~50 MB ours, ~90 MB upstream's)
     # before searching anything. The search itself is ~6 s for 40 positions at depth 13.
