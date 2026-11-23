@@ -21,8 +21,8 @@
 # FRC movegen is adjudicated instead by `upstream_golden_audit.sh` in the weekly
 # upstream-check lane, which re-derives the whole perft golden from the pristine oracle.
 #
-# Every action is pinned BY COMMIT SHA with the tag in a trailing comment, as in the other
-# two lanes here and in the sibling ports.
+# Every action names a release tag, and .github/workflows/actions.lock holds the commit
+# the runner runs for it, as in the other lanes here and in the sibling ports.
 name: zfish perft (nightly)
 
 on:
