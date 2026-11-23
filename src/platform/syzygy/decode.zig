@@ -96,7 +96,7 @@ pub fn decompressPairs(d: *const PairsData, idx: u64) i32 {
     // Refuse `block` BEFORE either walk. It is a raw 32-bit field of the sparse-index payload,
     // so no header value bounds it, and the BACKWARD walk only tested `block == 0` before
     // reading block_length[block] -- an out-of-bounds read up to ~8 GiB past the region (found
-    // by mcfish's libFuzzer harness, mcfish 9fe1c021; reproduced here as the regression test
+    // by mcfish's libFuzzer harness, mcfish 967c46ce; reproduced here as the regression test
     // below). One test covers every index the backward walk reads, because it only decrements;
     // the forward walk keeps its own, because it increments. A well-formed table always
     // satisfies this -- block_length_size is blocks_num plus the padding.
@@ -156,7 +156,7 @@ pub fn decompressPairs(d: *const PairsData, idx: u64) i32 {
             // Refuse a window the symbol lengths have driven out of range. A valid table never
             // consumes more bits than the window holds, so this stays above zero; a corrupt one
             // can decode symbols long enough to walk it negative, and `64 - buf64_size` would
-            // then exceed 63 -- an illegal shift width (mcfish 9fe1c021, where the same value
+            // then exceed 63 -- an illegal shift width (mcfish 967c46ce, where the same value
             // tripped UBSan's "shift exponent 64 is too large").
             if (buf64_size <= 0) return 0;
             buf64 |= @as(u64, windowBe(u32, d.data, ptr)) << @intCast(64 - buf64_size);
@@ -169,7 +169,7 @@ pub fn decompressPairs(d: *const PairsData, idx: u64) i32 {
     // acyclic only because a valid file says so, and a corrupt one can name a child that is
     // the node itself, which loops here forever: a HANG, not a crash, and therefore the one
     // failure mode a crash-oriented fuzzer reports as a timeout rather than a bug (mcfish
-    // 9fe1c021 measured one such input holding its fuzzer over seven minutes).
+    // 967c46ce measured one such input holding its fuzzer over seven minutes).
     //
     // Bound it by the invariant setSymLen itself establishes: a well-formed btree has
     // symlen[s] == symlen[left] + symlen[right] + 1, so every step strictly shrinks symlen.
@@ -230,7 +230,7 @@ const StubTable = struct {
 test "decompressPairs refuses a sparse-index block past the block-length region" {
     // `block` is a raw u32 of the payload. With offset driven negative (idx 0 -> diff -32) the
     // BACKWARD walk decrements and reads block_length[block]; unbounded, that is an ~8 GiB
-    // out-of-bounds read. Regression for mcfish 9fe1c021.
+    // out-of-bounds read. Regression for mcfish 967c46ce.
     var stub = StubTable{ .sparse = .{ 0xFF, 0xFF, 0xFF, 0xFF, 0, 0 } };
     var d = stub.pairs();
     try std.testing.expectEqual(@as(i32, 0), decompressPairs(&d, 0));

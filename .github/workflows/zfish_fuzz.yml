@@ -110,7 +110,7 @@ jobs:
       # It exits 0 on the SIGINT whether the fuzzer executed half a billion inputs or
       # three, and the Zig fuzzer prints no total, so an idle lane reads exactly like a
       # clean one. The sibling port shipped that failure live -- its search fuzzer was
-      # managing three inputs per ninety seconds behind a green lane (mcfish 05914e99).
+      # managing three inputs per ninety seconds behind a green lane (mcfish 7f0bf28c).
       # Read the execution counters the fuzzer keeps in .zig-cache/v and require ALL THREE
       # artifacts -- the board/eval/search targets, the Syzygy file parse as units, and the
       # same parse driven through a probe -- to have executed at least a million inputs

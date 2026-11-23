@@ -109,14 +109,14 @@ run_selfdriving() {
 echo "liveness: $BIN, deadline ${DEADLINE}s"
 echo
 echo "== a command that mutates state a worker holds, sent mid-search =="
-run_case "setoption during go infinite   (5f524ff8)" \
+run_case "setoption during go infinite   (8032edb2)" \
     'setoption name Threads value 2\nposition startpos\ngo infinite\nsetoption name Hash value 32\n'
-run_case "setoption during go ponder     (5f524ff8)" \
+run_case "setoption during go ponder     (8032edb2)" \
     'position startpos\ngo ponder\nsetoption name Hash value 32\n'
 
 echo
 echo "== a search whose own limit is the defect =="
-run_case "go movetime 0                  (160a4a5c)" \
+run_case "go movetime 0                  (bd141a4e)" \
     'position startpos\ngo movetime 0\n'
 # NOT a case here: `go ... movestogo -2147483648`. It was tried, and it survives BOTH
 # mutations below -- that defect makes the engine answer too FAST, from a depth-4 search
@@ -125,7 +125,7 @@ run_case "go movetime 0                  (160a4a5c)" \
 
 echo
 echo "== a self-driving command with no reader left to rescue it =="
-run_selfdriving "bench 16 1 0 default movetime  (160a4a5c)" \
+run_selfdriving "bench 16 1 0 default movetime  (bd141a4e)" \
     'bench 16 1 0 default movetime\nquit\n'
 
 echo

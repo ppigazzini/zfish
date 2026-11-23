@@ -63,7 +63,7 @@ do_null_move	move_do\.doNullMove$|Position::do_null_move
 # generic instance: `__func_N` since 0.17, `__anon_N` before it.
 threats	move_do_threats\.updatePieceThreats__func_|update_piece_threats<true>
 # NO `acc_apply` ROW, and nothing pairs to give it one. Both of its symbols went with the
-# SFNNv17 port (09864b37): zfish's `applyCombinedPsqtDelta` with the psqt half it applied,
+# SFNNv17 port (0308a124): zfish's `applyCombinedPsqtDelta` with the psqt half it applied,
 # and upstream's out-of-line `apply_combined`, which the oracle build now inlines. What
 # survives does not match: upstream keeps only `update_accumulator_incremental<true>` (the
 # forward steps; `<false>` and `_both` inline away), zfish only

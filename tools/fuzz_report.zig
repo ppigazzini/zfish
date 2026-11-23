@@ -5,7 +5,7 @@
 //! fuzz job that had silently stopped fuzzing was indistinguishable from one that found nothing
 //! -- and "found nothing" is the result we actually want to publish. The sibling port hit the
 //! live version of this: its search fuzzer was managing three inputs per ninety seconds while
-//! its lane stayed green (mcfish 05914e99, where libFuzzer's symbolizer was eating the budget).
+//! its lane stayed green (mcfish 7f0bf28c, where libFuzzer's symbolizer was eating the budget).
 //! zfish's fuzzer output is three lines and none of them is a count, so the same failure here
 //! would have been invisible for as long as nobody looked.
 //!

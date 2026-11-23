@@ -140,7 +140,7 @@ pub const psq_block_offset = psq_diff_offset + @sizeOf(HalfDiff);
 /// stride ~4608 -> ~448), halving the per-thread accumulator arena and shrinking the DTLB reach
 /// of the N-ply incremental-replay walk. The threat `computed` flags that used to sit in that
 /// prefix are write-only (nothing reads stateComputed(threat_feature)), so their clears are
-/// dropped with it (stackReset/stackPush). Port of mcfish fa04404. 0 satisfies any alignment,
+/// dropped with it (stackReset/stackPush). Port of mcfish 9596fd4. 0 satisfies any alignment,
 /// and the slot base is nnue_align'd, so the ThreatDiffView load stays aligned.
 pub const threat_diff_offset = 0;
 pub const psq_state_stride = accumulator_state_bytes;

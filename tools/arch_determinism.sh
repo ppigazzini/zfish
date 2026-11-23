@@ -23,7 +23,7 @@
 #   BENCH   only where the CPU can execute what the tier emits. A build at
 #           -Darch=x86-64-vnni512 emits AVX-512 wherever it was built, so benching it on
 #           a host without AVX-512 raises SIGILL -- a fact about the runner, not about
-#           determinism. ../rfish's 9564e86 died there when its own sweep first drew a
+#           determinism. ../rfish's e91298f died there when its own sweep first drew a
 #           mixed hosted fleet.
 #   EXPORT  the loaded net back out and require it byte-identical, wherever the tier runs.
 #           This is arch-variant for the opposite reason the bench is arch-INvariant: the

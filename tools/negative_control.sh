@@ -95,7 +95,7 @@ ROWS=(
     # -- which is precisely why this class of bound had nothing gating it before.
     "parity-malformed|src/platform/syzygy/decode_header.zig|    if (buf[p] >= 64 or buf[p + 1] >= 64) return error.CorruptTable;\n|:DELETE:|the tablebase shift-width refusal is removed"
     # The hang gate. Put the lower bound on `movetime` back to zero, which is what the UCI
-    # parser did before 160a4a5c: `checkTime` reads `lim_movetime != 0`, so zero stops meaning
+    # parser did before bd141a4e: `checkTime` reads `lim_movetime != 0`, so zero stops meaning
     # "stop at once" and starts meaning "there is no limit". Every value gate reads identically
     # -- none of them sends `movetime 0`, and a search that never ends produces no line to
     # diff. It is only a HANG, which is the one thing the rest of this battery cannot express.

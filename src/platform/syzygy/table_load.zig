@@ -235,7 +235,7 @@ fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, files: []const encode.Tb
     // requiring the byte would reject a table whose btree ends on the last one, which upstream
     // accepts. Every path out of this function happens to reject such a table anyway, but that
     // is a property of the control flow, not of the value, and the value is what bounds
-    // wdl.mapScoreDtz (mcfish 4b240ec8).
+    // wdl.mapScoreDtz (mcfish cd0b0981).
     if (pos.* > buf.len) return false;
     const map_base = pos.*;
     for (files) |f| {

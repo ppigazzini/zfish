@@ -9,7 +9,7 @@
 # THE PREDICTION WAS TESTED BEFORE THIS FILE EXISTED, and one of the six had rotted:
 # `upstream_net.sh` was copying 91 MB into every worktree's `src/`, the location the net left
 # when zfish moved to loading it from `resources/`. The copy was useless AND the problem the
-# tool exists to solve was untouched, for as long as nobody happened to run it (353539e2).
+# tool exists to solve was untouched, for as long as nobody happened to run it (b23923db).
 #
 # WHAT A ROW ASSERTS, and what it deliberately does not. Each row runs the tool the cheapest
 # way that still executes its real code path, and checks the EXIT CODE plus a string its
@@ -147,4 +147,4 @@ printf 'tools-smoke: %d of %d unlaned tool(s) still run and still print their in
 # absent would report OK over a tool it never ran, which is the failure this file exists to
 # prevent; and `upstream_net.sh` is precisely the tool that rotted unobserved, so a silent
 # skip on it would be the same hole again. Covering them means running them for real in the
-# weekly lane that already builds an oracle. Both were verified by hand at 353539e2.
+# weekly lane that already builds an oracle. Both were verified by hand at b23923db.

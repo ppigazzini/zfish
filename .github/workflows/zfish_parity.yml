@@ -354,7 +354,7 @@ jobs:
   # Windows and macOS aarch64 rows of native-os bench that tier too, under a superset of
   # these gates. What only this lane runs is the LINUX platform layer on aarch64 -- the
   # syscall numbers, struct layouts and AAPCS64 C-ABI that std.os.linux selects per arch
-  # (an extern-struct by-value C-ABI divergence was first caught here, c03accff2) -- and
+  # (an extern-struct by-value C-ABI divergence was first caught here) -- and
   # the bench must still be exactly 1210779. A NATIVE GitHub arm64 runner, not qemu-user:
   # real hardware and native codegen, far faster than emulation, no cross-libc.
   arm-native:

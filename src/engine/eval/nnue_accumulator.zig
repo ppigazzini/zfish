@@ -372,7 +372,7 @@ fn transformPerspective(
         // collapse @reduce(.Or) back to a scalar (disasm-confirmed: vptestmd then vpord +
         // vextracti + vpshufd chain). Guarded to x86, where the i1-vector packing is
         // bit-per-lane; other backends keep the portable path (the layout note above). The
-        // signature pins that the two produce the identical mask. Port of mcfish be1d576.
+        // signature pins that the two produce the identical mask. Port of mcfish 71002ce.
         const mask: GMask = if (comptime @import("builtin").target.cpu.arch == .x86_64)
             @bitCast(nonzero)
         else

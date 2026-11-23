@@ -6,7 +6,7 @@
 // unit-level target can see it. The lead-pawn refusal in table_load.set is exactly that -- a header
 // every unit target accepts, and a probe that then sorts an inverted range and indexes the pawn
 // geometry with a square nobody wrote. ../rfish found the same bug from the same direction
-// (afd72af) and neither port's unit targets had.
+// (8f71a6b) and neither port's unit targets had.
 //
 // Reach the probe WITHOUT touching a filesystem: registry.register builds the TBTable the material
 // configuration implies, table_load.set parses a fuzzer-built image into it, and publishing
