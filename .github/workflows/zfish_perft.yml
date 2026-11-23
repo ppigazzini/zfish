@@ -52,11 +52,11 @@ jobs:
     # Actions time.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
 
@@ -65,7 +65,7 @@ jobs:
       # exactly as the signature lane does. Same cache key as the parity and fuzz workflows:
       # `default_eval_file_name` in src/engine/eval/network.zig, so a Zig-only net bump busts it.
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}

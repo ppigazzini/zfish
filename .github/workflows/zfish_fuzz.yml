@@ -33,18 +33,18 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
 
       # The fuzz targets call position.initRuntime() which needs the NNUE net on
       # disk (same cache key as the parity workflow -- a Zig-only net bump busts it).
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
@@ -132,16 +132,16 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
 
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
@@ -150,7 +150,7 @@ jobs:
 
       # pyproject.toml declares requires-python >= 3.15; run the harness on what
       # it declares, not on whatever python3 the runner image ships.
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.15"
 

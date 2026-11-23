@@ -28,10 +28,10 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
       # The whole owned tree: src/, tools/, build.zig.
@@ -46,10 +46,10 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           version: "0.13.9"
           enable-cache: false
@@ -57,6 +57,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: uvx zizmor==1.33.0 .github/
+
+  actions-lock:
+    name: Actions lockfile
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    # `.github/workflows/actions.lock` names the commit every action a workflow
+    # runs resolves to, an action another action calls included, and the runner
+    # runs that commit. This reads the file against the workflows and against
+    # upstream: a `uses:` with no entry, or a tag moved off its locked commit,
+    # fails here.
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the lockfile checker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh extension install github/gh-actions-lock --pin v0.5.1
+      - name: Verify the workflow lockfile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh actions-lock --verify
 
   parity:
     name: Linux x86-64 parity
@@ -81,13 +103,13 @@ jobs:
     env:
       ZFISH_TB_BEST_EFFORT: "1"
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       # Installs Zig 0.17.0 and caches the global + local Zig build cache
       # (use-cache defaults to true), so reruns skip recompilation.
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
 
@@ -96,7 +118,7 @@ jobs:
       # src/engine/eval/network.zig -- so a Zig-only net bump busts the cache. The
       # net is fetched into and read from resources/ (the runtime cwd; src/ is gone).
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
@@ -110,7 +132,7 @@ jobs:
       # changed. This job is the cache's only writer; every other job restores this entry.
       - name: Restore the Syzygy tables
         id: tbcache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: |
             resources/syzygy
@@ -133,7 +155,7 @@ jobs:
         run: zig build tb tb5
       - name: Save the Syzygy tables
         if: steps.tbfetch.outcome == 'success' && steps.tbcache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: |
             resources/syzygy
@@ -232,24 +254,24 @@ jobs:
     # variants recompile from scratch, with the same margin the parity job keeps.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
 
       # `zig build test` builds the engine, which loads the net, and drives the Syzygy
       # gates' fixtures; cache both exactly as the parity job does or every run refetches.
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       - name: Restore the Syzygy tables
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: |
             resources/syzygy
@@ -292,25 +314,25 @@ jobs:
     env:
       ZFISH_TB_BEST_EFFORT: "1"
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       # Audited Zig master snapshot. Bump deliberately (verify the port locally first),
       # not automatically -- a floating master would make this lane flap on upstream's
       # in-flight work rather than on our regressions.
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.18.0-dev.567+7f0281900
 
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       - name: Restore the Syzygy tables
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: |
             resources/syzygy
@@ -340,15 +362,15 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
 
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
@@ -401,14 +423,14 @@ jobs:
     env:
       ZFISH_TB_BEST_EFFORT: "1"
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
@@ -444,17 +466,17 @@ jobs:
             os: macos
             arch: x86-64-sse41-popcnt
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       # setup-zig installs the host-native Zig 0.17.0 (+cache) on every runner.
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
 
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
@@ -485,10 +507,10 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.17.0
       - name: Install valgrind
@@ -512,7 +534,7 @@ jobs:
           # later as the gate's own "valgrind not installed" SKIP, which is not a pass.
           valgrind --version
       - name: Cache NNUE network
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
