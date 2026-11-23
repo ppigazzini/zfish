@@ -34,7 +34,7 @@
 # that is no longer covered, the way `isDraw` is named above. `threats` is that case.
 #
 # MATCH ONE SYMBOL PER SIDE, AND VERIFY IT. A loose regex silently sums symbols that are
-# not the same thing: `Position::do_move` alone also catches upstream's delegating 4-arg
+# not the same thing: `Position::do_move` alone also catches upstream's delegating
 # overload (250 calls) and reads as a 250-call divergence that is not there. Check a new
 # row with `perf_fingerprint.py calls <out> --match ...` before trusting it.
 
@@ -51,7 +51,7 @@ see_ge	legality\.seeGe$|Position::see_ge
 # count leaves the IN-SEARCH derivations, which is what this row is the canary for, and
 # they agree exactly: 172,449 == 172,449 (do_move 170,508 + do_null_move 1,941).
 set_extra_bitboards	state_setup\.setExtraBitboards$|Position::set_extra_bitboards	state_setup\.setState$|Position::set_state
-do_move	move_do\.doMove$|Position::do_move\(Stockfish::Move, Stockfish::StateInfo&, bool
+do_move	move_do\.doMove$|Position::do_move\(Stockfish::Move, bool
 undo_move	move_do\.undoMove$|Position::undo_move
 do_null_move	move_do\.doNullMove$|Position::do_null_move
 # zfish makes `put_piece` comptime where upstream leaves it a runtime bool, so zfish's TWO
