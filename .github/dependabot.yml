@@ -1,0 +1,15 @@
+version: 2
+# Every action is pinned by commit SHA with its tag in a trailing comment, and
+# Dependabot moves the two together. It waits seven days after a release before
+# proposing it, so a version pulled or compromised in its first week never
+# reaches a pull request; zizmor's `dependabot-cooldown` audit reads this.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

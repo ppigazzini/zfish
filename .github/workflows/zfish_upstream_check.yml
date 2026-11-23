@@ -40,6 +40,7 @@ jobs:
       # (a shallow checkout may not contain UPSTREAM_BASE).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       # Installs Zig 0.17.0 and caches the build cache. Needed for two things here:
