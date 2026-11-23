@@ -149,6 +149,9 @@ fn auditToolchainOrder(wf: []const u8, body: []const u8, jobs: *usize) usize {
         if (block) |b| if (indent <= b) {
             block = null;
         };
+        // A comment is neither a job header nor a section: at indent 2 and ending in `:` it
+        // was counted as a job, and at column 0 it closed `jobs:` for the job below it.
+        if (trimmed[0] == '#') continue;
 
         if (indent == 0) {
             in_jobs = std.mem.eql(u8, trimmed, "jobs:");
@@ -162,7 +165,6 @@ fn auditToolchainOrder(wf: []const u8, body: []const u8, jobs: *usize) usize {
             jobs.* += 1;
             continue;
         }
-        if (trimmed[0] == '#') continue;
         const content = if (std.mem.find(u8, trimmed, " #")) |h| trimmed[0..h] else trimmed;
 
         if (std.mem.find(u8, content, "mlugg/setup-zig") != null) {
