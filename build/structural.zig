@@ -271,7 +271,7 @@ pub fn registerUpstream(
 }
 
 /// Register `upstream-parity`: assert the default (Zig) bench == the PRISTINE upstream
-/// Stockfish at UPSTREAM_BASE, built in a persistent git worktree with ZERO vendored C++.
+/// Stockfish at UPSTREAM_BASE, the build every port shares, with ZERO vendored C++.
 ///
 /// NOT a table row, deliberately: it takes a SECOND argument -- the upstream base sha -- that
 /// no other script gate does, and the table has no axis for it. Table-driving it dropped that
@@ -310,7 +310,7 @@ pub fn registerUpstreamParity(
     cmd.step.dependOn(net_step);
     const step = b.step(
         "upstream-parity",
-        "Assert default (Zig) bench == pristine upstream@UPSTREAM_BASE (git worktree, no vendored C++)",
+        "Assert default (Zig) bench == pristine upstream@UPSTREAM_BASE (the shared oracle, no vendored C++)",
     );
     step.dependOn(&cmd.step);
 }

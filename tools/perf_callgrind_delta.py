@@ -39,7 +39,7 @@ Usage (CWD must be resources/ so both binaries find the net):
   tools/perf_callgrind_delta.py a_deep.out a_shal.out b_deep.out b_shal.out
 
 B is the ORACLE, and the oracle is ALWAYS the zig-c++ build (see
-tools/upstream_oracle.sh). A gcc-built binary measures gcc, not zfish.
+tools/upstream/ORACLE_CXX). A gcc-built binary measures gcc, not zfish.
 """
 
 import sys

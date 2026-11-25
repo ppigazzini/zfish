@@ -63,6 +63,11 @@ jobs:
         run: |
           git remote add upstream https://github.com/official-stockfish/Stockfish.git
 
+      # Full history, beside the workspace, where upstream_oracle.sh looks for the golden on
+      # every port: it archives an arbitrary pinned sha, which a shallow clone may not carry.
+      - name: Clone the golden beside the workspace
+        run: git clone https://github.com/official-stockfish/Stockfish.git ../Stockfish
+
       # upstream_sync.sh --check fetches upstream/master, computes the behind-
       # count from UPSTREAM_BASE, and prints one terse line. Always exits 0 --
       # this is informational, not a gate. Surface the line in the job summary.
@@ -142,15 +147,11 @@ jobs:
       #
       # It lives in this workflow and not in parity for the same reason the map audit
       # does: it needs the pinned upstream tree, which a plain checkout of origin does
-      # not carry and the drift step's fetch has already brought in. The step builds the
-      # oracle itself (a detached worktree at UPSTREAM_TARGET); point it at the runner's
-      # temp dir, since the script's default is a developer-machine path.
+      # not carry. The step builds the oracle itself, at UPSTREAM_TARGET.
       #
       # The seed is FIXED, not the wall clock: a red weekly run has to be reproducible
       # from the log with one flag. Widening coverage is --positions, not a fresh seed.
       - name: Node-for-node vs upstream over a random walk
-        env:
-          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
         run: |
           if out="$(zig build upstream-walk -Dwalk-args="--positions 40 --depth 13" 2>&1)"; then
             status=0
@@ -202,7 +203,6 @@ jobs:
         run: zig build tb5
       - name: Adjudicate the goldens against the pristine oracle
         env:
-          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
           TB5_FETCH: ${{ steps.tb5.outcome }}
         run: |
           zig build tb-init
@@ -250,8 +250,6 @@ jobs:
       # upstream build, which the per-push lane deliberately does not do. By this point in the
       # job the oracle is already built and the net already fetched, so it costs a bench.
       - name: Assert the bench equals the pristine oracle
-        env:
-          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
         run: |
           if out="$(zig build upstream-parity 2>&1)"; then
             status=0
@@ -286,8 +284,6 @@ jobs:
       # `zig build parity` -- but callgrind SIMULATES rather than samples, so unlike every
       # cycles reading here the result is deterministic and a loaded runner cannot flap it.
       - name: Call-count fingerprint vs upstream
-        env:
-          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
         run: |
           # `apt-get update` is the fragile step here, not valgrind. On 2026-08-19 it retried
           # an unreachable azure.archive.ubuntu.com for 29m58s and the job's own 30m deadline

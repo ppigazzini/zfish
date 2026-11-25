@@ -19,7 +19,6 @@ OUR_BIN="${1:-$REPO/zig-out/bin/stockfish}"
 # directory, and `zig build` passes the artifact relative to the build root.
 case "$OUR_BIN" in /*) ;; *) OUR_BIN="$PWD/$OUR_BIN" ;; esac
 SHA="${2:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}"
-ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -48,10 +47,8 @@ die_no_sig() {
             echo "upstream-parity:   bench exited $rc" >&2
         fi
         if [ "$tag" = oracle ]; then
-            echo "upstream-parity:   a crashing oracle is usually a stale incremental build --" >&2
-            echo "upstream-parity:   objects from the previous sha relinked against reshaped headers." >&2
-            echo "upstream-parity:   Force a clean one:" >&2
-            echo "upstream-parity:     rm -f '$ORACLE_DIR/src/.zfish_oracle_stamp' && tools/upstream_oracle.sh" >&2
+            echo "upstream-parity:   the oracle is installed only once it benches, so this is the box:" >&2
+            echo "upstream-parity:   delete $(dirname "$what") to rebuild it." >&2
         fi
     fi
     echo "upstream-parity:   last lines of its output:" >&2
@@ -60,10 +57,10 @@ die_no_sig() {
 }
 
 # Build/locate the pristine oracle at SHA.
-ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" "$SHA")" || { echo "upstream-parity: oracle build failed" >&2; exit 2; }
+ORACLE_BIN="$("$REPO/tools/upstream/upstream_oracle.sh" "$SHA")" || { echo "upstream-parity: oracle build failed" >&2; exit 2; }
 
 ours="$(sig ours "$OUR_BIN" "$REPO/resources")"
-theirs="$(sig oracle "$ORACLE_BIN" "$ORACLE_DIR/src")"
+theirs="$(sig oracle "$ORACLE_BIN" "$(dirname "$ORACLE_BIN")")"
 
 [ -z "$ours" ]   && die_no_sig ours   "our binary" "$OUR_BIN"
 [ -z "$theirs" ] && die_no_sig oracle "oracle"     "$ORACLE_BIN"

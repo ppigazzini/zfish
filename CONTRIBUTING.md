@@ -17,7 +17,7 @@ that signature, proven by the gates:
 ```
 zig build signature
 zig build parity          # signature + in-repo golden gates + the structural linters
-zig build upstream-parity # differential vs pristine upstream (worktree oracle)
+zig build upstream-parity # differential vs pristine upstream (the shared oracle)
 zig build test            # Zig unit tests
 ```
 
@@ -61,7 +61,7 @@ aarch64 (see the CI parity workflow).
 ## Code style
 
 Zig code is formatted with `zig fmt`. The repo vendors no Stockfish C++; parity
-against upstream is a pristine git-worktree build (`zig build upstream-parity`).
+against upstream is a pristine upstream build (`zig build upstream-parity`).
 
 The Python scripts under `tools/` are linted and formatted by ruff and
 type-checked by ty, configured in `pyproject.toml`. `pre-commit install` wires

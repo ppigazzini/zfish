@@ -23,7 +23,7 @@ Three trees carry the same engine beside this one, and a large share of the proc
 | `../Stockfish`, branch `refish` | **not a port** — a refactoring branch of upstream's own C++, carrying a register of defects found in upstream `master`. Its findings are about the GOLDEN, so one it records may be a defect zfish holds *because* it was faithful — a different question from the one the two ports answer. |
 
 **None of them is a golden.** The differential reference is always upstream, built by
-`tools/upstream_oracle.sh`; a sibling agreeing with zfish says only that two ports made the
+`tools/upstream/upstream_oracle.sh`; a sibling agreeing with zfish says only that two ports made the
 same choice.
 
 ### How to sweep them

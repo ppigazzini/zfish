@@ -26,8 +26,8 @@
 #
 # CWD MATTERS, and getting it wrong reads as a divergence. Every gate runs from the repo's
 # resources/ -- that is where the net lives AND where syzygy/ + syzygy5/ are fetched. Run the
-# oracle from its own worktree instead and `SyzygyPath value syzygy` resolves to upstream's
-# SOURCE directory (src/syzygy/tbprobe.cpp), no tablebase loads, and tb-search reports
+# oracle from its own directory instead and `SyzygyPath value syzygy` resolves to nothing
+# there, no tablebase loads, and tb-search reports
 # with-tb == no-tb on every row. That is not a divergence; it is a rig with no tablebases.
 set -uo pipefail
 
@@ -112,7 +112,7 @@ GATES=(${FILTERED+"${FILTERED[@]}"})
 [ "${SKIPPED_BY_REQUEST+set}" = set ] \
     && echo "golden-audit: skipping by request: ${SKIPPED_BY_REQUEST[*]}"
 
-ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" ${ORACLE_SHA:+"$ORACLE_SHA"})" \
+ORACLE_BIN="$("$REPO/tools/upstream/upstream_oracle.sh" "${ORACLE_SHA:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}")" \
     || { echo "golden-audit: oracle build failed" >&2; exit 2; }
 
 # parity_harness is a build artifact with no step of its own; `signature` is the cheapest

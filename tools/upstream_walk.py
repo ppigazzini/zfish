@@ -159,12 +159,11 @@ class Engine:
 def resolve_oracle(sha: str | None) -> tuple[Path, Path]:
     """Build (or reuse) the pristine oracle and return (binary, cwd).
 
-    Go through upstream_oracle.sh rather than reaching for a path: it defaults the compiler
-    to tools/zigcxx, and a gcc-built oracle measures gcc, not upstream.
+    Go through upstream_oracle.sh rather than reaching for a path: it builds by
+    tools/zigcxx, and an oracle by another compiler measures that compiler, not upstream.
     """
-    cmd = [str(TOOLS / "upstream_oracle.sh")]
-    if sha:
-        cmd.append(sha)
+    pin = sha or (TOOLS / "upstream" / "UPSTREAM_TARGET").read_text().strip()
+    cmd = [str(TOOLS / "upstream" / "upstream_oracle.sh"), pin]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr)

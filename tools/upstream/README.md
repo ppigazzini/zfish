@@ -19,7 +19,7 @@ bit-exact against a pristine upstream build.
 | **`upstream_sync.sh`** | one-command driver: fetch → behind-count → worklist + tiered backlog. `--check` = terse one-line poll (for cron/`/loop`). `--no-fetch` to skip the fetch. **Start here.** |
 | `upstream_router.py <ref>` / `--backlog` / `--worklist` | classify a commit/range by Zig files + risk. `--worklist` = only the commits that need action (NNUE-arch + bench-movers + net swaps); the rest are no-ops. Flags `FORMULA` (integer-semantics review) and `NNUE-ARCH`. |
 | `upstream_benchmap.sh [base] [target]` | `sha  bench  subject` for the delta, oldest first — the per-commit bit-exact checkpoints. |
-| `upstream_oracle.sh [sha] [--verify]` | builds **vanilla** upstream at `sha` into a detached worktree (`/home/usr00/_git/.zfish-upstream-oracle`), prints the binary. The pristine reference — decoupled from the fork's src/ edits. |
+| `upstream/upstream_oracle.sh [sha] [--verify]` | prints the **vanilla** upstream binary at `sha`, building it into the shared `../.upstream-oracle` if it is absent. The pristine reference — decoupled from the fork's src/ edits, and the same file and the same builds in every port. |
 | `upstream_parity.sh [our-bin] [sha]` | whole-engine gate: our native bench vs the pristine oracle bench. RED until the resync completes. |
 | `upstream_golden_audit.sh [gate...]` | re-runs every golden's `<gate>` check with the ORACLE as the engine, so a reharden is PROVEN rather than self-blessed. `--list` prints the gate set. |
 | `upstream_nodes.sh <sha> [depth] [fen...]` | node-count + bestmove localizer: our build vs oracle@`<sha>` at `go depth`. Bisect `<sha>` to find which commit first diverges when several search commits land together. |
@@ -115,11 +115,11 @@ over a rook on b1 generating a castle that exposed the king) AGREES since upstre
 whatever `UCI_Chess960` says.
 
 ## The oracle
-- **Pristine** (`upstream_oracle.sh`): vanilla upstream at any sha; the source of truth for `upstream_parity`
+- **Pristine** (`upstream/upstream_oracle.sh`): vanilla upstream at any sha; the source of truth for `upstream_parity`
   and `upstream_nodes`. This is how we *follow* upstream, and it is now the **only** oracle.
 - The former **in-tree legacy** oracle (`stockfish-legacy-cpp`, the `*-parity` gates) is **retired**:
   it shared this fork's ported Zig hot-path, so it was a self-consistency check rather than a true
-  vs-upstream check, and it carried the whole vendored-C++ / `zig_compat/` build. The pristine worktree
+  vs-upstream check, and it carried the whole vendored-C++ / `zig_compat/` build. The pristine
   oracle is a strict superset (real upstream, drift-proof, cached no-op in steady state), so it replaces it.
 
 ## What each *No functional change* commit did here
@@ -349,10 +349,11 @@ multiply/divide UNSIGNED — differs from signed when a term is negative, e.g. `
 signedness, `/` truncation direction, and overflow/wrap. Match C++ exactly (`@bitCast`/`*%`/`@truncate`).
 
 ## Notes
-- The oracle worktree is outside the repo tree (a git worktree of THIS repo at the upstream sha — no extra
-  clone). Remove with `git worktree remove --force /home/usr00/_git/.zfish-upstream-oracle`.
-- Net files (~90 MB) are gitignored and fetched by `make` into the oracle worktree; copy into each
-  worktree's `src/` with `upstream_net.sh`.
+- The oracle is outside the repo tree, in `../.upstream-oracle`, and the other ports use the same builds.
+  It is archived out of `../Stockfish`, so fetch upstream THERE as well as here before a resync.
+  `upstream/upstream_oracle.sh --prune` deletes the builds and nets of every other commit.
+- Net files are gitignored. The oracle takes one from a copy already on the box and downloads only what is
+  nowhere; `upstream_net.sh` copies it into each worktree's `resources/`.
 - Our `eval`/search info goes to **stderr** and the binary needs `uci`/`isready` before `position`; the
   comparison scripts already handle both. Our `go depth N` needs a trailing pause before `quit` (else it
   returns a depth-1 stub) — `upstream_nodes.sh` sleeps automatically.

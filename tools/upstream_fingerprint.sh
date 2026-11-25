@@ -22,9 +22,6 @@
 set -uo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-# No ORACLE_DIR here: this script reaches the oracle through upstream_oracle.sh below,
-# which resolves ZFISH_ORACLE_DIR itself. A copy of that line sat here unread, looking
-# like a knob that did nothing.
 # NOT `GROUPS`: that is a bash built-in array of the caller's group IDs, and assigning to it
 # is silently ignored -- the script then reported "missing 1000", the primary gid.
 GROUPS_FILE="$REPO/tools/fingerprint_groups.tsv"
@@ -40,7 +37,7 @@ command -v valgrind >/dev/null || { echo "fingerprint: valgrind not found" >&2; 
 
 ( cd "$REPO" && zig build "-Darch=$ARCH" ) >/dev/null 2>&1 \
     || { echo "fingerprint: zfish build failed for $ARCH" >&2; exit 2; }
-ORACLE_BIN="$(ARCH="$ARCH" bash "$REPO/tools/upstream_oracle.sh")" \
+ORACLE_BIN="$(ORACLE_ARCH="$ARCH" "$REPO/tools/upstream/upstream_oracle.sh" "$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")")" \
     || { echo "fingerprint: oracle build failed" >&2; exit 2; }
 
 echo "fingerprint: profiling both engines under callgrind (bench $BENCH, $ARCH) -- this is slow"

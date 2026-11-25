@@ -10,7 +10,7 @@
 # hand-written greps that only looked at the lines someone already suspected. Diff the
 # whole transcript instead, so the next one is found by a gate.
 #
-# LOCAL-ONLY, like the other oracle glue: it needs the upstream worktree build, which CI
+# LOCAL-ONLY, like the other oracle glue: it needs the upstream build, which CI
 # does not have. Run it when touching the UCI, option, NUMA or info surface.
 #
 # Usage:  upstream_transcript.sh [<our-bin>] [<sha>]
@@ -19,9 +19,8 @@ set -uo pipefail
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 OUR_BIN="${1:-$REPO/zig-out/bin/stockfish}"
 SHA="${2:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}"
-ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 
-ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" "$SHA")" || {
+ORACLE_BIN="$("$REPO/tools/upstream/upstream_oracle.sh" "$SHA")" || {
     echo "upstream-transcript: oracle build failed" >&2; exit 2; }
 
 # The oracle's build is checked above; OUR side was taken on trust. Name a missing binary
@@ -32,7 +31,7 @@ ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" "$SHA")" || {
 # Each engine runs from its own directory so each finds its own net copy; the two nets are
 # byte-identical at the pin, so search output is comparable and is compared.
 OUR_DIR="$REPO/resources"
-THEIR_DIR="$ORACLE_DIR/src"
+THEIR_DIR="$(dirname "$ORACLE_BIN")"
 
 # Strip only what CANNOT match between two builds of different compilers: the version
 # banner, and the wall-clock-derived fields. Everything else is compared byte for byte.

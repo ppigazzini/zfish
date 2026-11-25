@@ -19,12 +19,11 @@
 #         BENCH="16 1 13" material_eval.sh x86-64-avx2
 #         OUT=/path/to/bin material_eval.sh
 #
-# Leaves the oracle worktree clean on exit, including on failure: the patch is reverted AND the
-# stubbed binary it produced is deleted, so nothing can silently measure against a stub.
+# The stubbed oracle is a variant of its own, keyed by the patch, so the pristine one is never
+# edited and nothing can silently measure against a stub.
 set -euo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 PATCH="$REPO/tools/upstream/material_eval.patch"
 BENCH="${BENCH:-16 1 13}"
 OUT="${OUT:-$REPO/zig-out/material-eval}"
@@ -32,29 +31,6 @@ ARCHES=("$@")
 [ ${#ARCHES[@]} -eq 0 ] && ARCHES=(x86-64-sse41-popcnt x86-64-avx2 x86-64-vnni512 x86-64-avx512icl)
 
 [ -f "$PATCH" ] || { echo "material-eval: missing $PATCH" >&2; exit 2; }
-
-# Put the oracle SOURCE back between builds. Called mid-loop, so it deliberately leaves the
-# build state alone: the patched and unpatched builds of one arch share a stamp, and make
-# rebuilds just evaluate.cpp between them.
-cleanup() { git -C "$ORACLE_DIR" checkout -- src/evaluate.cpp 2>/dev/null || true; }
-
-# Leave nothing usable-but-wrong behind, however this exits.
-#
-# Reverting the source is NOT enough, and believing it was is the bug this function exists to
-# close: the last thing the loop builds is a STUBBED oracle, and it stays on disk benching a
-# number that is not the anchor. Every in-repo consumer routes through upstream_oracle.sh and
-# would rebuild -- but the stamp still matches, so upstream_oracle.sh sees a current build and
-# does nothing, and anyone running $ORACLE_DIR/src/stockfish by hand gets the stub. It cost a
-# wrong NNUE ratio here; only perf_counters' node-count guard caught it.
-#
-# So delete the binary AND the stamp. The next build is then a clean one, and in the window
-# before it there is nothing to accidentally measure -- a missing binary fails loudly, a
-# stubbed one does not.
-finish() {
-    cleanup
-    rm -f "$ORACLE_DIR/src/stockfish" "$ORACLE_DIR/src/.zfish_oracle_stamp"
-}
-trap finish EXIT
 
 mkdir -p "$OUT"
 nodes_of() { grep -oE 'Nodes searched[ :]+[0-9]+' | grep -oE '[0-9]+$'; }
@@ -68,12 +44,9 @@ for arch in "${ARCHES[@]}"; do
         || { echo "material-eval: zfish build failed for $arch (see $OUT/z-$short.log)" >&2; exit 1; }
     cp "$OUT/z-$short/bin/stockfish" "$OUT/zfish_$short"
 
-    cleanup
-    git -C "$ORACLE_DIR" apply "$PATCH"
-    ARCH="$arch" bash "$REPO/tools/upstream_oracle.sh" >"$OUT/o-$short.log" 2>&1 \
+    patched=$(ORACLE_ARCH="$arch" "$REPO/tools/upstream/upstream_oracle.sh" "$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")" --patch "$PATCH" 2>"$OUT/o-$short.log") \
         || { echo "material-eval: oracle build failed for $arch (see $OUT/o-$short.log)" >&2; exit 1; }
-    cp "$ORACLE_DIR/src/stockfish" "$OUT/oracle_$short"
-    cleanup
+    cp "$patched" "$OUT/oracle_$short"
 
     zn=$(cd "$REPO/resources" && "$OUT/zfish_$short" bench $BENCH 2>&1 | nodes_of || true)
     on=$(cd "$REPO/resources" && "$OUT/oracle_$short" bench $BENCH 2>&1 | nodes_of || true)
@@ -97,5 +70,3 @@ if [ $rc -ne 0 ]; then
 fi
 echo
 echo "material-eval: OK -- every tier searches ONE tree; binaries in $OUT (md5-pin them before measuring)."
-echo "material-eval: the oracle worktree's own binary was REMOVED (it was the stubbed one);"
-echo "material-eval: the next tools/upstream_oracle.sh rebuilds it pristine."
