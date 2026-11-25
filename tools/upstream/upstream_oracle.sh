@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Print the path of a PRISTINE upstream Stockfish binary, building it if it is absent.
 #
-# ONE ORACLE SERVES EVERY PORT. fcfish, mcfish, rfish and zfish carry this file byte for
-# byte and write to one ORACLE_DIR, so a commit is built once however many of them ask.
-# It is never edited in one port alone: `cmp` it against the siblings, or the warning
-# below does.
+# ONE ORACLE SERVES EVERY TREE. fcfish, mcfish, rfish, zfish and the golden's `refish`
+# branch carry this file byte for byte and write to one ORACLE_DIR, so a commit is built
+# once however many of them ask. It is never edited in one tree alone: the warning below
+# compares the copies.
 #
 # Pristine is the point. The source is `git archive` of a commit in the golden's object
 # store, built by upstream's own Makefile, so no port's edit is anywhere near it and a bug
@@ -19,10 +19,11 @@
 #   $ORACLE_DIR/<sha12>/<compiler>-<ARCH>-<target>[-patch-<hash>]/{stockfish,nn-*.nnue,BUILD}
 #   $ORACLE_DIR/nets/nn-*.nnue
 #
-# A PORT IS COMPARED WITH UPSTREAM BUILT BY ITS OWN COMPILER, always and by default: another
-# one measures the compilers. That is clang, or the wrapper named in a port's
-# tools/upstream/ORACLE_CXX. Ports that share a compiler share the binary. The default has no
-# profile, because PGO inlines away functions the call-count fingerprints read.
+# A TREE IS COMPARED WITH UPSTREAM BUILT BY ITS OWN COMPILER, always and by default: another
+# one measures the compilers. That is clang, or the wrapper an ORACLE_CXX file beside this
+# one names; a gcc build of a tree asks for ORACLE_COMP=gcc. Trees that share a compiler
+# share the binary. The default has no profile, because PGO inlines away functions the
+# call-count fingerprints read.
 #
 # Usage:
 #   upstream_oracle.sh [sha]           print the binary, building it if needed
@@ -31,7 +32,8 @@
 #   upstream_oracle.sh [sha] --patch F build with F applied; the bench is not checked
 #   upstream_oracle.sh [sha] --prune   delete every other commit's builds and nets
 #   upstream_oracle.sh --dir           print ORACLE_DIR
-#     sha defaults to tools/upstream/UPSTREAM_BASE. Only the path goes to stdout.
+#     sha defaults to the UPSTREAM_BASE file beside this one, or, on a branch of the golden,
+#     which carries none, to its merge-base with master. Only the path goes to stdout.
 #
 # Env:
 #   UPSTREAM_REPO  the golden             (default: ../Stockfish beside this repository)
@@ -48,8 +50,8 @@ set -euo pipefail
 die() { local rc=$1; shift; printf '\033[31mupstream-oracle: %s\033[0m\n' "$@" >&2; exit "$rc"; }
 info() { printf '\033[36m==>\033[0m %s\n' "upstream-oracle: $*" >&2; }
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-SELF=$ROOT/tools/upstream/upstream_oracle.sh
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null) || ROOT=$(cd "$HERE/../.." && pwd)
 
 # Resolve the siblings from the MAIN checkout, so a git worktree of a port -- wherever it
 # lives -- reaches the same golden and the same oracle as the port itself.
@@ -75,8 +77,8 @@ done
 cd "$ROOT"
 UPSTREAM_REPO=${UPSTREAM_REPO:-$PARENT/Stockfish}
 ORACLE_DIR=$(realpath -m "${ORACLE_DIR:-$PARENT/.upstream-oracle}")
-if [[ -z ${ORACLE_COMP:-}${ORACLE_CXX:-} && -f tools/upstream/ORACLE_CXX ]]; then
-  ORACLE_CXX=$ROOT/$(tr -d '[:space:]' < tools/upstream/ORACLE_CXX)
+if [[ -z ${ORACLE_COMP:-}${ORACLE_CXX:-} && -f $HERE/ORACLE_CXX ]]; then
+  ORACLE_CXX=$ROOT/$(tr -d '[:space:]' < "$HERE/ORACLE_CXX")
 fi
 ORACLE_COMP=${ORACLE_COMP:-clang}
 ORACLE_ARCH=${ORACLE_ARCH:-x86-64-sse41-popcnt}
@@ -90,16 +92,21 @@ MARK=$ORACLE_DIR/.upstream-oracle
 [[ ! -e $ORACLE_DIR || -f $MARK ]] ||
   die 2 "$ORACLE_DIR exists and is not an oracle directory (no .upstream-oracle in it)"
 
-for s in fcfish mcfish rfish zfish; do
-  twin=$PARENT/$s/tools/upstream/upstream_oracle.sh
-  [[ ! -f $twin ]] || cmp -s "$SELF" "$twin" ||
-    printf '\033[31mupstream-oracle: WARNING -- differs from %s; the copies must be identical\033[0m\n' "$twin" >&2
+for dir in "$PARENT"/{fcfish,mcfish,rfish,zfish}/tools/upstream "$PARENT/Stockfish/tests"; do
+  for f in upstream_oracle.sh oracle_profile.sh oracle_counters.py; do
+    [[ ! -f $HERE/$f || ! -f $dir/$f ]] || cmp -s "$HERE/$f" "$dir/$f" ||
+      printf '\033[31mupstream-oracle: WARNING -- %s differs from %s; the copies must be identical\033[0m\n' "$f" "$dir/$f" >&2
+  done
 done
 
 git -C "$UPSTREAM_REPO" rev-parse --git-dir >/dev/null 2>&1 ||
   die 2 "no upstream Stockfish clone at $UPSTREAM_REPO" "clone it there, or set UPSTREAM_REPO"
-[[ -n $ref ]] || ref=$(tr -d '[:space:]' < tools/upstream/UPSTREAM_BASE)
-[[ -n $ref ]] || die 2 "tools/upstream/UPSTREAM_BASE is empty"
+if [[ -z $ref && -f $HERE/UPSTREAM_BASE ]]; then
+  ref=$(tr -d '[:space:]' < "$HERE/UPSTREAM_BASE")
+elif [[ -z $ref ]]; then
+  ref=$(git merge-base HEAD master 2>/dev/null) || true
+fi
+[[ -n $ref ]] || die 2 "no commit given, no UPSTREAM_BASE beside this file and no merge-base with master"
 sha=$(git -C "$UPSTREAM_REPO" rev-parse --verify --quiet "$ref^{commit}") ||
   die 2 "$ref is not a commit in $UPSTREAM_REPO -- fetch upstream there"
 
